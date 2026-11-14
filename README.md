@@ -79,3 +79,11 @@ Todos os caminhos são relativos (`./`), então funciona nos dois endereços.
 3. Commit e push na `main`. O Pages publica em um ou dois minutos.
 
 O arquivo `.nojekyll` impede o GitHub Pages de processar o site com Jekyll.
+
+## App novo em /novo/
+
+O app novo, com o visual do protótipo aprovado, fica inteiro em [`novo/`](novo/README.md) e é
+publicado em `https://motor.rocambrea.com/novo/`. Ele não importa nada da raiz e tem manifest e
+service worker próprios (escopo `/novo/`, caches `motor-novo-`), então o app desta raiz segue
+igual. `js/roteiro.js` e `js/etapas.js` (que o app da raiz não usava) foram para `novo/js/`, com
+os testes deles em `novo/tests/`. Para rodar todos os testes: `node --test tests/ novo/tests/`.

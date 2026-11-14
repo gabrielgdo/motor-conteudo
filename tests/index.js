@@ -2,7 +2,6 @@
 // No Node ≥ 22 o argumento "tests/" é tratado como caminho/glob e, por ser um diretório, o Node
 // carrega tests/index.js. Este arquivo só importa os testes de verdade (que também rodam sozinhos
 // com `node --test tests/*.test.mjs`).
+// Os testes de roteiro.js e etapas.js foram para novo/tests/ (junto com os módulos, em novo/js/).
 import('./parse.test.mjs');
 import('./model.test.mjs');
-import('./roteiro.test.mjs');
-import('./etapas.test.mjs');

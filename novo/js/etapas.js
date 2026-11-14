@@ -1,4 +1,4 @@
-// Etapa de um projeto (de montarProjetos, js/model.js) no vocabulário do protótipo:
+// Etapa de um projeto (de montarProjetos, js/model.js) no vocabulário do desenho aprovado:
 // 'rascunho' | 'aprovado' | 'recebido' | 'previa' | 'ajustes' | 'video-aprovado' | 'pronto' | 'arquivado' | ''.
 // Puro: sem rede, sem DOM. Ordem de precedência: pronto > video-aprovado > ajustes > previa >
 // recebido > aprovado > rascunho > ''.
@@ -21,9 +21,9 @@
 //    etapa é 'aprovado' (ou adiante), nunca 'rascunho' — igual a model.ehRoteiroParaAprovar.
 // 6. "<id> limpar.md" (testes): ignorado aqui; a etapa é calculada como se não existisse (para
 //    esconder testes em limpeza use model.testesAtivos). Projeto só com limpar.md → ''.
-// 7. postado / vencedor (model.calcularEtapa diz "postado em dd/mm"): o protótipo não tem essa
+// 7. postado / vencedor (model.calcularEtapa diz "postado em dd/mm"): o desenho aprovado não tem essa
 //    etapa; com pacote em 5-Prontos é 'pronto'. Vencedor sem pacote não muda a etapa.
-// 8. o protótipo também lista 'mudanca' e 'recusado', que não se deduzem das listagens do Drive;
+// 8. o desenho aprovado também lista 'mudanca' e 'recusado', que não se deduzem das listagens do Drive;
 //    não são devolvidos. Projeto só com "<id> fontes.md" → ''.
 
 import { ehPreviaNova, ehAprovadoSemBruto, ehRoteiroParaAprovar } from './model.js';
