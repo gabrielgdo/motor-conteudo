@@ -45,7 +45,7 @@ window.addEventListener('unhandledrejection', (e) => {
    inclusive no lugar do SW do app antigo. Quando um SW novo passa a controlar a página, ela pergunta
    a versão dele: se for outra que a desta página, mostra "Nova versão" (tocar recarrega). Se for a
    mesma (a página já veio da rede com os arquivos novos), não há o que avisar. */
-const VERSAO_APP = 'motor-app-v4'; // igual a VERSAO em sw.js (tests/sw.test.mjs confere)
+const VERSAO_APP = 'motor-app-v5'; // igual a VERSAO em sw.js (tests/sw.test.mjs confere)
 
 function avisarNovaVersao() {
   avisoFixo('versao', 'Nova versão do app. Toque para atualizar.', { acao: 'nova-versao', icone: 'atualizar' });

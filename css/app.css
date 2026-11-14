@@ -219,22 +219,30 @@ html[data-tema="dia"] .nav-conta{background:var(--vinho)}
 }
 
 /* ===== 6. Entrada (login) ===== */
-.login{min-height:100vh;min-height:100dvh;display:grid;grid-template-columns:minmax(0,1fr);align-content:end;gap:1.75rem;padding:1.75rem 1.25rem 2rem;max-width:77.5rem;margin:0 auto}
-.login h1{font-size:clamp(2.875rem,9.5vw,7.375rem);line-height:.98;letter-spacing:-.03em;max-width:11ch}
-.login-frase{margin-top:1.125rem;font:italic 400 clamp(1.125rem,2.2vw,1.5rem)/1.35 var(--titulo);color:var(--tinta-2);max-width:34ch}
-.login-porta{display:flex;flex-direction:column;gap:.875rem;padding:1.375rem;border-radius:var(--r-painel);background:var(--vidro);backdrop-filter:blur(1.625rem) saturate(1.3);-webkit-backdrop-filter:blur(1.625rem) saturate(1.3);border:1px solid var(--fio);box-shadow:var(--sombra),inset 0 1px 0 rgba(255,255,255,.07)}
+/* Uma coluna centralizada na horizontal e na vertical, no celular e no computador. A altura mínima é a
+   da tela (100vh de reserva, 100dvh onde houver); os recortes do aparelho (safe-area) somam-se ao
+   respiro. Se o conteúdo passar da tela (360x640), a seção cresce e a página rola, sem cortar nada. */
+.login{min-height:100vh;min-height:100dvh;display:grid;grid-template-columns:minmax(0,1fr);align-content:center;justify-items:center;text-align:center;gap:1.75rem;
+  padding:calc(1.75rem + env(safe-area-inset-top)) calc(1.25rem + env(safe-area-inset-right)) calc(2rem + env(safe-area-inset-bottom)) calc(1.25rem + env(safe-area-inset-left));
+  max-width:77.5rem;margin:0 auto}
+.login h1{font-size:clamp(2.875rem,9.5vw,7.375rem);line-height:.98;letter-spacing:-.03em;max-width:11ch;margin-inline:auto}
+.login-frase{margin:1.125rem auto 0;font:italic 400 clamp(1.125rem,2.2vw,1.5rem)/1.35 var(--titulo);color:var(--tinta-2);max-width:34ch}
+.login-porta{width:100%;max-width:25rem;display:flex;flex-direction:column;gap:.875rem;padding:1.375rem;border-radius:var(--r-painel);background:var(--vidro);backdrop-filter:blur(1.625rem) saturate(1.3);-webkit-backdrop-filter:blur(1.625rem) saturate(1.3);border:1px solid var(--fio);box-shadow:var(--sombra),inset 0 1px 0 rgba(255,255,255,.07)}
 .login-porta h2{font-size:1.375rem}
 .google{display:flex;align-items:center;justify-content:center;gap:.75rem;min-height:3.5rem;border-radius:999px;border:0;background:var(--acento);color:var(--acento-tinta);font-weight:600;font-size:1rem}
 .google:hover{filter:brightness(1.08)}
 .login-porta details{font-size:.90625rem;color:var(--tinta-2)}
 .login-porta summary{cursor:pointer;font-weight:600;padding:.375rem 0}
-.login-porta details ol{list-style:decimal;padding-left:1.25rem;margin-top:.375rem}
-.caminho{display:flex;flex-wrap:wrap;gap:.5rem 0;font-size:.84375rem;color:var(--tinta-2)}
+.login-porta details ol{list-style:decimal;padding-left:1.25rem;margin-top:.375rem;text-align:left}
+/* Na porta centralizada: o aviso de erro e o link "Sobre o app" também no meio */
+.login-porta .login-msg{justify-content:center;text-align:left}
+.login-porta .discreto{align-self:center}
+.caminho{display:flex;flex-wrap:wrap;justify-content:center;gap:.5rem 0;font-size:.84375rem;color:var(--tinta-2)}
 .caminho li{display:flex;align-items:center}
 .caminho li:not(:last-child)::after{content:"";width:1.625rem;height:1px;margin:0 .625rem;background:var(--fio-forte)}
 @media (min-width:900px){
-  .login{grid-template-columns:minmax(0,1fr) 25rem;align-items:end;gap:1.75rem 4rem;padding:3.5rem 2.5rem}
-  .caminho{grid-column:1/-1;padding-top:1.375rem;border-top:1px solid var(--fio)}
+  .login{padding:calc(3.5rem + env(safe-area-inset-top)) calc(2.5rem + env(safe-area-inset-right)) calc(3.5rem + env(safe-area-inset-bottom)) calc(2.5rem + env(safe-area-inset-left))}
+  .caminho{padding-top:1.375rem;border-top:1px solid var(--fio)}
 }
 
 /* ===== 7. Início ===== */
