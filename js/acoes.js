@@ -25,6 +25,7 @@ import { Tele } from './componentes/tele.js';
 import { Players } from './componentes/players.js';
 import { Downloads } from './componentes/downloads.js';
 import { Tema } from './visual.js';
+import { executarSaida, urlDaEntrada, tirarSaida, sessaoSegura } from './saida.js';
 
 /* ---- Login ⇄ app ---- */
 
@@ -56,6 +57,7 @@ export function pintarBotaoSair() {
 }
 
 export function entrarNoApp() {
+  tirarSaida(sessaoSegura()); // entrou de novo: a marca de "acabou de sair" não vale mais
   estado.logada = true;
   pintarBotaoSair();
   document.documentElement.classList.remove('retomando');
@@ -71,43 +73,120 @@ export function entrarNoApp() {
   carregar();
 }
 
-export function mostrarLogin(mensagem = '') {
+/** Botões de login da entrada (Entrar com Google, Continuar como …, Usar outra conta). */
+const botoesDeEntrada = () => ['#botao-entrar', '#botao-continuar', '#botao-outra-conta'].map((s) => $(s)).filter(Boolean);
+
+/** E-mail do "Continuar como …" pintado agora ('' = entrada normal). Fica em memória: se um pedido
+    falhar e a sessão vencida sumir do armazenamento, o botão continua valendo até recarregar. */
+let emailDaContinuacao = '';
+
+/**
+ * Pinta a porta da entrada pela sessão guardada (Integra.abertura): com a sessão vencida, no lugar
+ * do "Entrar com Google", "Continuar como <nome>" e "Usar outra conta"; sem sessão (ou depois de
+ * sair), a entrada normal. Nunca entra no app sozinha. Com um login em andamento, não mexe em nada.
+ */
+export function pintarEntrada() {
+  const [entrar, continuar, outra] = ['#botao-entrar', '#botao-continuar', '#botao-outra-conta'].map((s) => $(s));
+  if (!entrar || !continuar || !outra) return;
+  if (botoesDeEntrada().some((b) => b.disabled)) return;
+  let abertura = { estado: 'normal', email: '' };
+  try { abertura = Integra.abertura(); } catch { /* sem armazenamento: entrada normal */ }
+  emailDaContinuacao = abertura.estado === 'continuar' ? abertura.email : '';
+  const instrucao = $('#login-instrucao');
+  if (instrucao) {
+    instrucao.dataset.normal ??= instrucao.textContent;
+    instrucao.textContent = emailDaContinuacao
+      ? 'A sessão terminou. Continue com a mesma conta Google ou entre com outra.'
+      : instrucao.dataset.normal;
+  }
+  if (emailDaContinuacao) {
+    $('#botao-continuar-texto').textContent = Integra.rotuloContinuar(emailDaContinuacao); // texto puro, sem HTML
+    continuar.title = emailDaContinuacao;
+  } else {
+    continuar.removeAttribute('title');
+  }
+  entrar.hidden = !!emailDaContinuacao;
+  continuar.hidden = !emailDaContinuacao;
+  outra.hidden = !emailDaContinuacao;
+}
+
+/** O botão principal visível da entrada (para o foco). */
+const botaoPrincipalDaEntrada = () => ($('#botao-continuar') && !$('#botao-continuar').hidden ? $('#botao-continuar') : $('#botao-entrar'));
+
+export function mostrarLogin(mensagem = '', { preparar = true } = {}) {
   estado.logada = false;
   document.documentElement.classList.remove('retomando');
   $('#casca').hidden = true;
   $('#tela-login').hidden = false;
   document.body.classList.add('entrada');
   document.title = 'Motor de Conteúdo';
+  pintarEntrada();
   mensagemLogin(mensagem);
   // Carrega o GIS antes do clique: assim o popup do Google sai direto do toque e não é bloqueado.
-  Integra.prepararLogin().catch(() => { /* o erro aparece se ela tentar entrar */ });
+  if (preparar) Integra.prepararLogin().catch(() => { /* o erro aparece se ela tentar entrar */ });
   window.scrollTo(0, 0);
 }
 
 /**
- * Sai da conta: fecha janelas e teleprompter, para os players e revoga as URLs dos vídeos, esquece
- * downloads em andamento, revoga o token e limpa o armazenamento (Integra.sair → auth.sair), apaga
- * os dados em memória, o estado das telas, os rascunhos e a lista de ajustes, e volta para a tela de
- * entrada com o endereço sem rota. Nada renova sozinho depois disso.
+ * Sai da conta (ordem em js/saida.js): primeiro apaga a sessão e o armazenamento e mostra a entrada,
+ * de forma síncrona e sem depender do Google; depois fecha janelas e teleprompter, para os players e
+ * revoga as URLs dos vídeos, esquece downloads, apaga dados, estado, rascunhos e a lista de ajustes;
+ * então revoga o token (sem esperar) e recarrega a página no endereço do app sem rota
+ * (location.replace), para nada da conta ficar em memória nem no bfcache. Nada renova sozinho.
  */
 export function sairDaConta(mensagem = '') {
-  fecharJanela();
-  Tele.fechar();
-  Players.liberar();
-  Downloads.liberar();
-  Integra.sair();
-  limparDados();
-  reiniciarEstado();
-  Paleta.termo = '';
-  Paleta.i = 0;
-  // Avisos da sessão que acabou (fica só o de "Nova versão do app").
-  document.querySelectorAll('#avisos .aviso').forEach((a) => { if (a.dataset.aviso !== 'versao') a.remove(); });
-  // Nada da conta fica no DOM escondido.
-  for (const sel of ['#conteudo', '#nav-topo', '#nav-doca']) { const el = $(sel); if (el) el.innerHTML = ''; }
-  pintarBotaoSair();
-  if (location.hash) history.replaceState(null, '', location.pathname + location.search);
-  mostrarLogin(mensagem);
-  $('#botao-entrar')?.focus({ preventScroll: true }); // o botão que abriu a janela de confirmação sumiu
+  executarSaida({
+    storage: sessaoSegura(),
+    mensagem,
+    encerrar: () => Integra.encerrar(),
+    mostrarEntrada: () => {
+      if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+      mostrarLogin(mensagem, { preparar: false }); // a página recarrega logo em seguida
+    },
+    limpezas: [
+      () => fecharJanela(),
+      () => Tele.fechar(),
+      () => Players.liberar(),
+      () => Downloads.liberar(),
+      () => limparDados(),
+      () => reiniciarEstado(),
+      () => { Paleta.termo = ''; Paleta.i = 0; },
+      // Avisos da sessão que acabou e nada da conta no DOM escondido.
+      () => document.querySelectorAll('#avisos .aviso').forEach((a) => a.remove()),
+      () => { for (const sel of ['#conteudo', '#nav-topo', '#nav-doca']) { const el = $(sel); if (el) el.innerHTML = ''; } },
+      () => pintarBotaoSair(),
+      () => botaoPrincipalDaEntrada()?.focus({ preventScroll: true }),
+    ],
+    desligar: (token) => Integra.desligarGoogle(token),
+    recarregar: () => location.replace(urlDaEntrada(location)),
+  });
+}
+
+/**
+ * Um login da entrada pelo botão `b` (`textoEl`: onde vai o "Entrando…"). Enquanto o Google
+ * responde, os três botões ficam desligados (um pedido por vez). Se falhar, a mensagem aparece no
+ * estilo de sempre e os botões voltam como estavam, todos usáveis.
+ */
+async function loginDaEntrada(b, textoEl, pedir) {
+  if (!b || botoesDeEntrada().some((x) => x.disabled)) return;
+  mensagemLogin('');
+  if (navigator.onLine === false) { mensagemLogin('Sem internet. Conecte-se e tente de novo.'); return; }
+  const botoes = botoesDeEntrada();
+  const texto = textoEl || b;
+  const antes = texto.textContent;
+  for (const x of botoes) x.disabled = true;
+  b.setAttribute('aria-busy', 'true');
+  texto.textContent = 'Entrando…';
+  try {
+    await pedir();
+    entrarNoApp();
+  } catch (e) {
+    if (e?.codigo !== 'substituido' && e?.codigo !== 'saiu') mensagemLogin(textoDoErro(e));
+  } finally {
+    for (const x of botoes) x.disabled = false;
+    b.removeAttribute('aria-busy');
+    texto.textContent = antes;
+  }
 }
 
 /* ---- Janelas de confirmação do controle manual ----
@@ -159,25 +238,13 @@ function podeDecidirPautas() {
 
 export const ACOES = {
   /* -- geral -- */
-  async entrar() {
-    const b = $('#botao-entrar');
-    if (!b || b.disabled) return;
-    mensagemLogin('');
-    if (navigator.onLine === false) { mensagemLogin('Sem internet. Conecte-se e tente de novo.'); return; }
-    b.disabled = true;
-    b.setAttribute('aria-busy', 'true');
-    $('#botao-entrar-texto').textContent = 'Entrando…';
-    try {
-      await Integra.entrar();
-      entrarNoApp();
-    } catch (e) {
-      if (e?.codigo !== 'substituido' && e?.codigo !== 'saiu') mensagemLogin(textoDoErro(e));
-    } finally {
-      b.disabled = false;
-      b.removeAttribute('aria-busy');
-      $('#botao-entrar-texto').textContent = 'Entrar com Google';
-    }
+  entrar() { return loginDaEntrada($('#botao-entrar'), $('#botao-entrar-texto'), () => Integra.entrar()); },
+  // Sessão guardada vencida: um toque com a mesma conta (login_hint) ou a escolha de conta.
+  continuar() {
+    const email = emailDaContinuacao;
+    return loginDaEntrada($('#botao-continuar'), $('#botao-continuar-texto'), () => Integra.continuar(email));
   },
+  'outra-conta'() { return loginDaEntrada($('#botao-outra-conta'), null, () => Integra.entrarComOutraConta()); },
   sair() { if (estado.logada) abrirJanela(janelaSair(Integra.email())); },
   'confirmar-sair'() { sairDaConta(); },
   async 'renovar-sessao'(el) {

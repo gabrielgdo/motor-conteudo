@@ -73,7 +73,12 @@ test('sw.js: versão nova do cache, igual à do js/main.js, e limpeza dos caches
   assert.match(SW, /skipWaiting\(\)/);
   assert.match(SW, /clients\.claim\(\)/);
   assert.match(SW, /url\.origin !== self\.location\.origin\) return/);
-  assert.match(ler('js/main.js'), /register\('\.\/sw\.js', \{ scope: '\.\/' \}\)/);
+  // updateViaCache 'none': o próprio sw.js nunca vem do cache HTTP (GitHub Pages: max-age=600).
+  assert.match(ler('js/main.js'), /register\('\.\/sw\.js', \{ scope: '\.\/', updateViaCache: 'none' \}\)/);
+  // Arquivos do app e navegação revalidam com o servidor (sem o JS velho do cache HTTP).
+  assert.match(SW, /const DA_REDE = \{ cache: 'no-cache' \}/);
+  assert.match(SW, /fetch\(req, DA_REDE\)/);
+  assert.match(SW, /fetch\(req\.url, \{ \.\.\.DA_REDE/);
 });
 
 test('manifest: mesma identidade do app instalado (raiz), tema Noite e ícones que existem', () => {

@@ -45,21 +45,40 @@ export function removerAviso(chave) {
 
 /* ---- Janelas ---- */
 
+/* <dialog> com showModal (iOS ≥ 15.4). Sem ele, ou se ele lançar, a janela abre pelo atributo
+   `open` com a classe .sem-modal (o CSS desenha o fundo escuro e centraliza). */
+const aberta = (d) => !!d && (d.open || d.hasAttribute('open'));
+
 export function abrirJanela(html, classe = 'janela') {
   const d = $('#dialogo');
-  d.className = classe;
+  const semModal = d.classList.contains('sem-modal');
+  d.className = semModal ? `${classe} sem-modal` : classe;
   d.innerHTML = html;
-  if (!d.open) d.showModal();
+  if (aberta(d)) return;
+  if (typeof d.showModal === 'function') {
+    try { d.showModal(); return; } catch { /* cai na reserva */ }
+  }
+  d.classList.add('sem-modal');
+  d.setAttribute('open', '');
 }
 export function fecharJanela() {
   const d = $('#dialogo');
-  if (d.open) d.close();
+  if (aberta(d)) {
+    const semModal = d.classList.contains('sem-modal');
+    if (!semModal && typeof d.close === 'function') {
+      try { d.close(); } catch { d.removeAttribute('open'); }
+    } else {
+      d.removeAttribute('open');
+      d.classList.remove('sem-modal');
+      d.dispatchEvent(new Event('close'));
+    }
+  }
   estado.erros = {};
 }
 /** `titulo` e `corpo`/`rodape` são HTML (escape os dados antes). */
 export const moldura = (titulo, corpo, rodape = '') => `<div class="dlg"><header class="dlg-cab"><h2 id="dlg-titulo">${titulo}</h2><button type="button" class="redondo" data-acao="fechar-janela" aria-label="Fechar">${ic('fechar')}</button></header><div class="dlg-corpo">${corpo}</div>${rodape ? `<footer class="dlg-rodape">${rodape}</footer>` : ''}</div>`;
 
-/** Confirmação de "Sair" (botão da ilha, link do Início ou a busca rápida). */
+/** Confirmação de "Sair" (botão da ilha, em todas as telas, ou a busca rápida). */
 export function janelaSair(email) {
   return moldura('Sair da conta?', `<p>Você volta para a tela de entrada. Para usar de novo, entre com Google.</p>${email ? `<p class="conta-atual">${ic('sair', 18)}<span>Conta conectada: <strong>${esc(email)}</strong></span></p>` : ''}`,
     '<button type="button" class="botao calmo" data-acao="fechar-janela">Ficar</button><button type="button" class="botao primario" data-acao="confirmar-sair">Sair</button>');

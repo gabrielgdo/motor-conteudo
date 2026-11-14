@@ -1,8 +1,11 @@
 // Login com Google Identity Services (token model: popup, sem redirect, sem client secret).
-// Sessão {access_token, expires_at, email} em sessionStorage; só o e-mail em localStorage (login_hint).
+// Sessão {access_token, expires_at, email} em localStorage: fechar e reabrir o app (também o app
+// instalado no iPhone) não pede login de novo enquanto o token vale. Token vencido ao abrir: a
+// entrada mostra "Continuar como …" (um toque, login_hint) e "Usar outra conta" (estadoDeAbertura).
+// A sessão antiga em sessionStorage (até a v7) passa sozinha para o localStorage na primeira leitura.
 // Ao sair, tudo isso é apagado (sair, limparArmazenamento) e o próximo login abre a escolha de conta.
 
-import { CLIENT_ID, SCOPES, ALLOWED, GIS_URL } from './config.js';
+import { CLIENT_ID, SCOPES, ALLOWED, GIS_URL, nomeDe } from './config.js';
 
 const CHAVE_SESSAO = 'motor.sessao';
 const CHAVE_EMAIL = 'motor.email';
@@ -34,25 +37,92 @@ const erroSaiu = () => new ErroAuth('Você saiu da conta.', 'saiu');
 
 /* ----------------------------------------------------------- sessão */
 
-export function lerSessao() {
+/** Confere o JSON guardado: devolve a sessão {access_token, expires_at, email} ou null. Nunca lança. */
+function sessaoDoTexto(bruto) {
   try {
-    const s = JSON.parse(sessionStorage.getItem(CHAVE_SESSAO) || 'null');
-    return s && s.access_token && s.email ? s : null;
+    const s = JSON.parse(bruto || 'null');
+    return s && typeof s === 'object' && s.access_token && s.email ? s : null;
   } catch {
     return null;
   }
 }
 
+/**
+ * Lê a sessão guardada em `local` (localStorage). Sem nada lá e com a sessão antiga em `sessao`
+ * (sessionStorage, até a v7): lê essa uma vez, grava no localStorage e apaga do sessionStorage. Se
+ * o localStorage não aceitar (modo privado), a sessão fica no sessionStorage e continua valendo
+ * nesta aba. Storages ausentes ou que lançam (SecurityError) valem como vazios. Nunca lança.
+ */
+export function lerSessaoDe(local, sessao = null) {
+  let bruto = null;
+  try { bruto = local ? local.getItem(CHAVE_SESSAO) : null; } catch { bruto = null; }
+  if (bruto === null && sessao) {
+    try { bruto = sessao.getItem(CHAVE_SESSAO); } catch { bruto = null; }
+    if (bruto !== null) {
+      let movida = false;
+      try { if (local) { local.setItem(CHAVE_SESSAO, bruto); movida = true; } } catch { /* fica no sessionStorage */ }
+      if (movida) { try { sessao.removeItem(CHAVE_SESSAO); } catch { /* a cópia antiga some no próximo sair */ } }
+    }
+  }
+  return sessaoDoTexto(bruto);
+}
+
+/** Sessão guardada (com o token válido ou vencido) ou null. */
+export function lerSessao() {
+  return lerSessaoDe(armazenamento('localStorage'), armazenamento('sessionStorage'));
+}
+
 function gravarSessao(s) {
-  sessionStorage.setItem(CHAVE_SESSAO, JSON.stringify(s));
+  const texto = JSON.stringify(s);
+  let gravou = false;
+  try {
+    const local = armazenamento('localStorage');
+    if (local) { local.setItem(CHAVE_SESSAO, texto); gravou = true; }
+  } catch { /* modo privado: fica no sessionStorage, abaixo */ }
+  const sessao = armazenamento('sessionStorage');
+  if (gravou) { try { sessao?.removeItem(CHAVE_SESSAO); } catch { /* sem armazenamento */ } }
+  else { try { sessao?.setItem(CHAVE_SESSAO, texto); } catch { /* sem armazenamento nenhum */ } }
   try { localStorage.setItem(CHAVE_EMAIL, s.email); } catch { /* modo privado */ }
   agendarRenovacao(s);
 }
 
+/** Apaga a sessão dos dois armazenamentos, na hora (síncrono), e cancela o timer de renovação. */
 function limparSessao() {
-  try { sessionStorage.removeItem(CHAVE_SESSAO); } catch { /* sem armazenamento */ }
+  try { armazenamento('localStorage')?.removeItem(CHAVE_SESSAO); } catch { /* sem armazenamento */ }
+  try { armazenamento('sessionStorage')?.removeItem(CHAVE_SESSAO); } catch { /* sem armazenamento */ }
   clearTimeout(timerRenovacao);
   timerRenovacao = null;
+}
+
+/** O token da sessão ainda vale além da margem de renovação (abrir o app direto, sem login)? */
+function tokenUtil(s, agora = Date.now()) {
+  return !!s && Number(s.expires_at) > agora + MARGEM_RENOVACAO;
+}
+
+/**
+ * O que a abertura do app mostra, pela sessão guardada (os storages e a hora podem vir de fora):
+ *  - 'entrar': token válido (além da margem de renovação) → entra direto no app;
+ *  - 'continuar': sessão guardada com o token vencido ou quase → "Continuar como …";
+ *  - 'normal': sem sessão (nunca entrou, ou saiu) → "Entrar com Google".
+ * Devolve { estado, email }. Lê com a migração do sessionStorage. Nunca lança.
+ */
+export function estadoDeAbertura({ storage = armazenamento('localStorage'), sessao = armazenamento('sessionStorage'), agora = Date.now() } = {}) {
+  const s = lerSessaoDe(storage, sessao);
+  if (!s) return { estado: 'normal', email: '' };
+  return { estado: tokenUtil(s, agora) ? 'entrar' : 'continuar', email: String(s.email) };
+}
+
+/** Como chamar a conta no "Continuar como …": o primeiro nome (NOMES, config.js) ou o que vem antes do @. Texto puro. */
+export function nomeParaContinuar(email) {
+  const e = String(email ?? '').trim();
+  const nome = (nomeDe(e) || e.split('@')[0] || '').replace(/[\u0000-\u001f\u007f]/g, '').trim();
+  return nome.length > 32 ? `${nome.slice(0, 31)}…` : nome;
+}
+
+/** Rótulo do botão principal da entrada com a sessão vencida. Texto puro: vai na tela por textContent (ou esc). */
+export function rotuloContinuar(email) {
+  const nome = nomeParaContinuar(email);
+  return nome ? `Continuar como ${nome}` : 'Continuar';
 }
 
 /* ------------------------------------------------- limpeza ao sair (puro) */
@@ -78,15 +148,45 @@ export function limparArmazenamento(storage) {
   return apagar;
 }
 
+/** Endpoint de revogação do Google (o mesmo que o google.accounts.oauth2.revoke do GIS usa). */
+export const URL_REVOGAR = 'https://oauth2.googleapis.com/revoke';
+
 /**
- * Desliga a conta no Google sem esperar resposta: revoga o token (se o GIS estiver carregado) e
- * desliga a seleção automática. GIS ausente, que lança ou sem rede não impede a saída.
+ * Revoga o token direto no Google, sem o GIS (no app instalado no iPhone o script do GIS pode não
+ * ter carregado). keepalive: o pedido segue mesmo com a página recarregando logo depois do "Sair".
+ * no-cors: não precisa ler a resposta. Devolve true se o pedido saiu. Nunca lança nem rejeita.
  */
-export function desligarGoogle(google, token) {
+export function revogarToken(token, buscar) {
+  if (!token || typeof buscar !== 'function') return false;
   try {
-    const oauth2 = google?.accounts?.oauth2;
-    if (token && typeof oauth2?.revoke === 'function') oauth2.revoke(token, () => {});
-  } catch { /* sem GIS ou sem rede: sai do mesmo jeito */ }
+    const p = buscar(URL_REVOGAR, {
+      method: 'POST', mode: 'no-cors', credentials: 'omit', keepalive: true,
+      body: new URLSearchParams({ token }),
+    });
+    if (p && typeof p.catch === 'function') p.catch(() => {});
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function fetchDaJanela() {
+  try { return typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : null; } catch { return null; }
+}
+
+/**
+ * Desliga a conta no Google sem esperar resposta: revoga o token (pelo fetch; sem fetch, pelo GIS,
+ * se carregado) e desliga a seleção automática. GIS ausente, que lança ou sem rede não impede nada.
+ */
+export function desligarGoogle(google, token, buscar = fetchDaJanela()) {
+  let revogou = false;
+  try { revogou = revogarToken(token, buscar); } catch { /* segue */ }
+  if (!revogou) {
+    try {
+      const oauth2 = google?.accounts?.oauth2;
+      if (token && typeof oauth2?.revoke === 'function') oauth2.revoke(token, () => {});
+    } catch { /* sem GIS ou sem rede: sai do mesmo jeito */ }
+  }
   try {
     const id = google?.accounts?.id;
     if (typeof id?.disableAutoSelect === 'function') id.disableAutoSelect();
@@ -114,12 +214,16 @@ export function emailAtual() {
   return lerSessao()?.email || '';
 }
 
-/** Token válido agora (ou null). */
+/** Token válido agora (ou null, também com a sessão guardada vencida). */
 export function getToken() {
   const s = lerSessao();
   return s && s.expires_at > Date.now() + 10_000 ? s.access_token : null;
 }
 
+/**
+ * Há sessão guardada (mesmo com o token vencido: com o app aberto, a renovação cuida dele)?
+ * Para ABRIR o app valem estadoDeAbertura() e retomarSessao(), que exigem o token válido.
+ */
 export function estaLogado() {
   return !!lerSessao();
 }
@@ -258,10 +362,28 @@ async function aceitarToken(resp, emailEsperado, ger = geracao) {
   return sessao;
 }
 
-/** Login interativo (botão "Entrar com Google"). */
-export async function entrar() {
+/**
+ * Login interativo (botão "Entrar com Google"). `outraConta` ("Usar outra conta", na entrada com a
+ * sessão vencida): sempre a escolha de conta, como no primeiro login depois de sair.
+ */
+export async function entrar({ outraConta = false } = {}) {
   const ger = geracao;
-  const resp = await pedirToken(opcoesDeEntrada(emailLembrado(), depoisDeSair), ger);
+  const opcoes = outraConta ? { prompt: 'select_account' } : opcoesDeEntrada(emailLembrado(), depoisDeSair);
+  const resp = await pedirToken(opcoes, ger);
+  const sessao = await aceitarToken(resp, '', ger);
+  depoisDeSair = false;
+  return sessao;
+}
+
+/**
+ * "Continuar como …" (entrada com a sessão guardada vencida): chamado do toque dela (o popup pode
+ * abrir), com login_hint na conta da sessão. Aceita só as contas de ALLOWED (aceitarToken) e grava a
+ * sessão nova. Se falhar (janela fechada, erro), rejeita com ErroAuth e a sessão vencida continua
+ * guardada: o botão segue valendo.
+ */
+export async function continuar(email = lerSessao()?.email || emailLembrado()) {
+  const ger = geracao;
+  const resp = await pedirToken(opcoesDeEntrada(email, false), ger);
   const sessao = await aceitarToken(resp, '', ger);
   depoisDeSair = false;
   return sessao;
@@ -275,10 +397,15 @@ function agendarRenovacao(s) {
   timerRenovacao = setTimeout(() => { renovar().catch(() => {}); }, espera);
 }
 
-/** Retoma o agendamento após recarregar a página com sessão ainda guardada. */
+/**
+ * Ao abrir o app: com o token guardado ainda válido (além da margem de renovação), reagenda a
+ * renovação e devolve a sessão. Vencido ou quase (estado 'continuar') ou sem sessão: null, sem
+ * agendar nada (a entrada mostra "Continuar como …" ou "Entrar com Google").
+ */
 export function retomarSessao() {
   const s = lerSessao();
-  if (s) agendarRenovacao(s);
+  if (!tokenUtil(s)) return null;
+  agendarRenovacao(s);
   return s;
 }
 
@@ -348,24 +475,35 @@ export async function renovarInterativo() {
 }
 
 /**
- * "Sair": revoga o token e desliga a seleção automática no Google (sem esperar resposta), cancela
- * o timer e qualquer renovação ou pedido de token pendente (rejeitados com o código 'saiu', sem o
- * aviso "sessão expirou") e apaga do sessionStorage e do localStorage as chaves de sessão, conta e
- * dados (ficam o tema e as sessões de envio retomável). O próximo login abre a escolha de conta.
- * Nunca lança.
+ * Primeira metade do "Sair", síncrona e sem o Google: cancela o timer e qualquer renovação ou
+ * pedido de token pendente (rejeitados com o código 'saiu', sem o aviso "sessão expirou") e apaga,
+ * na hora, a sessão (motor.sessao, do localStorage e do sessionStorage) e as outras chaves de conta
+ * (motor.email) e dados dos dois armazenamentos (ficam o tema e as sessões de envio retomável). O próximo login abre a escolha de conta. Devolve o token que estava em uso
+ * (para revogar depois, com desligarGoogleDaJanela) ou null. Nunca lança.
  */
-export function sair() {
+export function encerrarSessao() {
   geracao++;
   depoisDeSair = true;
-  const s = lerSessao();
-  desligarGoogle(googleDaJanela(), s?.access_token);
+  let token = null;
+  try { token = lerSessao()?.access_token || null; } catch { /* sem armazenamento */ }
   limparSessao();
   if (pedidoAtual) {
     const p = pedidoAtual;
     pedidoAtual = null;
     try { p.reject(erroSaiu()); } catch { /* ignorar */ }
   }
-  if (renovacao || renovacaoCtl) falharRenovacao(erroSaiu());
+  if (renovacao || renovacaoCtl) { try { falharRenovacao(erroSaiu()); } catch { /* ignorar */ } }
   limparArmazenamento(armazenamento('sessionStorage'));
   limparArmazenamento(armazenamento('localStorage'));
+  return token;
+}
+
+/** Segunda metade do "Sair": revoga o token e desliga a seleção automática. Nunca lança. */
+export function desligarGoogleDaJanela(token) {
+  try { desligarGoogle(googleDaJanela(), token); } catch { /* sai do mesmo jeito */ }
+}
+
+/** "Sair" completo: encerrarSessao() e, depois, desligarGoogleDaJanela(). Nunca lança. */
+export function sair() {
+  desligarGoogleDaJanela(encerrarSessao());
 }
