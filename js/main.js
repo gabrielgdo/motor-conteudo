@@ -7,7 +7,7 @@ import { estado, rascunho } from './estado.js';
 import { Integra } from './integra.js';
 import { estadoDados } from './dados.js';
 import { aoMudarDados, aoMudarDuracao } from './roteador.js';
-import { ligarAcoes, entrarNoApp, mostrarLogin, pintarBotaoSair, sairDaConta } from './acoes.js';
+import { ligarAcoes, entrarNoApp, mostrarLogin, pintarBotaoSair, pintarEntrada, sairDaConta } from './acoes.js';
 import { Downloads } from './componentes/downloads.js';
 import { aplicarAtualizacao } from './versao.js';
 import { tirarSaida, sessaoSegura } from './saida.js';
@@ -49,7 +49,7 @@ window.addEventListener('unhandledrejection', (e) => {
    procura atualização ao abrir, ao voltar a ficar visível e no pageshow (bfcache), e pergunta a
    versão do SW que a controla. Versão diferente: recarrega sozinha uma vez se não houver trabalho em
    andamento; senão mostra "Nova versão" (tocar recarrega). Regras e anti-laço em js/versao.js. */
-const VERSAO_APP = 'motor-app-v7'; // igual a VERSAO em sw.js (tests/sw.test.mjs confere)
+const VERSAO_APP = 'motor-app-v8'; // igual a VERSAO em sw.js (tests/sw.test.mjs confere)
 
 function avisarNovaVersao() {
   avisoFixo('versao', 'Nova versão do app. Toque para atualizar.', { acao: 'nova-versao', icone: 'atualizar' });
@@ -60,7 +60,7 @@ function avisarNovaVersao() {
 function trabalhoEmAndamento() {
   try {
     if (Downloads.andando.size || Downloads.tudo) return true;
-    if (document.getElementById('botao-entrar')?.disabled) return true; // login do Google em andamento
+    if (document.querySelector('#tela-login button[aria-busy="true"]')) return true; // login do Google em andamento
     if (estado.envio || estado.arquivo) return true;
     if (Object.values(estado.pendentes || {}).some((l) => l?.length)) return true;
     if (['aj-pedido', 'aj-tempo', 'aj-como'].some((k) => String(rascunho[k] || '').trim())) return true;
@@ -120,11 +120,21 @@ function registrarSw() {
   window.addEventListener('pageshow', (e) => { if (e.persisted) procurar(); });
 }
 
-/* ---- Volta do bfcache: depois de sair, nada da conta reaparece ---- */
+/* ---- Volta do bfcache: depois de sair, nada da conta reaparece ----
+   A sessão fica em localStorage (compartilhado entre as abas): temSessao() lê de lá na hora, então
+   um "Sair" nesta aba ou em outra também vale aqui. Na entrada, a porta é pintada de novo pela
+   sessão guardada agora ("Continuar como …" some se ela saiu em outra aba); nunca entra sozinha. */
 window.addEventListener('pageshow', (e) => {
   if (!e.persisted) return;
   if (estado.logada && !Integra.temSessao()) sairDaConta();
-  else if (!estado.logada) document.documentElement.classList.remove('retomando');
+  else if (!estado.logada) { document.documentElement.classList.remove('retomando'); pintarEntrada(); }
+});
+
+/* ---- "Sair" em outra aba (o evento storage só chega às outras abas): esta sai também ---- */
+window.addEventListener('storage', (e) => {
+  if (e.key !== null && e.key !== 'motor.sessao') return; // null = clear()
+  if (estado.logada && !Integra.temSessao()) sairDaConta();
+  else if (!estado.logada) pintarEntrada();
 });
 
 /* ---- Começo ---- */
@@ -139,11 +149,14 @@ Players.ligar();
 ligarGrafico();
 ligarLuz();
 
-// Acabou de sair (a página recarregou pelo "Sair"): fica na entrada, mesmo que algo tenha sobrado.
-// Senão, sessão válida em sessionStorage: entra direto, sem esperar o script do GIS.
+// Acabou de sair (a página recarregou pelo "Sair"): fica na entrada normal, mesmo que algo tenha
+// sobrado (Integra.encerrar apaga de novo). Senão, pela sessão guardada em localStorage:
+//  - token válido: entra direto, sem login e sem esperar o script do GIS (renovação reagendada);
+//  - token vencido: a entrada com "Continuar como …" e "Usar outra conta" (mostrarLogin pinta);
+//  - sem sessão: a entrada normal, "Entrar com Google".
 const saida = tirarSaida(sessaoSegura());
 if (saida) { Integra.encerrar(); mostrarLogin(saida.mensagem); }
-else if (Integra.retomar()) entrarNoApp();
+else if (Integra.abertura().estado === 'entrar' && Integra.retomar()) entrarNoApp();
 else mostrarLogin();
 
 registrarSw();

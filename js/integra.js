@@ -20,7 +20,20 @@ export const Integra = {
      Devolve {access_token, expires_at, email} ou lança ErroAuth com a mensagem para a tela. */
   entrar: () => auth.entrar(),
 
-  /** Sessão guardada em sessionStorage (sem precisar do script do GIS) e reagenda a renovação. */
+  /** "Usar outra conta" (entrada com a sessão vencida): login com a escolha de conta. */
+  entrarComOutraConta: () => auth.entrar({ outraConta: true }),
+
+  /** "Continuar como …": um toque, com login_hint na conta da sessão vencida (só contas permitidas). */
+  continuar: (email) => auth.continuar(email || undefined),
+
+  /** Abertura do app: { estado: 'entrar' | 'continuar' | 'normal', email } pela sessão guardada. */
+  abertura: () => auth.estadoDeAbertura(),
+
+  /** Texto do botão "Continuar como <nome>" (texto puro: vai por textContent). */
+  rotuloContinuar: (email) => auth.rotuloContinuar(email),
+
+  /** Sessão guardada em localStorage com o token ainda válido (sem precisar do script do GIS):
+      reagenda a renovação e devolve a sessão; vencida ou ausente, null. */
   retomar: () => auth.retomarSessao(),
 
   /** Carrega o script do GIS antes do clique (o popup precisa sair do gesto, sem esperas). */
@@ -48,7 +61,8 @@ export const Integra = {
 
   email: () => auth.emailAtual(),
 
-  /** Há sessão guardada? (depois de sair, não: nada relê o Drive nem renova sozinho) */
+  /** Há sessão guardada, mesmo com o token vencido? (depois de sair, não: nada relê o Drive nem
+      renova sozinho; em localStorage, vale também para o "Sair" feito em outra aba) */
   temSessao: () => auth.estaLogado(),
 
   /* ----------------------------------------------------------- leitura */

@@ -583,6 +583,15 @@ dialog[open]{animation:abre .22s cubic-bezier(.2,.7,.2,1)}
 /* Login: mensagem de erro (vazia = escondida), estado "Entrando…" e link discreto para o Sobre */
 .login-msg:empty{display:none}
 .google[disabled]{opacity:.72;cursor:progress;filter:none}
+/* Sessão guardada com o token vencido: "Continuar como …" com o visual do "Entrar com Google" (nome
+   longo corta com reticências) e "Usar outra conta", fantasma e mais quieto, com ≥44px de toque
+   também na densidade de 80% (≥1080px, onde 2,625rem = 34px). */
+.google svg{flex-shrink:0}
+#botao-continuar{padding:0 1.25rem}
+#botao-continuar span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.login-porta .outra-conta{min-height:max(2.625rem,44px);color:var(--tinta-2);font-size:.90625rem}
+.login-porta .outra-conta:hover{color:var(--tinta)}
+.login-porta .outra-conta[disabled]{opacity:.72;cursor:progress}
 .discreto{align-self:flex-start;background:none;border:0;padding:.25rem 0;font-size:.875rem;font-weight:600;color:var(--tinta-2);text-decoration:underline;text-underline-offset:.1875rem}
 .discreto:hover{color:var(--tinta)}
 /* Sair: botão redondo na ilha, ao lado do tema, em todas as telas e larguras. Para caber de 360 a

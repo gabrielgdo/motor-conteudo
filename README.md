@@ -25,7 +25,7 @@ js/
   main.js               início: escutas, tema, sessão retomada ou login, service worker
   config.js             client_id, escopos, contas, pastas, planilha, regras (CONFIG, nomeDe)
   integra.js            o ÚNICO módulo que fala com o mundo externo (usa auth/drive/sheet)
-  auth.js               GIS, sessão em sessionStorage, renovação silenciosa, limpeza ao sair
+  auth.js               GIS, sessão em localStorage, estado da abertura, renovação silenciosa, limpeza ao sair
   drive.js              Drive API v3 (listagens com cache, textos, blobs)
   sheet.js              planilha Radar: "data do post" (nativa ou .xlsx), só leitura nesta etapa
   model.js              listagens do Drive → projetos (puro)
@@ -69,6 +69,13 @@ Rotas: `#/inicio #/pautas #/roteiros #/roteiros/<id> #/videos #/videos/<id> #/en
   do Google Drive com o nome `<id>.<extensão>`.
 - **Prontos**: um cartão por pacote de 5-Prontos; copiar a legenda, baixar cada arquivo ou todos.
 - **Pautas** e **Resultados**: "em breve", sem dado falso.
+- **Sessão que fica**: a sessão (`motor.sessao`: token, validade, e-mail) fica em localStorage, então
+  fechar e reabrir o app (também o instalado no iPhone) não pede login enquanto o token vale (com
+  folga de 2 min): o app abre direto e a renovação é reagendada. Com o token vencido, a entrada
+  mostra, no lugar do "Entrar com Google", "Continuar como <nome>" (um toque, `login_hint` na mesma
+  conta, só contas permitidas) e "Usar outra conta" (escolha de conta). A sessão antiga em
+  sessionStorage (até a v7) passa sozinha para o localStorage. Um "Sair" em outra aba também tira
+  esta (evento `storage`).
 - **Sair da conta**: botão redondo na ilha, ao lado do tema, em todas as telas e larguras (no
   celular, abaixo de 720px, a busca da ilha vira só o ícone e, abaixo de 480px, a marca mostra só
   "Motor", para caber de 360 a 430px). Também na busca rápida. Sempre com a confirmação "Sair da
@@ -82,7 +89,7 @@ Rotas: `#/inicio #/pautas #/roteiros #/roteiros/<id> #/videos #/videos/<id> #/en
   fim a página recarrega no endereço sem rota (`location.replace`), com a marca `motor.saiu` em
   sessionStorage, para nada da conta ficar em memória nem no bfcache do iPhone e nada entrar
   sozinho. O app não usa IndexedDB. O próximo "Entrar com Google" abre a escolha de conta
-  (`prompt: 'select_account'`, sem `login_hint`).
+  (`prompt: 'select_account'`, sem `login_hint`), nunca o "Continuar como".
 - **Nova versão**: ao abrir, ao voltar a ficar visível e no `pageshow` do bfcache (o app instalado
   no iPhone volta da memória sem recarregar), a página procura um `sw.js` novo e pergunta a versão
   do SW que a controla. Versão diferente: recarrega sozinha uma vez se não houver trabalho em

@@ -63,6 +63,46 @@ export function entrarNoApp() {
   carregar();
 }
 
+/** Botões de login da entrada (Entrar com Google, Continuar como …, Usar outra conta). */
+const botoesDeEntrada = () => ['#botao-entrar', '#botao-continuar', '#botao-outra-conta'].map((s) => $(s)).filter(Boolean);
+
+/** E-mail do "Continuar como …" pintado agora ('' = entrada normal). Fica em memória: se um pedido
+    falhar e a sessão vencida sumir do armazenamento, o botão continua valendo até recarregar. */
+let emailDaContinuacao = '';
+
+/**
+ * Pinta a porta da entrada pela sessão guardada (Integra.abertura): com a sessão vencida, no lugar
+ * do "Entrar com Google", "Continuar como <nome>" e "Usar outra conta"; sem sessão (ou depois de
+ * sair), a entrada normal. Nunca entra no app sozinha. Com um login em andamento, não mexe em nada.
+ */
+export function pintarEntrada() {
+  const [entrar, continuar, outra] = ['#botao-entrar', '#botao-continuar', '#botao-outra-conta'].map((s) => $(s));
+  if (!entrar || !continuar || !outra) return;
+  if (botoesDeEntrada().some((b) => b.disabled)) return;
+  let abertura = { estado: 'normal', email: '' };
+  try { abertura = Integra.abertura(); } catch { /* sem armazenamento: entrada normal */ }
+  emailDaContinuacao = abertura.estado === 'continuar' ? abertura.email : '';
+  const instrucao = $('#login-instrucao');
+  if (instrucao) {
+    instrucao.dataset.normal ??= instrucao.textContent;
+    instrucao.textContent = emailDaContinuacao
+      ? 'A sessão terminou. Continue com a mesma conta Google ou entre com outra.'
+      : instrucao.dataset.normal;
+  }
+  if (emailDaContinuacao) {
+    $('#botao-continuar-texto').textContent = Integra.rotuloContinuar(emailDaContinuacao); // texto puro, sem HTML
+    continuar.title = emailDaContinuacao;
+  } else {
+    continuar.removeAttribute('title');
+  }
+  entrar.hidden = !!emailDaContinuacao;
+  continuar.hidden = !emailDaContinuacao;
+  outra.hidden = !emailDaContinuacao;
+}
+
+/** O botão principal visível da entrada (para o foco). */
+const botaoPrincipalDaEntrada = () => ($('#botao-continuar') && !$('#botao-continuar').hidden ? $('#botao-continuar') : $('#botao-entrar'));
+
 export function mostrarLogin(mensagem = '', { preparar = true } = {}) {
   estado.logada = false;
   document.documentElement.classList.remove('retomando');
@@ -70,6 +110,7 @@ export function mostrarLogin(mensagem = '', { preparar = true } = {}) {
   $('#tela-login').hidden = false;
   document.body.classList.add('entrada');
   document.title = 'Motor de Conteúdo';
+  pintarEntrada();
   mensagemLogin(mensagem);
   // Carrega o GIS antes do clique: assim o popup do Google sai direto do toque e não é bloqueado.
   if (preparar) Integra.prepararLogin().catch(() => { /* o erro aparece se ela tentar entrar */ });
@@ -104,36 +145,51 @@ export function sairDaConta(mensagem = '') {
       () => document.querySelectorAll('#avisos .aviso').forEach((a) => a.remove()),
       () => { for (const sel of ['#conteudo', '#nav-topo', '#nav-doca']) { const el = $(sel); if (el) el.innerHTML = ''; } },
       () => pintarBotaoSair(),
-      () => $('#botao-entrar')?.focus({ preventScroll: true }),
+      () => botaoPrincipalDaEntrada()?.focus({ preventScroll: true }),
     ],
     desligar: (token) => Integra.desligarGoogle(token),
     recarregar: () => location.replace(urlDaEntrada(location)),
   });
 }
 
+/**
+ * Um login da entrada pelo botão `b` (`textoEl`: onde vai o "Entrando…"). Enquanto o Google
+ * responde, os três botões ficam desligados (um pedido por vez). Se falhar, a mensagem aparece no
+ * estilo de sempre e os botões voltam como estavam, todos usáveis.
+ */
+async function loginDaEntrada(b, textoEl, pedir) {
+  if (!b || botoesDeEntrada().some((x) => x.disabled)) return;
+  mensagemLogin('');
+  if (navigator.onLine === false) { mensagemLogin('Sem internet. Conecte-se e tente de novo.'); return; }
+  const botoes = botoesDeEntrada();
+  const texto = textoEl || b;
+  const antes = texto.textContent;
+  for (const x of botoes) x.disabled = true;
+  b.setAttribute('aria-busy', 'true');
+  texto.textContent = 'Entrando…';
+  try {
+    await pedir();
+    entrarNoApp();
+  } catch (e) {
+    if (e?.codigo !== 'substituido' && e?.codigo !== 'saiu') mensagemLogin(textoDoErro(e));
+  } finally {
+    for (const x of botoes) x.disabled = false;
+    b.removeAttribute('aria-busy');
+    texto.textContent = antes;
+  }
+}
+
 /* ---- As ações ---- */
 
 export const ACOES = {
   /* -- geral -- */
-  async entrar() {
-    const b = $('#botao-entrar');
-    if (!b || b.disabled) return;
-    mensagemLogin('');
-    if (navigator.onLine === false) { mensagemLogin('Sem internet. Conecte-se e tente de novo.'); return; }
-    b.disabled = true;
-    b.setAttribute('aria-busy', 'true');
-    $('#botao-entrar-texto').textContent = 'Entrando…';
-    try {
-      await Integra.entrar();
-      entrarNoApp();
-    } catch (e) {
-      if (e?.codigo !== 'substituido' && e?.codigo !== 'saiu') mensagemLogin(textoDoErro(e));
-    } finally {
-      b.disabled = false;
-      b.removeAttribute('aria-busy');
-      $('#botao-entrar-texto').textContent = 'Entrar com Google';
-    }
+  entrar() { return loginDaEntrada($('#botao-entrar'), $('#botao-entrar-texto'), () => Integra.entrar()); },
+  // Sessão guardada vencida: um toque com a mesma conta (login_hint) ou a escolha de conta.
+  continuar() {
+    const email = emailDaContinuacao;
+    return loginDaEntrada($('#botao-continuar'), $('#botao-continuar-texto'), () => Integra.continuar(email));
   },
+  'outra-conta'() { return loginDaEntrada($('#botao-outra-conta'), null, () => Integra.entrarComOutraConta()); },
   sair() { if (estado.logada) abrirJanela(janelaSair(Integra.email())); },
   'confirmar-sair'() { sairDaConta(); },
   async 'renovar-sessao'(el) {
