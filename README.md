@@ -27,7 +27,12 @@ js/
   integra.js            o ÚNICO módulo que fala com o mundo externo (usa auth/drive/sheet)
   auth.js               GIS, sessão em sessionStorage, renovação silenciosa, limpeza ao sair
   drive.js              Drive API v3 (listagens com cache, textos, blobs)
-  sheet.js              planilha Radar: "data do post" (nativa ou .xlsx), só leitura nesta etapa
+  sheet.js              planilha Radar: "data do post" (nativa ou .xlsx); abas Seleção, Decisões e
+                        Execuções (só nativa): lerAba, acrescentarLinhas, atualizarCelula
+  controle.js           controle manual (puro): aba Execuções, catálogo fechado de rotinas, trava,
+                        janela de proteção, tempos, ids de execução e de lote, permissões
+  selecao.js            pautas (puro): abas Seleção e Decisões, motivos, planejarDecisoes
+  revisao.js            decisão da prévia em 4-Revisao (puro): planejarArquivoRevisao
   model.js              listagens do Drive → projetos (puro)
   parse.js              nomes de arquivo, YAML, datas no fuso de São Paulo, pedido de ajustes (puro)
   roteiro.js            leitor de roteiro (porta do roteiro.py do motor, puro)
@@ -108,7 +113,9 @@ Cobrem o leitor de roteiro (paridade com o `roteiro.py`), as regras de etapa, o 
 projeto + roteiro → objeto das telas (`montarRoteiro`), as funções puras de `js/parse.js` e
 `js/model.js` (nomes de arquivo, YAML, datas, pedido de ajustes, horários do pacote), as partes
 puras do `js/upload.js`, o "Sair" (`tests/sair.test.mjs`: chaves apagadas e mantidas, GIS ausente
-ou com erro, renovação cancelada, escolha de conta no login seguinte) e o PWA (`tests/sw.test.mjs`: todo arquivo da lista do `sw.js` existe,
+ou com erro, renovação cancelada, escolha de conta no login seguinte), o controle manual
+(`tests/controle.test.mjs`, `selecao.test.mjs`, `revisao.test.mjs`: Execuções, trava, janela de
+proteção, tempos, lotes, permissões, decisões de pauta e de prévia, ponte desligada) e o PWA (`tests/sw.test.mjs`: todo arquivo da lista do `sw.js` existe,
 todo módulo do app está nela, versão do cache igual à do `js/main.js`, manifest, nenhum caminho
 para fora da raiz).
 

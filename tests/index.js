@@ -9,3 +9,6 @@ import('./dados.test.mjs');
 import('./parte2.test.mjs');
 import('./sw.test.mjs');
 import('./sair.test.mjs');
+import('./controle.test.mjs');
+import('./selecao.test.mjs');
+import('./revisao.test.mjs');

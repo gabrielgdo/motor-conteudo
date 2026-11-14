@@ -1,14 +1,99 @@
 // INTEGRAÇÕES: o ÚNICO módulo que fala com o mundo externo (Google Identity Services, Drive,
-// Sheets). Só ele importa auth.js, drive.js e sheet.js; o resto do app chama Integra.
-// As funções de escrita (criarArquivo, enviarVideo, planilha.acrescentar, ponte.avisar) chegam
-// na etapa 2: por enquanto lançam Error('Disponível na etapa 2') e trazem, no comentário, a
-// chamada real que entra no lugar (procure "INTEGRAÇÃO:").
+// Sheets, ponte no Apps Script). Só ele importa auth.js, drive.js e sheet.js; o resto do app chama
+// Integra.
+//
+// Leitura: listagens do Drive, textos e blobs, "data do post", abas da planilha (planilha.ler,
+// planilha.lerPautas, execucoes.ler).
+// Escrita (controle manual):
+//   planilha.acrescentar / atualizarCelula   linhas e células da planilha nativa (RAW)
+//   planilha.gravarDecisoes                  decisões de pauta: relê Seleção e Decisões na hora,
+//                                            planeja com selecao.js e só então grava
+//   drive.criarArquivo                       arquivo de texto numa pasta do motor
+//   drive.gravarDecisaoPrevia                aprovado.md / ajustes vN.md em 4-Revisao, conferindo
+//                                            os nomes imediatamente antes (revisao.js)
+//   ponte.disparar / ponte.decidirRoteiro    atrás de FLAGS.ponte e PONTE_URL (config.js);
+//                                            desligada, erro com codigo 'ponte-desligada'
+// Só o envio do vídeo (drive.enviarVideo) segue para a etapa 2: lança Error('Disponível na
+// etapa 2') e traz, no comentário, a chamada real (procure "INTEGRAÇÃO:").
+//
+// As regras puras (controle.js, selecao.js, revisao.js) são carregadas sob demanda (import()),
+// só quando uma destas funções roda; elas entram na lista do service worker na parte B.
 
 import * as auth from './auth.js';
 import * as drive from './drive.js';
 import * as sheet from './sheet.js';
+import { CONFIG, FLAGS, PONTE_URL, REVISAO_FOLDER, PASTAS } from './config.js';
+import { idValido } from './parse.js';
 
 const naEtapa2 = () => { throw new Error('Disponível na etapa 2'); };
+
+/** Erro com `codigo` para a tela decidir o que mostrar ('ponte-desligada', 'sem-permissao'…). */
+export class ErroIntegra extends Error {
+  constructor(mensagem, codigo = '') {
+    super(mensagem);
+    this.codigo = codigo;
+  }
+}
+
+export const MENSAGEM_PONTE_DESLIGADA = 'O disparo pelo app ainda não está ligado.';
+
+const regrasControle = () => import('./controle.js');
+const regrasSelecao = () => import('./selecao.js');
+const regrasRevisao = () => import('./revisao.js');
+
+/** Nome da aba: chave de CONFIG.abas ('selecao', 'decisoes', 'execucoes'…) ou o próprio nome. */
+const nomeDaAba = (aba) => CONFIG.abas[aba] || String(aba || '');
+
+/* ---------------------------------------------------------------- ponte */
+
+function exigirPonte() {
+  if (!FLAGS.ponte || !/^https:\/\/\S+$/.test(String(PONTE_URL || ''))) {
+    throw new ErroIntegra(MENSAGEM_PONTE_DESLIGADA, 'ponte-desligada');
+  }
+}
+
+const texto = (v, max) => String(v ?? '').trim().slice(0, max);
+
+/** Texto livre só como DADO: chaves simples, valores texto/número/booleano, tamanho limitado. */
+function dadosLimpos(dados) {
+  const out = {};
+  if (!dados || typeof dados !== 'object' || Array.isArray(dados)) return out;
+  for (const [k, v] of Object.entries(dados)) {
+    if (!/^[a-z][a-z0-9_]{0,39}$/.test(k)) continue;
+    if (typeof v === 'string') out[k] = v.slice(0, 4000);
+    else if (typeof v === 'number' && Number.isFinite(v)) out[k] = v;
+    else if (typeof v === 'boolean') out[k] = v;
+  }
+  return out;
+}
+
+/**
+ * POST na ponte (app da web do Apps Script). Corpo text/plain com JSON (sem pré-verificação de
+ * CORS); o access_token vai só no corpo, nunca na URL nem em log. A ponte confere o token no
+ * Google, a lista de e-mails, a rotina, a trava e a chave_idem, e responde {ok, ...}.
+ */
+async function chamarPonte(corpo) {
+  exigirPonte();
+  const token = auth.getToken() || await auth.renovar();
+  let r;
+  try {
+    r = await fetch(PONTE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ ...corpo, access_token: token }),
+      redirect: 'follow',
+      credentials: 'omit',
+      cache: 'no-store',
+    });
+  } catch {
+    throw new ErroIntegra('Sem conexão com a ponte (ou ela não respondeu). Tente de novo.', 'sem-conexao');
+  }
+  let j = null;
+  try { j = await r.json(); } catch { j = null; }
+  if (!r.ok || !j || typeof j !== 'object') throw new ErroIntegra(`A ponte não respondeu como esperado (${r.status}).`, 'resposta-invalida');
+  if (j.ok === false) throw new ErroIntegra(texto(j.mensagem, 500) || 'A ponte recusou o pedido.', texto(j.codigo, 60) || 'recusado');
+  return j;
+}
 
 export const Integra = {
   /* ------------------------------------------------------------ login */
@@ -35,6 +120,7 @@ export const Integra = {
     auth.sair();
     drive.esquecerTudo();
     sheet.invalidarPostados();
+    sheet.invalidarAbas();
   },
 
   email: () => auth.emailAtual(),
@@ -50,10 +136,11 @@ export const Integra = {
   /** Map id → 'AAAA-MM-DD' dos ids com "data do post" na aba Desempenho da planilha Radar (só leitura). */
   postados: (forcar = false) => sheet.lerPostados(forcar),
 
-  /** Esquece as listagens e os postados guardados (ação "Atualizar"). */
+  /** Esquece as listagens, os postados e as abas guardadas (ação "Atualizar"). */
   invalidar() {
     drive.invalidarCache();
     sheet.invalidarPostados();
+    sheet.invalidarAbas();
   },
 
   /** Texto de um arquivo do Drive (cache por id + modifiedTime). */
@@ -72,16 +159,47 @@ export const Integra = {
   /** Pasta do motor já lida nesta sessão ('brutos', 'prontos'…) como arquivo do Drive, ou null. */
   pasta: (chave) => drive.pastaConhecida(chave),
 
-  /* ----------------------------------------------------- escrita (etapa 2) */
+  /* -------------------------------------------------------------- escrita */
 
   drive: {
-    /* INTEGRAÇÃO: criar arquivo de texto no Drive.
-       POST https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart
-       metadados: { name: nome, parents: [idDaPasta], mimeType: 'text/markdown' } + conteúdo.
-       Precisa ser arquivo de texto (não Google Doc), porque o motor lê pelo nome e pela extensão.
-       Já existe pronto em drive.js: criarArquivoTexto(nome, conteudo, pastaId); os ids das
-       pastas vêm de drive.pastas(). */
-    criarArquivo(pasta, nome, conteudo) { naEtapa2(pasta, nome, conteudo); },
+    /** Cria um arquivo de texto (text/markdown) numa pasta do motor: 'revisao' (4-Revisao,
+        REVISAO_FOLDER) ou uma chave de PASTAS; nunca um id livre. Precisa ser arquivo de texto
+        (não Google Doc), porque o motor lê pelo nome e pela extensão. → {id, name}. */
+    async criarArquivo(pasta, nome, conteudo) {
+      let pastaId = null;
+      if (pasta === 'revisao') pastaId = REVISAO_FOLDER;
+      else if (Object.prototype.hasOwnProperty.call(PASTAS, pasta)) pastaId = (await drive.pastas())[pasta];
+      if (!pastaId) throw new ErroIntegra(`Pasta desconhecida: ${pasta}`, 'pasta-desconhecida');
+      const n = String(nome || '').trim();
+      if (!n || /[\\/]/.test(n)) throw new ErroIntegra('Nome de arquivo inválido.', 'nome-invalido');
+      try {
+        return await drive.criarArquivoTexto(n, String(conteudo ?? ''), pastaId);
+      } finally {
+        drive.invalidarCache();
+      }
+    },
+
+    /** Arquivos de 4-Revisao lidos agora, sem cache (para conferir os nomes antes de gravar).
+        Só com `forcar = false` usa a listagem guardada (até 60 s). */
+    async listarRevisao(forcar = true) {
+      if (forcar === false) return (await drive.carregarListagens()).revisao;
+      return drive.listar(REVISAO_FOLDER);
+    },
+
+    /** Decisão da prévia (aprovar | ajustar) → `<id> aprovado.md` ou `<id> ajustes vN.md` em
+        4-Revisao. Confere os nomes imediatamente antes (vale a primeira decisão gravada; o Drive
+        aceita nomes repetidos). → {ok:true, arquivo, nome} | {ok:false, motivo, mensagem}. */
+    async gravarDecisaoPrevia({ id, decisao, versao, ajustes = [], observacoes = '' } = {}) {
+      if (!FLAGS.revisaoPeloApp) throw new ErroIntegra('Decidir a prévia pelo app está desligado.', 'desligado');
+      const { planejarArquivoRevisao } = await regrasRevisao();
+      const arquivosExistentes = await Integra.drive.listarRevisao(true);
+      const plano = planejarArquivoRevisao({
+        id, decisao, versao, ajustes, observacoes, arquivosExistentes, email: auth.emailAtual(), agora: new Date(),
+      });
+      if (!plano.ok) return plano;
+      const arquivo = await Integra.drive.criarArquivo('revisao', plano.nome, plano.conteudo);
+      return { ok: true, arquivo, nome: plano.nome };
+    },
 
     /* INTEGRAÇÃO: envio retomável do vídeo, em pedaços (js/upload.js faz isto, ainda sem ser importado).
        1) POST https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable
@@ -94,17 +212,114 @@ export const Integra = {
   },
 
   planilha: {
-    /* INTEGRAÇÃO: acrescentar linhas na planilha Radar.
-       POST https://sheets.googleapis.com/v4/spreadsheets/{id}/values/{aba}:append?valueInputOption=USER_ENTERED
-       (a "data do post" já tem caminho pronto em sheet.js: marcarPostado(id, data), nativa ou .xlsx). */
-    acrescentar(aba, linhas) { naEtapa2(aba, linhas); },
+    /** Aba da planilha Radar (nativa) → {aba, linhas, cabecalho, linhaCabecalho}. `aba`: chave de
+        CONFIG.abas ou o nome. Aba que não existe: erro com codigo 'aba-ausente' ("A aba X ainda não
+        existe na planilha."); planilha .xlsx: codigo 'xlsx'. */
+    ler: (aba, forcar = false) => sheet.lerAba(nomeDaAba(aba), { forcar }),
+
+    /** Acrescenta linhas (já na ordem do cabeçalho real) no fim da aba (values.append, RAW). */
+    acrescentar: (aba, linhas) => sheet.acrescentarLinhas(nomeDaAba(aba), linhas),
+
+    /** Grava uma célula: `linha` 1-based, `coluna` índice 0-based ou letra (values.update, RAW). */
+    atualizarCelula: (aba, linha, coluna, valor) => sheet.atualizarCelula(nomeDaAba(aba), linha, coluna, valor),
+
+    /** Seleção e Decisões lidas e interpretadas → {selecao, decisoes, colunasProntas}. */
+    async lerPautas(forcar = false) {
+      const S = await regrasSelecao();
+      const [sel, dec] = await Promise.all([
+        sheet.lerAba(nomeDaAba('selecao'), { forcar }), sheet.lerAba(nomeDaAba('decisoes'), { forcar }),
+      ]);
+      const decisoes = S.lerDecisoes(dec.linhas);
+      return { selecao: S.lerSelecao(sel.linhas), decisoes, colunasProntas: S.colunasDecisoesProntas(decisoes.cabecalho) };
+    },
+
+    /** Grava as decisões de pauta feitas no app: relê Seleção e Decisões na hora, planeja
+        (selecao.planejarDecisoes: ids T fora, idempotência, primeira decisão vale, mudança de ideia
+        só antes de "enviada ao Roteirista", só a conta da Robertta), acrescenta as linhas em
+        Decisões e atualiza o status na Seleção (linha achada por id_pauta). Sem as colunas novas
+        em Decisões, nada é gravado. `decisoesVistas`: Decisões como a tela mostrou.
+        → o plano ({ok, erro?, mensagem?, resultados, ...}) com `gravado` (linhas acrescentadas). */
+    async gravarDecisoes({ pedidos, decisoesVistas = [] } = {}) {
+      if (!FLAGS.decisoesPeloApp) throw new ErroIntegra('Gravar decisões de pauta pelo app está desligado.', 'desligado');
+      const S = await regrasSelecao();
+      const [sel, dec] = await Promise.all([
+        sheet.lerAba(nomeDaAba('selecao'), { forcar: true }), sheet.lerAba(nomeDaAba('decisoes'), { forcar: true }),
+      ]);
+      const plano = S.planejarDecisoes({
+        selecao: S.lerSelecao(sel.linhas),
+        decisoesVistas,
+        decisoesAgora: S.lerDecisoes(dec.linhas),
+        pedidos,
+        email: auth.emailAtual(),
+        agora: new Date(),
+      });
+      if (!plano.ok || !plano.linhas.length) return { ...plano, gravado: 0, falhasSelecao: [] };
+      await sheet.acrescentarLinhas(dec.aba, plano.linhas);
+      // Decisões é a fonte do histórico; o status na Seleção acompanha. Se ele falhar, a decisão
+      // já está gravada e o estado da pauta segue a última linha de Decisões.
+      const falhasSelecao = [];
+      for (const a of plano.atualizacoes) {
+        try {
+          await sheet.atualizarCelula(sel.aba, a.linha, a.coluna, a.valor);
+        } catch (erro) {
+          falhasSelecao.push({ id_pauta: a.id_pauta, erro });
+        }
+      }
+      return { ...plano, gravado: plano.linhas.length, falhasSelecao };
+    },
+  },
+
+  execucoes: {
+    /** Aba Execuções → {execucoes, cabecalho, abaAusente}. Sem a aba: lista vazia e abaAusente: true. */
+    async ler(forcar = false) {
+      const C = await regrasControle();
+      try {
+        const aba = await sheet.lerAba(nomeDaAba('execucoes'), { forcar });
+        const t = C.lerExecucoes(aba.linhas);
+        return { execucoes: t.execucoes, cabecalho: t.cabecalho, abaAusente: false };
+      } catch (e) {
+        if (e?.codigo === 'aba-ausente') return { execucoes: [], cabecalho: [], abaAusente: true };
+        throw e;
+      }
+    },
   },
 
   ponte: {
-    /* INTEGRAÇÃO: ponte no Google Apps Script (função doPost publicada como app da web).
-       A página manda { bot, corpo }; a ponte confere quem chamou e repassa ao webhook da rotina
-       do bot, com a chave guardada nas propriedades do script. As chaves nunca ficam nesta página.
-       Os nomes dos eventos para o Radar e o Roteirista são uma proposta: combine com cada bot. */
-    avisar(bot, corpo) { naEtapa2(bot, corpo); },
+    /** Pede uma rodada a um bot pela ponte (só rotinas disparáveis da lista fechada). Texto livre
+        vai em `dados`, como dado. → a resposta da ponte ({ok, id_execucao, ...}). */
+    async disparar({ rotina, id_alvo = '', id_lote = '', chave_idem, dados = {} } = {}) {
+      exigirPonte();
+      const C = await regrasControle();
+      if (!C.rotinaConhecida(rotina) || !C.ROTINAS[rotina].disparavel) throw new ErroIntegra('Rotina fora da lista do app.', 'rotina-desconhecida');
+      if (rotina === 'roteirista-decisao') throw new ErroIntegra('A decisão de roteiro vai por ponte.decidirRoteiro.', 'rotina-desconhecida');
+      if (!C.podeDisparar(auth.emailAtual())) throw new ErroIntegra('Esta conta não pode disparar rodadas.', 'sem-permissao');
+      const id = texto(id_alvo, 20);
+      if (id && !idValido(id)) throw new ErroIntegra(`Id inválido: ${id}`, 'id-invalido');
+      if (!texto(chave_idem, 80)) throw new ErroIntegra('Falta a chave do pedido.', 'sem-chave');
+      return chamarPonte({
+        acao: 'disparar', rotina, id_alvo: id, id_lote: texto(id_lote, 40), chave_idem: texto(chave_idem, 80), dados: dadosLimpos(dados),
+      });
+    },
+
+    /** Leva ao Roteirista a decisão sobre uma versão do roteiro (aprovar | mudar | recusar). Só a
+        conta da Robertta. → a resposta da ponte. */
+    async decidirRoteiro({ id, versao, decisao, pedido = '', motivo = '', chave_idem } = {}) {
+      exigirPonte();
+      const C = await regrasControle();
+      if (!C.podeDecidir(auth.emailAtual())) throw new ErroIntegra('Só a conta da Robertta decide.', 'sem-permissao');
+      if (!idValido(id)) throw new ErroIntegra(`Id inválido: ${id}`, 'id-invalido');
+      const v = Number(versao);
+      if (!Number.isInteger(v) || v < 1) throw new ErroIntegra(`Versão inválida: ${versao}`, 'versao-invalida');
+      if (!['aprovar', 'mudar', 'recusar'].includes(decisao)) throw new ErroIntegra('A decisão precisa ser aprovar, mudar ou recusar.', 'decisao-invalida');
+      if (decisao === 'mudar' && !String(pedido || '').trim()) throw new ErroIntegra('Diga o que mudar.', 'falta-pedido');
+      if (!texto(chave_idem, 80)) throw new ErroIntegra('Falta a chave do pedido.', 'sem-chave');
+      return chamarPonte({
+        acao: 'decidir-roteiro',
+        rotina: 'roteirista-decisao',
+        id_alvo: id,
+        chave_idem: texto(chave_idem, 80),
+        dados: dadosLimpos({ id, versao: v, decisao, pedido: String(pedido || ''), motivo: String(motivo || '') }),
+      });
+    },
   },
 };

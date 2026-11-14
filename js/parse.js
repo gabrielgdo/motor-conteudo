@@ -367,6 +367,91 @@ export function prefixoSemana(data = new Date(), tz = TIMEZONE) {
   return 'S' + String(semanaIso(data, tz).semana).padStart(2, '0');
 }
 
+const formatadoresSeg = new Map();
+/**
+ * Data → {ano, mes, dia, hora, minuto, segundo, diaSemana} no fuso (números; diaSemana 0 = domingo),
+ * ou null se a data for inválida.
+ */
+export function momentoNoFuso(data, tz = TIMEZONE) {
+  const d = data instanceof Date ? data : new Date(data);
+  if (Number.isNaN(d.getTime())) return null;
+  if (!formatadoresSeg.has(tz)) {
+    formatadoresSeg.set(tz, new Intl.DateTimeFormat('en-GB', {
+      timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+    }));
+  }
+  const p = {};
+  for (const { type, value } of formatadoresSeg.get(tz).formatToParts(d)) p[type] = Number(value);
+  const diaSemana = new Date(Date.UTC(p.year, p.month - 1, p.day)).getUTCDay();
+  return { ano: p.year, mes: p.month, dia: p.day, hora: p.hour, minuto: p.minute, segundo: p.second, diaSemana };
+}
+
+/**
+ * Data e hora "de parede" no fuso → Date. Aceita dia/hora fora do intervalo (dia 32 = dia 1 do mês
+ * seguinte), o que serve para contas de calendário ("amanhã às 7h").
+ */
+export function dataNoFuso(ano, mes, dia, hora = 0, minuto = 0, segundo = 0, tz = TIMEZONE) {
+  const alvo = Date.UTC(ano, mes - 1, dia, hora, minuto, segundo);
+  let t = alvo;
+  for (let i = 0; i < 3; i++) {
+    const p = momentoNoFuso(new Date(t), tz);
+    const visto = Date.UTC(p.ano, p.mes - 1, p.dia, p.hora, p.minuto, p.segundo);
+    if (visto === alvo) break;
+    t += alvo - visto;
+  }
+  return new Date(t);
+}
+
+/**
+ * Célula de data e hora da planilha → Date (ou null se vazia/ilegível). Sem fuso escrito, vale o
+ * horário de São Paulo. Aceita Date, número serial (dias desde 30/12/1899, a fração é a hora),
+ * ISO com Z ou deslocamento, `AAAA-MM-DD[ HH:MM[:SS]]` (também com T) e `dd/mm/aaaa[ HH:MM[:SS]]`.
+ */
+export function lerDataHora(valor, tz = TIMEZONE) {
+  if (valor === null || valor === undefined || valor === '') return null;
+  if (valor instanceof Date) return Number.isNaN(valor.getTime()) ? null : valor;
+  if (typeof valor === 'number') {
+    if (!Number.isFinite(valor) || valor <= 0) return null;
+    const ms = Math.round(valor * 86400000);
+    const dia = new Date(Date.UTC(1899, 11, 30) + ms);
+    return dataNoFuso(dia.getUTCFullYear(), dia.getUTCMonth() + 1, dia.getUTCDate(),
+      dia.getUTCHours(), dia.getUTCMinutes(), dia.getUTCSeconds(), tz);
+  }
+  const s = String(valor).trim();
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})$/i.test(s)) {
+    const d = new Date(s);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+  if (!m) {
+    const b = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:,?\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+    if (b) m = [b[0], b[3], b[2], b[1], b[4], b[5], b[6]];
+  }
+  if (m) {
+    const [ano, mes, dia, h, mi, se] = m.slice(1).map((x) => Number(x || 0));
+    if (mes < 1 || mes > 12 || dia < 1 || dia > 31 || h > 23 || mi > 59 || se > 59) return null;
+    return dataNoFuso(ano, mes, dia, h, mi, se, tz);
+  }
+  if (/^\d+(\.\d+)?$/.test(s)) return lerDataHora(Number(s), tz);
+  return null;
+}
+
+const dois = (n) => String(n).padStart(2, '0');
+
+/** Date → `AAAA-MM-DD HH:MM` no fuso de São Paulo (o formato das colunas de data da planilha). */
+export function dataHoraPlanilha(data, tz = TIMEZONE) {
+  const p = momentoNoFuso(data, tz);
+  return p ? `${p.ano}-${dois(p.mes)}-${dois(p.dia)} ${dois(p.hora)}:${dois(p.minuto)}` : '';
+}
+
+/** Date → hora curta no fuso: "7h03", "10h12", "9h" (minuto zero não aparece). */
+export function horaCurta(data, tz = TIMEZONE) {
+  const p = momentoNoFuso(data, tz);
+  if (!p) return '';
+  return p.minuto ? `${p.hora}h${dois(p.minuto)}` : `${p.hora}h`;
+}
+
 /**
  * Normaliza uma célula "data do post" para `AAAA-MM-DD` (ou '' se vazia/ilegível).
  * Aceita número serial do Excel, Date, `AAAA-MM-DD…`, `dd/mm/aaaa`.
@@ -393,6 +478,100 @@ export function normalizarDataPost(valor) {
 export function normalizarCabecalho(s) {
   return String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '')
     .toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+/** Cabeçalho → chave de coluna: "Id Execução" → "id_execucao", "quem disparou" → "quem_disparou". */
+export function chaveDeCabecalho(s) {
+  return normalizarCabecalho(s).replace(/[\s\-–—]+/g, '_').replace(/[^a-z0-9_]/g, '')
+    .replace(/_+/g, '_').replace(/^_|_$/g, '');
+}
+
+/** Coluna canônica de uma célula de cabeçalho (pelo nome ou por um sinônimo), ou ''. */
+export function colunaDoCabecalho(celula, colunas, sinonimos = {}) {
+  const k = chaveDeCabecalho(celula);
+  if (colunas.includes(k)) return k;
+  const s = sinonimos[k];
+  return s && colunas.includes(s) ? s : '';
+}
+
+/**
+ * Cabeçalho (lista de células) → {coluna canônica: índice 0-based}. O nome canônico vence o
+ * sinônimo; com a mesma coluna repetida, vale a primeira.
+ */
+export function indicesDoCabecalho(cabecalho, colunas, sinonimos = {}) {
+  const exatos = {};
+  const porSinonimo = {};
+  (cabecalho || []).forEach((celula, i) => {
+    const k = chaveDeCabecalho(celula);
+    if (colunas.includes(k)) { if (!(k in exatos)) exatos[k] = i; return; }
+    const s = sinonimos[k];
+    if (s && colunas.includes(s) && !(s in porSinonimo)) porSinonimo[s] = i;
+  });
+  return { ...porSinonimo, ...exatos };
+}
+
+const celulaTexto = (v) => (v === null || v === undefined ? '' : String(v).trim());
+
+/**
+ * Linhas de uma aba (matriz alinhada à célula A1) → tabela lida pelo cabeçalho.
+ * O cabeçalho é a primeira das 10 primeiras linhas com pelo menos `minimo` colunas conhecidas.
+ * Devolve {encontrado, linhaCabecalho (0-based), cabecalho, indices, registros}; cada registro tem
+ * todas as `colunas` (texto sem espaços nas pontas; '' quando a coluna não existe) e `_linha`, o
+ * número da linha na planilha (1-based). Linhas vazias ficam de fora.
+ */
+export function lerTabela(linhas, { colunas, sinonimos = {}, minimo = 2 } = {}) {
+  const ls = Array.isArray(linhas) ? linhas : [];
+  for (let r = 0; r < Math.min(ls.length, 10); r++) {
+    const indices = indicesDoCabecalho(ls[r] || [], colunas, sinonimos);
+    if (Object.keys(indices).length < Math.min(minimo, colunas.length)) continue;
+    const registros = [];
+    for (let i = r + 1; i < ls.length; i++) {
+      const linha = ls[i] || [];
+      if (!linha.some((v) => celulaTexto(v) !== '')) continue;
+      const reg = { _linha: i + 1 };
+      for (const c of colunas) reg[c] = c in indices ? celulaTexto(linha[indices[c]]) : '';
+      registros.push(reg);
+    }
+    return { encontrado: true, linhaCabecalho: r, cabecalho: [...(ls[r] || [])], indices, registros };
+  }
+  return { encontrado: false, linhaCabecalho: -1, cabecalho: [], indices: {}, registros: [] };
+}
+
+/**
+ * Valores {coluna canônica: valor} → linha na ORDEM DO CABEÇALHO REAL da aba. Colunas que o app
+ * não conhece (ou repetidas) ficam vazias; valores sem coluna no cabeçalho ficam de fora.
+ */
+export function linhaNaOrdem(cabecalho, valores, colunas, sinonimos = {}) {
+  const usadas = new Set();
+  return (cabecalho || []).map((celula) => {
+    const c = colunaDoCabecalho(celula, colunas, sinonimos);
+    if (!c || usadas.has(c)) return '';
+    usadas.add(c);
+    const v = valores[c];
+    return v === null || v === undefined ? '' : String(v);
+  });
+}
+
+/** Letra(s) da coluna 0-based: 0 → "A", 26 → "AA". */
+export function letraColuna(c) {
+  let s = '';
+  for (let n = c + 1; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + ((n - 1) % 26)) + s;
+  return s;
+}
+
+/**
+ * `values` de uma resposta do Sheets (values.get) → matriz alinhada à célula A1, usando o
+ * `range` devolvido ("'Seleção'!B3:K20" começa na linha 3, coluna B).
+ */
+export function alinharAoA1(values, range = '') {
+  const r = String(range);
+  const m = r.slice(r.lastIndexOf('!') + 1).match(/^\$?([A-Z]+)?\$?(\d+)?/i);
+  let col = 0;
+  if (m?.[1]) for (const ch of m[1].toUpperCase()) col = col * 26 + (ch.charCodeAt(0) - 64);
+  const desloc = Math.max(0, col - 1);
+  const linha = m?.[2] ? Math.max(0, Number(m[2]) - 1) : 0;
+  const corpo = (values || []).map((l) => (desloc ? [...Array(desloc).fill(''), ...(l || [])] : [...(l || [])]));
+  return [...Array.from({ length: linha }, () => []), ...corpo];
 }
 
 /**

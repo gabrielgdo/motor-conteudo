@@ -28,7 +28,8 @@ com cache `motor-app-vN` (rede primeiro, reserva offline, nunca Drive/Sheets nem
 - Vídeos: aprovar (`<id> aprovado.md`) ou pedir ajustes (`<id> ajustes vN.md`) em 4-Revisao.
 - Enviar gravação: envio retomável em pedaços para 3-Brutos (`js/upload.js`).
 - Prontos: "Postei" na aba Desempenho.
-- Ponte no Apps Script para avisar o Radar e o Roteirista (`Integra.ponte.avisar`).
+- Ponte no Apps Script para disparar o Radar, o Roteirista e o Diretor (`Integra.ponte.disparar`,
+  `Integra.ponte.decidirRoteiro`), atrás de `FLAGS.ponte` e `PONTE_URL` (`js/config.js`).
 
 ## Etapa 3
 - Pautas a partir das abas Seleção e Decisões da planilha Radar.

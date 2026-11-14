@@ -1,17 +1,26 @@
-// Planilha do Radar: ler os ids postados e gravar "data do post" na aba Desempenho.
-// Dois caminhos, escolhidos pelo mimeType do arquivo: Planilha Google nativa (Sheets API v4) ou
-// .xlsx guardado no Drive (SheetJS vendorizado, carregado sob demanda só aqui).
+// Planilha do Radar.
+// - "data do post" na aba Desempenho (ler os ids postados e gravar): dois caminhos, escolhidos pelo
+//   mimeType do arquivo, Planilha Google nativa (Sheets API v4) ou .xlsx guardado no Drive
+//   (SheetJS vendorizado, carregado sob demanda só aqui).
+// - Abas do controle manual (Seleção, Decisões, Execuções): lerAba, acrescentarLinhas e
+//   atualizarCelula, só na planilha nativa (Sheets API v4 values.get/append/update). Leituras com
+//   cache curto, esquecido depois de gravar, no "Atualizar" e ao sair.
 
 import { RADAR_SHEET, SHEETJS_URL, CACHE_MS } from './config.js';
 import { api, metadados, baixarArrayBuffer, substituirConteudo } from './drive.js';
-import { postadosDeLinhas, localizarColunasDesempenho, normalizarCabecalho } from './parse.js';
+import { postadosDeLinhas, localizarColunasDesempenho, normalizarCabecalho, alinharAoA1, letraColuna } from './parse.js';
 
 const MIME_NATIVA = 'application/vnd.google-apps.spreadsheet';
 const MIME_XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const SHEETS = 'https://sheets.googleapis.com/v4/spreadsheets';
 const ABA = 'Desempenho';
 
-export class ErroPlanilha extends Error {}
+export class ErroPlanilha extends Error {
+  constructor(mensagem, codigo = '') {
+    super(mensagem);
+    this.codigo = codigo;
+  }
+}
 
 /* ------------------------------------------------------------ SheetJS */
 
@@ -90,12 +99,6 @@ export function invalidarPostados() {
 
 /* ------------------------------------------------------------ escrita */
 
-function letraColuna(c) {
-  let s = '';
-  for (let n = c + 1; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + ((n - 1) % 26)) + s;
-  return s;
-}
-
 async function marcarNativa(id, data) {
   const linhas = await lerLinhasNativa();
   const cab = localizarColunasDesempenho(linhas);
@@ -165,4 +168,120 @@ export async function marcarPostado(id, data) {
   else if (meta.mimeType === MIME_XLSX) await marcarXlsx(id, data);
   else throw new ErroPlanilha('A planilha do Radar está num formato que o app não reconhece.');
   invalidarPostados();
+}
+
+/* ------------------------------------------- abas do controle manual (nativa) */
+
+const CACHE_ABA_MS = 20 * 1000;
+let mimeCache = null; // promessa do mimeType da planilha (na sessão)
+let titulosCache = null; // {quando, promessa} dos nomes das abas
+const abasCache = new Map(); // nome normalizado da aba → {quando, promessa}
+
+// Depois de gravar: as próximas leituras vão à planilha.
+function esquecerLeituras() {
+  abasCache.clear();
+}
+
+/** Esquece as leituras das abas, os nomes das abas e o formato da planilha ("Atualizar" e sair). */
+export function invalidarAbas() {
+  esquecerLeituras();
+  titulosCache = null;
+  mimeCache = null;
+}
+
+async function exigirNativa() {
+  if (!mimeCache) {
+    mimeCache = metadados(RADAR_SHEET, 'mimeType').then((m) => m.mimeType);
+    mimeCache.catch(() => { mimeCache = null; });
+  }
+  const mime = await mimeCache;
+  if (mime === MIME_XLSX) {
+    throw new ErroPlanilha('A planilha do Radar está em .xlsx: as abas Seleção, Decisões e Execuções só funcionam pelo app numa Planilha Google nativa.', 'xlsx');
+  }
+  if (mime !== MIME_NATIVA) throw new ErroPlanilha('A planilha do Radar está num formato que o app não reconhece.', 'formato');
+}
+
+function titulos() {
+  if (titulosCache && Date.now() - titulosCache.quando < CACHE_ABA_MS) return titulosCache.promessa;
+  const promessa = api(`${SHEETS}/${RADAR_SHEET}?fields=${encodeURIComponent('sheets.properties.title')}`)
+    .then((r) => r.json()).then((j) => (j.sheets || []).map((s) => s.properties?.title).filter(Boolean));
+  titulosCache = { quando: Date.now(), promessa };
+  promessa.catch(() => { if (titulosCache?.promessa === promessa) titulosCache = null; });
+  return promessa;
+}
+
+/** Título real da aba (sem diferença de acento, caixa ou espaços), ou erro "a aba X ainda não existe". */
+async function tituloReal(nome) {
+  await exigirNativa();
+  const alvo = normalizarCabecalho(nome);
+  const t = (await titulos()).find((x) => normalizarCabecalho(x) === alvo);
+  if (!t) throw new ErroPlanilha(`A aba "${nome}" ainda não existe na planilha.`, 'aba-ausente');
+  return t;
+}
+
+/** Faixa A1 com o nome da aba entre aspas simples (aspas internas dobradas), já para a URL. */
+function faixa(titulo, resto = '') {
+  return encodeURIComponent(`'${String(titulo).replace(/'/g, "''")}'${resto ? `!${resto}` : ''}`);
+}
+
+/**
+ * Lê uma aba inteira da planilha nativa → {aba (título real), linhas (matriz alinhada à A1),
+ * cabecalho (a primeira linha com algum texto), linhaCabecalho (0-based)}.
+ * Aba que não existe: ErroPlanilha com codigo 'aba-ausente' e a mensagem para a tela.
+ */
+export function lerAba(nome, { forcar = false } = {}) {
+  const chave = normalizarCabecalho(nome);
+  const guardado = abasCache.get(chave);
+  if (!forcar && guardado && Date.now() - guardado.quando < CACHE_ABA_MS) return guardado.promessa;
+  const promessa = (async () => {
+    const titulo = await tituloReal(nome);
+    const r = await api(`${SHEETS}/${RADAR_SHEET}/values/${faixa(titulo)}?majorDimension=ROWS`);
+    const j = await r.json();
+    const linhas = alinharAoA1(j.values || [], j.range || '');
+    const linhaCabecalho = linhas.findIndex((l) => (l || []).some((v) => String(v ?? '').trim() !== ''));
+    return { aba: titulo, linhas, cabecalho: linhaCabecalho >= 0 ? [...linhas[linhaCabecalho]] : [], linhaCabecalho };
+  })();
+  abasCache.set(chave, { quando: Date.now(), promessa });
+  promessa.catch(() => { if (abasCache.get(chave)?.promessa === promessa) abasCache.delete(chave); });
+  return promessa;
+}
+
+/**
+ * Acrescenta linhas no fim da tabela da aba (values.append, RAW, INSERT_ROWS): o texto vai como
+ * está, sem virar fórmula nem data. Cada linha já vem na ordem do cabeçalho real, a partir da
+ * coluna A.
+ */
+export async function acrescentarLinhas(nome, linhas) {
+  if (!Array.isArray(linhas) || !linhas.length) return { atualizadas: 0 };
+  const titulo = await tituloReal(nome);
+  try {
+    const r = await api(`${SHEETS}/${RADAR_SHEET}/values/${faixa(titulo, 'A1')}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ majorDimension: 'ROWS', values: linhas.map((l) => l.map((v) => (v === null || v === undefined ? '' : String(v)))) }),
+    });
+    const j = await r.json();
+    return { atualizadas: j.updates?.updatedRows ?? linhas.length, faixa: j.updates?.updatedRange || '' };
+  } finally {
+    esquecerLeituras();
+  }
+}
+
+/** Grava uma célula (values.update, RAW). `linha`: número da linha (1-based); `coluna`: índice 0-based ou letra. */
+export async function atualizarCelula(nome, linha, coluna, valor) {
+  const l = Number(linha);
+  if (!Number.isInteger(l) || l < 1) throw new ErroPlanilha('Linha inválida.');
+  const letra = typeof coluna === 'number' ? (Number.isInteger(coluna) && coluna >= 0 ? letraColuna(coluna) : '') : String(coluna || '').toUpperCase();
+  if (!/^[A-Z]{1,3}$/.test(letra)) throw new ErroPlanilha('Coluna inválida.');
+  const titulo = await tituloReal(nome);
+  const celula = `${letra}${l}`;
+  try {
+    await api(`${SHEETS}/${RADAR_SHEET}/values/${faixa(titulo, celula)}?valueInputOption=RAW`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ range: `'${titulo.replace(/'/g, "''")}'!${celula}`, majorDimension: 'ROWS', values: [[valor === null || valor === undefined ? '' : String(valor)]] }),
+    });
+  } finally {
+    esquecerLeituras();
+  }
 }

@@ -51,11 +51,21 @@ export const CONFIG = {
   // Nomes das pastas como aparecem no Drive (para textos e caminhos; os ids vêm de drive.pastas()).
   pastas: { base: '0-Base', radar: '1-Radar', roteiros: '2-Roteiros', brutos: '3-Brutos', revisao: '4-Revisao', prontos: '5-Prontos' },
   planilha: 'Radar',
-  abas: { selecao: 'Seleção', decisoes: 'Decisões', desempenho: 'Desempenho' },
+  abas: { selecao: 'Seleção', decisoes: 'Decisões', desempenho: 'Desempenho', execucoes: 'Execuções' },
   vencedorMultiplo: 3, // vencedor = visualizações >= 3x a mediana da conta na rede
   pedacoEnvioMB: 8, // tamanho de cada pedaço do envio (múltiplo de 256 KB no Drive)
   concorrencia: 4, // downloads de roteiro ao mesmo tempo
 };
+
+/* --------------------------------------------------- controle manual
+   O que o app grava e dispara. `ponte` liga o disparo pela ponte no Apps Script (PONTE_URL é o
+   endereço público do app da web; as chaves dos webhooks ficam só nas propriedades do script,
+   nunca aqui). Com a ponte desligada ou sem endereço, Integra.ponte.* responde
+   "O disparo pelo app ainda não está ligado." */
+
+export const FLAGS = { ponte: false, decisoesPeloApp: true, revisaoPeloApp: true };
+
+export const PONTE_URL = '';
 
 /** Primeiro nome de quem está logado (NOMES), ou '' se o e-mail não estiver lá. */
 export function nomeDe(email) {
