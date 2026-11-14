@@ -40,4 +40,24 @@ export const TIMEZONE = 'America/Sao_Paulo';
 export const CACHE_MS = 60 * 1000;
 
 export const GIS_URL = 'https://accounts.google.com/gsi/client';
-export const SHEETJS_URL = './vendor/xlsx.full.min.js';
+export const SHEETJS_URL = './vendor/xlsx.full.min.js'; // relativo ao documento (index.html)
+
+/* ------------------------------------------------------------------ app
+   O que muda de um ambiente para outro e as regras do fluxo. As datas ("hoje", semana) vêm
+   sempre do relógio real no fuso TIMEZONE (js/parse.js: hojeISO, prefixoSemana, semanaIso). */
+
+export const CONFIG = {
+  pastaRaiz: 'Motor de Conteúdo',
+  // Nomes das pastas como aparecem no Drive (para textos e caminhos; os ids vêm de drive.pastas()).
+  pastas: { base: '0-Base', radar: '1-Radar', roteiros: '2-Roteiros', brutos: '3-Brutos', revisao: '4-Revisao', prontos: '5-Prontos' },
+  planilha: 'Radar',
+  abas: { selecao: 'Seleção', decisoes: 'Decisões', desempenho: 'Desempenho' },
+  vencedorMultiplo: 3, // vencedor = visualizações >= 3x a mediana da conta na rede
+  pedacoEnvioMB: 8, // tamanho de cada pedaço do envio (múltiplo de 256 KB no Drive)
+  concorrencia: 4, // downloads de roteiro ao mesmo tempo
+};
+
+/** Primeiro nome de quem está logado (NOMES), ou '' se o e-mail não estiver lá. */
+export function nomeDe(email) {
+  return NOMES[String(email || '').toLowerCase()] || '';
+}

@@ -39,24 +39,35 @@ window.addEventListener('unhandledrejection', (e) => {
   if (e.reason?.name === 'ErroAuth' || e.reason?.codigo) e.preventDefault();
 });
 
-/* ---- Service worker (PWA): cache só dos arquivos do app, aviso de nova versão ---- */
+/* ---- Service worker (PWA): cache só dos arquivos do app, aviso de nova versão ----
+   O sw.js novo se instala sozinho (skipWaiting + clients.claim) quando o navegador vê que ele mudou,
+   inclusive no lugar do SW do app antigo. Quando um SW novo passa a controlar a página, ela pergunta
+   a versão dele: se for outra que a desta página, mostra "Nova versão" (tocar recarrega). Se for a
+   mesma (a página já veio da rede com os arquivos novos), não há o que avisar. */
+const VERSAO_APP = 'motor-app-v3'; // igual a VERSAO em sw.js (tests/sw.test.mjs confere)
+
 function avisarNovaVersao() {
   avisoFixo('versao', 'Nova versão do app. Toque para atualizar.', { acao: 'nova-versao', icone: 'atualizar' });
 }
 function registrarSw() {
   if (!('serviceWorker' in navigator)) return;
-  const tinhaControlador = !!navigator.serviceWorker.controller;
-  navigator.serviceWorker.register('./sw.js', { scope: './' }).then((reg) => {
-    reg.addEventListener('updatefound', () => {
-      const novo = reg.installing;
-      novo?.addEventListener('statechange', () => {
-        if (novo.state === 'installed' && navigator.serviceWorker.controller) avisarNovaVersao();
-      });
-    });
-    // Procura atualização quando o app volta a ficar visível.
+  const sw = navigator.serviceWorker;
+  const tinhaControlador = !!sw.controller;
+  let esperando = null; // espera a resposta do SW novo; sem resposta, avisa por garantia
+  sw.addEventListener('message', (e) => {
+    if (!e.data?.versao) return;
+    clearTimeout(esperando);
+    if (e.data.versao !== VERSAO_APP) avisarNovaVersao();
+  });
+  sw.addEventListener('controllerchange', () => {
+    clearTimeout(esperando);
+    if (tinhaControlador) esperando = setTimeout(avisarNovaVersao, 4000);
+    sw.controller?.postMessage('versao');
+  });
+  sw.register('./sw.js', { scope: './' }).then((reg) => {
+    // Procura atualização quando o app volta a ficar visível (no iPhone, ao voltar para o app).
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
   }).catch(() => { /* sem SW (ex.: http local sem suporte): o app funciona igual */ });
-  navigator.serviceWorker.addEventListener('controllerchange', () => { if (tinhaControlador) avisarNovaVersao(); });
 }
 
 /* ---- Começo ---- */

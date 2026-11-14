@@ -79,7 +79,7 @@ export const Integra = {
        pastas vêm de drive.pastas(). */
     criarArquivo(pasta, nome, conteudo) { naEtapa2(pasta, nome, conteudo); },
 
-    /* INTEGRAÇÃO: envio retomável do vídeo, em pedaços (js/upload.js da raiz faz isto).
+    /* INTEGRAÇÃO: envio retomável do vídeo, em pedaços (js/upload.js faz isto, ainda sem ser importado).
        1) POST https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable
           com { name, parents: [idDe3-Brutos] }: a resposta traz o endereço da sessão no cabeçalho Location.
        2) PUT nesse endereço, um pedaço por vez, com Content-Range: bytes inicio-fim/total

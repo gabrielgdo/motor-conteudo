@@ -1,52 +1,90 @@
-# Motor de Conteúdo — plataforma (PWA)
+# Motor de Conteúdo — app (PWA)
 
-App web estático para a Robertta operar o fluxo de conteúdo (Reels/TikTok) sem conversar com os
-bots: ver o que está esperando por ela, enviar gravações, revisar prévias (aprovar ou pedir
-ajustes) e pegar os pacotes prontos para postar.
+PWA estática para a Robertta acompanhar o fluxo semanal de vídeos (Reels/TikTok): o que espera
+por ela, os roteiros, as prévias e os pacotes prontos. É outra porta para o mesmo fluxo dos bots;
+os dados ficam no Google Drive (pasta "Motor de Conteúdo") e na planilha Radar.
 
-- HTML/CSS/JS puro com ES modules — **sem build, sem npm, sem frameworks**.
-- Login com Google (Google Identity Services, token model). Só as contas permitidas em
-  `js/config.js` entram.
-- Os dados ficam no Google Drive (pasta "Motor de Conteúdo") e na planilha do Radar. O app só lê
-  as listagens e grava arquivos pequenos (`aprovado.md`, `ajustes vN.md`), o bruto da gravação e a
-  "data do post" na aba Desempenho.
-- Nenhum segredo no repositório (o client_id OAuth é público por natureza).
-
-O contrato de nomes de arquivo com o motor está em [`formatos-referencia.md`](formatos-referencia.md);
-a especificação desta etapa, em [`SPEC.md`](SPEC.md).
+- HTML/CSS/JS puro com ES modules: **sem build, sem npm, sem framework**.
+- Publicado em `https://motor.rocambrea.com/` (GitHub Pages, branch `main`, raiz do repositório).
+  Todos os caminhos são relativos (`./`).
+- Login com Google (Google Identity Services, token model). Só as contas de `js/config.js` entram.
+- Nenhum segredo no repositório (o client_id OAuth é público). O app nunca publica nas redes.
+- Referência visual e de textos: o protótipo aprovado (ver [`SPEC.md`](SPEC.md)).
+- Contrato de nomes de arquivo com o motor: [`formatos-referencia.md`](formatos-referencia.md).
 
 ## Estrutura
 
 ```
-index.html              shell único (SPA, rotas por hash: #/inicio, #/videos/<id>, …)
-manifest.webmanifest    PWA (ícones 192/512, any + maskable)
-sw.js                   service worker: cache só do shell, nunca de APIs do Google
-css/app.css             visual (cores, tipografia, layout celular/computador)
-js/app.js               boot, roteador, layout, navegação, faixas (sessão / nova versão)
-js/config.js            constantes: client_id, ids de pastas, e-mails permitidos, escopos
-js/auth.js              login GIS, sessão em sessionStorage, renovação silenciosa
-js/drive.js             cliente da Drive API v3 (listagens com cache de 60 s, upload multipart)
-js/sheet.js             planilha do Radar (Planilha Google nativa ou .xlsx via SheetJS)
-js/model.js             monta o estado de cada id a partir das listagens (puro)
-js/parse.js             funções puras: nomes de arquivo, frontmatter, YAML, datas
-js/upload.js            upload resumível em pedaços de 8 MiB
-js/ui.js                helpers de DOM (el(), toast, modal…) — nunca innerHTML com dados
-js/views/               telas: inicio, videos, enviar, prontos, embreve, login
+index.html              casca única: véu, login, ilha/conteúdo/doca, janelas, avisos
+manifest.webmanifest    PWA (id, start_url e scope "./", standalone, tema Noite #0F0809)
+sw.js                   service worker: cache "motor-app-vN" só dos arquivos do app
+css/app.css             visual do protótipo em rem (densidade: ver o comentário do topo)
 icons/                  ícones gerados por tools/make_icons.py
-tools/make_icons.py     gera os PNGs com Pillow
-tests/                  testes com node --test (sem dependências)
-vendor/xlsx.full.min.js SheetJS 0.20.3, carregado só ao ler/gravar a planilha .xlsx
+vendor/xlsx.full.min.js SheetJS 0.20.3, carregado só ao ler a planilha .xlsx (fora do cache do SW)
+js/
+  main.js               início: escutas, tema, sessão retomada ou login, service worker
+  config.js             client_id, escopos, contas, pastas, planilha, regras (CONFIG, nomeDe)
+  integra.js            o ÚNICO módulo que fala com o mundo externo (usa auth/drive/sheet)
+  auth.js               GIS, sessão em sessionStorage, renovação silenciosa
+  drive.js              Drive API v3 (listagens com cache, textos, blobs)
+  sheet.js              planilha Radar: "data do post" (nativa ou .xlsx), só leitura nesta etapa
+  model.js              listagens do Drive → projetos (puro)
+  parse.js              nomes de arquivo, YAML, datas no fuso de São Paulo, pedido de ajustes (puro)
+  roteiro.js            leitor de roteiro (porta do roteiro.py do motor, puro)
+  etapas.js             etapa de cada projeto no vocabulário das telas (puro)
+  dados.js              monta os roteiros no formato das telas; estados carregando/erro/offline
+  estado.js             estado da tela (rota, filtros) e rascunho dos campos
+  util.js               esc, datas, formatos, ícones
+  acoes.js              o que cada data-acao faz; passagem login ⇄ app
+  roteador.js           rotas por hash, navegação, View Transitions, foco
+  visual.js             véu WebGL, tema Noite/Dia, luz dos cartões
+  telas/                uma por tela (inicio, pautas, roteiros, videos, enviar, prontos, resultados) + pecas
+  componentes/          janelas (avisos, Sobre), paleta (Ctrl K), tele (teleprompter), players,
+                        downloads (arquivos dos pacotes), grafico
+  upload.js             envio retomável em pedaços (já testado), guardado para a etapa 2:
+                        ainda não é importado pelo app nem está no cache do SW
+tests/                  node --test (sem dependências), com fixtures/roteiros
+tools/make_icons.py     gera os PNGs de icons/ (precisa do Pillow)
 ```
 
+Rotas: `#/inicio #/pautas #/roteiros #/roteiros/<id> #/videos #/videos/<id> #/enviar #/enviar/<id>
+#/prontos #/resultados` (são os links que o Diretor manda nos avisos).
+
+## Etapas
+
+**Etapa 1 (esta, só leitura: nada é gravado no Drive)**
+
+- **Início**: pendências, gravação, ciclo e esteira da semana atual, com dados reais do Drive.
+- **Roteiros**: lista com filtros e detalhe com as abas Instagram, TikTok, Extras e Fontes, nos
+  dois formatos de roteiro (o novo, de parágrafos, e o antigo, com etiquetas). Teleprompter para
+  os aprovados e gravados.
+- **Vídeos**: os players tocam os arquivos reais das prévias de 4-Revisao. Cada vídeo é baixado
+  inteiro pela Drive API (`files/{id}?alt=media` com o token) e tocado por uma URL de Blob, com
+  progresso em %. No máximo 4 vídeos ficam guardados na sessão (ao sair da conta, todos são
+  liberados). A linha do tempo usa a duração real; os pinos são os ajustes da sessão e, nas
+  versões anteriores, os pedidos de `<id> ajustes vN.md`. "Copiar a lista" no lugar de enviar.
+- **Enviar gravação**: escolha do roteiro e o passo a passo para pôr o vídeo em 3-Brutos pelo app
+  do Google Drive com o nome `<id>.<extensão>`.
+- **Prontos**: um cartão por pacote de 5-Prontos; copiar a legenda, baixar cada arquivo ou todos.
+- **Pautas** e **Resultados**: "em breve", sem dado falso.
+
+**Etapa 2**: gravar no Drive. Aprovar/pedir mudança no roteiro; aprovar (`<id> aprovado.md`) ou
+pedir ajustes (`<id> ajustes vN.md`) nas prévias; envio da gravação pelo app (`js/upload.js`);
+"Postei" na aba Desempenho; ponte no Apps Script para avisar o Radar e o Roteirista.
+
+**Etapa 3**: Pautas (abas Seleção e Decisões da planilha Radar) e Resultados (aba Desempenho).
+
 ## Rodar localmente
+
+Na raiz do repositório:
 
 ```sh
 python3 -m http.server 8000
 # abrir http://localhost:8000/
 ```
 
-Para o login funcionar, a origem (`http://localhost:8000`) precisa estar em
-"Origens JavaScript autorizadas" do client OAuth no Google Cloud Console.
+Para o login funcionar, `http://localhost:8000` precisa estar em "Origens JavaScript autorizadas"
+do client OAuth no Google Cloud Console.
 
 ## Testes
 
@@ -54,36 +92,32 @@ Para o login funcionar, a origem (`http://localhost:8000`) precisa estar em
 node --test tests/
 ```
 
-Cobrem nomes de arquivo, frontmatter, os geradores de YAML (comparação byte a byte), as regras do
-modelo (com o cenário real atual) e a semana ISO. Node 18+; nenhuma dependência.
-
-## Ícones
-
-```sh
-python3 tools/make_icons.py
-```
-
-Precisa do Pillow. Usa uma fonte serifada do sistema (DejaVu Serif etc.) ou, se não houver,
-desenha o "M" com polígonos.
+Node 22+ (com um diretório, o `--test` carrega `tests/index.js`, que importa todos os testes).
+Cobrem o leitor de roteiro (paridade com o `roteiro.py`), as regras de etapa, o mapeamento puro
+projeto + roteiro → objeto das telas (`montarRoteiro`), as funções puras de `js/parse.js` e
+`js/model.js` (nomes de arquivo, YAML, datas, pedido de ajustes, horários do pacote), as partes
+puras do `js/upload.js` e o PWA (`tests/sw.test.mjs`: todo arquivo da lista do `sw.js` existe,
+todo módulo do app está nela, versão do cache igual à do `js/main.js`, manifest, nenhum caminho
+para fora da raiz).
 
 ## Publicar
 
-O site é publicado pelo GitHub Pages a partir da branch `main` (raiz do repositório), em
-`https://gabrielgdo.github.io/motor-conteudo/` (e depois `https://motor.rocambrea.com/`).
-Todos os caminhos são relativos (`./`), então funciona nos dois endereços.
+O GitHub Pages publica a raiz da branch `main` em `https://motor.rocambrea.com/` (o domínio está
+nas configurações do Pages, não num arquivo CNAME). O `.nojekyll` impede o processamento pelo Jekyll.
 
-1. Faça as mudanças e rode `node --test tests/`.
-2. **Aumente a versão do cache em `sw.js`** (`motor-shell-v1` → `motor-shell-v2`…). É isso que faz
-   o app aberto mostrar a faixa "Nova versão — toque para atualizar". Se adicionar um arquivo JS
-   novo, inclua-o também na lista `SHELL` do `sw.js`.
+1. Rode `node --test tests/`.
+2. **Aumente a versão do cache** em `sw.js` (`VERSAO`, `motor-app-v3` → `motor-app-v4`…) e, igual,
+   em `js/main.js` (`VERSAO_APP`); o teste confere que as duas batem. É a mudança no `sw.js` que
+   faz o navegador instalar o SW novo e o app aberto mostrar "Nova versão do app. Toque para
+   atualizar.". Se criar um arquivo novo do app, inclua-o na lista `ARQUIVOS` do `sw.js` (o teste
+   avisa se faltar um módulo ou se a lista apontar para um arquivo que não existe).
 3. Commit e push na `main`. O Pages publica em um ou dois minutos.
 
-O arquivo `.nojekyll` impede o GitHub Pages de processar o site com Jekyll.
+### Quem já tinha o app instalado
 
-## App novo em /novo/
-
-O app novo, com o visual do protótipo aprovado, fica inteiro em [`novo/`](novo/README.md) e é
-publicado em `https://motor.rocambrea.com/novo/`. Ele não importa nada da raiz e tem manifest e
-service worker próprios (escopo `/novo/`, caches `motor-novo-`), então o app desta raiz segue
-igual. `js/roteiro.js` e `js/etapas.js` (que o app da raiz não usava) foram para `novo/js/`, com
-os testes deles em `novo/tests/`. Para rodar todos os testes: `node --test tests/ novo/tests/`.
+O app instalado no iPhone continua o mesmo (mesmo endereço, `start_url`/`scope`/`id` `./`), então
+não precisa reinstalar. Na próxima abertura com internet, o navegador vê que o `sw.js` mudou e
+instala o novo: ele assume na hora (`skipWaiting` + `clients.claim`) e apaga os caches antigos
+(`motor-shell-` do app anterior, `motor-novo-` da prévia e versões anteriores de `motor-app-`).
+O SW busca a navegação e os arquivos do app na rede primeiro, sem o cache HTTP; o cache do SW só
+serve sem internet.

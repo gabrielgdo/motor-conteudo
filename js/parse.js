@@ -1,4 +1,5 @@
-// Funções puras: ids, nomes de arquivo, frontmatter, gerador de YAML, markdown simples, datas.
+// Funções puras: ids, nomes de arquivo, frontmatter, gerador de YAML, markdown simples, datas,
+// pedido de ajustes (leitura e texto para copiar), nome de download e horários do pacote.
 // Nada aqui toca DOM, rede ou armazenamento — tudo testável com `node --test`.
 
 import { TIMEZONE } from './config.js';
@@ -433,4 +434,139 @@ export function formatarBytes(n) {
   if (b >= 1024 ** 2) return `${fmt(b / 1024 ** 2, 1)} MB`;
   if (b >= 1024) return `${fmt(b / 1024, 0)} KB`;
   return `${b} B`;
+}
+
+/* ------------------------------------------------- pedido de ajustes (4-Revisao) */
+
+/** 'ig' | 'tt' | 'ambas' a partir do que o Diretor escreveu (aceita "ambos", "instagram", "tiktok"). */
+export function versaoDoAjuste(valor) {
+  const v = String(valor ?? '').trim().toLowerCase();
+  if (v === 'ig' || v === 'instagram') return 'ig';
+  if (v === 'tt' || v === 'tiktok') return 'tt';
+  return 'ambas';
+}
+
+const numeroDaVersao = (v) => {
+  const m = String(v ?? '').trim().match(/^v?(\d+)$/i);
+  return m ? Number(m[1]) : null;
+};
+
+/**
+ * Lê `4-Revisao/<id> ajustes v<N>.md` (frontmatter de formatos.md) →
+ * {id, versaoBase, decisao, ajustes:[{versao, tempo, pedido, como}], observacoes}, ou null sem frontmatter.
+ * Só os campos do contrato; o resto é ignorado. Itens sem pedido nem tempo ficam de fora.
+ */
+export function parseAjustes(texto) {
+  if (typeof texto !== 'string') return null;
+  const linhas = texto.replace(/^﻿/, '').replace(/\r\n?/g, '\n').split('\n');
+  let i = 0;
+  while (i < linhas.length && linhas[i].trim() === '') i++;
+  if (i >= linhas.length || linhas[i].trim() !== '---') return null;
+  let fim = -1;
+  for (let j = i + 1; j < linhas.length; j++) if (linhas[j].trim() === '---') { fim = j; break; }
+  if (fim < 0) return null;
+
+  const out = { id: '', versaoBase: null, decisao: '', ajustes: [], observacoes: '' };
+  const itens = [];
+  let naLista = false;
+  let atual = null;
+  for (const linha of linhas.slice(i + 1, fim)) {
+    if (!linha.trim() || /^\s*#/.test(linha)) continue;
+    const topo = linha.match(/^([A-Za-z_][\w-]*)\s*:(.*)$/);
+    if (topo) {
+      atual = null;
+      const k = topo[1].toLowerCase();
+      const v = limparValor(topo[2]);
+      naLista = k === 'ajustes';
+      if (k === 'id') out.id = v;
+      else if (k === 'versao_base') out.versaoBase = numeroDaVersao(v);
+      else if (k === 'decisao') out.decisao = v.toLowerCase();
+      else if (k === 'observacoes') out.observacoes = v;
+      continue;
+    }
+    if (!naLista) continue;
+    const item = linha.match(/^\s*-\s*(?:([A-Za-z_][\w-]*)\s*:(.*))?$/);
+    if (item) {
+      atual = {};
+      itens.push(atual);
+      if (item[1]) atual[item[1].toLowerCase()] = limparValor(item[2]);
+      continue;
+    }
+    const campo = linha.match(/^\s+([A-Za-z_][\w-]*)\s*:(.*)$/);
+    if (campo && atual) atual[campo[1].toLowerCase()] = limparValor(campo[2]);
+  }
+  out.ajustes = itens
+    .map((a) => ({
+      versao: versaoDoAjuste(a.versao),
+      tempo: String(a.tempo || '').trim(),
+      pedido: String(a.pedido || '').trim(),
+      como: String(a.como || '').trim(),
+    }))
+    .filter((a) => a.pedido || a.tempo);
+  return out;
+}
+
+/** "0:12" → {de: 12, ate: null}; "0:00-0:03" (também com travessão e espaços) → {de: 0, ate: 3}; inválido → {de: null, ate: null}. */
+export function segundosDoTempo(texto) {
+  const seg = (s) => {
+    const m = String(s || '').trim().match(/^(?:(\d+):)?(\d+):(\d{2})$/);
+    return m ? Number(m[1] || 0) * 3600 + Number(m[2]) * 60 + Number(m[3]) : null;
+  };
+  const [de, ate] = String(texto || '').split(/\s*[-–—]\s*/);
+  const d = seg(de);
+  if (d === null) return { de: null, ate: null };
+  const a = ate === undefined ? null : seg(ate);
+  return { de: d, ate: a !== null && a > d ? a : null };
+}
+
+const NOME_DO_AJUSTE = { ig: 'Instagram', tt: 'TikTok', ambas: 'As duas versões' };
+const umaLinha = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
+
+/** Lista de ajustes → texto simples para colar no chat, um por linha: "Instagram, em 0:12: pedido (como)". */
+export function textoDosAjustes(lista) {
+  return (lista || []).map((a) => {
+    const tempo = umaLinha(a.tempo);
+    const como = umaLinha(a.como);
+    return `${NOME_DO_AJUSTE[versaoDoAjuste(a.versao)]}${tempo ? `, em ${tempo}` : ''}: ${umaLinha(a.pedido)}${como ? ` (${como})` : ''}`;
+  }).join('\n');
+}
+
+/* ------------------------------------------------------------- pacotes */
+
+/**
+ * Nome com que um arquivo do pacote é salvo: o original; nas subpastas, "<subpasta>-<nome>"
+ * (carrossel/01.png → carrossel-01.png). Tira caracteres que os sistemas não aceitam em nome de arquivo.
+ */
+export function nomeDownload(nome, sub = '') {
+  const limpo = (s) => String(s ?? '').trim().replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '-');
+  const n = limpo(nome) || 'arquivo';
+  const s = limpo(sub).toLowerCase();
+  return s ? `${s}-${n}` : n;
+}
+
+/**
+ * Texto de horários sugeridos do pacote (agenda.md / horarios.txt) → {ig, tt}.
+ * Linhas "Instagram: …" / "TikTok: …" (também IG/TT, com marcador de lista ou negrito) valem para a
+ * rede; sem nenhuma delas, a primeira linha de texto vale para as duas. Sem texto: {ig: '', tt: ''}.
+ */
+export function sugestaoDaAgenda(texto) {
+  const out = { ig: '', tt: '' };
+  const linhas = String(texto || '').replace(/^﻿/, '').replace(/\r\n?/g, '\n').split('\n')
+    .map((l) => l.trim()).filter(Boolean);
+  let primeira = '';
+  let noFrontmatter = linhas[0] === '---';
+  for (const [i, l] of linhas.entries()) {
+    if (noFrontmatter) { if (i > 0 && l === '---') noFrontmatter = false; continue; }
+    if (/^#/.test(l)) continue;
+    const s = l.replace(/^(?:[-*•]|\d+[.)])\s+/, '').replace(/\*\*/g, '').trim();
+    const m = s.match(/^(instagram|ig|tiktok|tt)\s*[:–—-]\s*(.+)$/i);
+    if (m) {
+      const rede = /^(instagram|ig)$/i.test(m[1]) ? 'ig' : 'tt';
+      if (!out[rede]) out[rede] = m[2].trim();
+      continue;
+    }
+    if (!primeira && s) primeira = s;
+  }
+  if (!out.ig && !out.tt && primeira) return { ig: primeira, tt: primeira };
+  return out;
 }

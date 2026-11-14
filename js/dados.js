@@ -4,7 +4,7 @@
 //   carregar({forcar})  lê listagens + postados, baixa o texto de cada roteiro ativo (até 4 ao
 //                       mesmo tempo, cache por fileId + modifiedTime) e monta os objetos.
 //   montarRoteiro(...)  a parte pura (projeto de model.js + roteiro lido por roteiro.js → objeto
-//                       do desenho aprovado), testada em novo/tests/dados.test.mjs.
+//                       do desenho aprovado), testada em tests/dados.test.mjs.
 //   rot, porEtapa, ativos, ultima, falasDe, semPostar, semana, estadoDados …  atalhos das telas.
 //
 // Fases: 'vazio' (nada pedido) → 'carregando' (sem nada na tela) | 'atualizando' (com dados) →

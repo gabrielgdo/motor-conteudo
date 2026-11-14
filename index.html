@@ -1,31 +1,88 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="pt-BR" data-tema="noite">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Motor de Conteúdo</title>
-  <meta name="description" content="Fluxo de conteúdo da Robertta Cambrea: roteiros, vídeos e pacotes prontos.">
-  <meta name="theme-color" content="#6E1F2C">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="apple-mobile-web-app-title" content="Motor">
-  <meta name="referrer" content="strict-origin-when-cross-origin">
-  <link rel="manifest" href="./manifest.webmanifest">
-  <link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon.png">
-  <link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon.png">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:wght@500;600&family=Montserrat:wght@400;500;600&display=swap">
-  <link rel="stylesheet" href="./css/app.css">
-  <script type="module" src="./js/app.js"></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Motor de Conteúdo</title>
+<meta name="description" content="O caminho de cada vídeo, da pauta à postagem: roteiros, prévias e pacotes prontos.">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon.png">
+<link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon.png">
+<meta name="theme-color" content="#0F0809" id="meta-tema">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Motor">
+
+<!-- Fontes da marca. Única dependência externa de visual, e opcional: sem elas, o app usa as do sistema. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400..700;1,400..700&family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./css/app.css">
+<!-- Antes de pintar: tema lembrado e, se houver sessão guardada, esconde o login para não piscar. -->
+<script>
+try {
+  if (localStorage.getItem('motor-tema') === 'dia') document.documentElement.dataset.tema = 'dia';
+  if (sessionStorage.getItem('motor.sessao')) document.documentElement.classList.add('retomando');
+} catch (e) { /* sem armazenamento */ }
+</script>
+<script type="module" src="./js/main.js"></script>
 </head>
-<body>
-  <div id="app">
-    <div class="login"><p class="suave">Carregando…</p></div>
+<body class="entrada">
+<!-- Fundo vivo: o véu é pintado por um shader WebGL (js/visual.js). O grão é um ruído em SVG. -->
+<canvas id="veu" aria-hidden="true"></canvas>
+<div class="grao" aria-hidden="true"></div>
+<a class="pular" href="#conteudo">Pular para o conteúdo</a>
+
+<!-- ENTRADA: login com Google (Google Identity Services, via js/integra.js) -->
+<section class="login" id="tela-login" aria-labelledby="login-titulo">
+  <div>
+    <h1 id="login-titulo">Da pauta à postagem, num só lugar.</h1>
+    <p class="login-frase">O caminho de cada vídeo, com os bots trabalhando por trás e você decidindo o que importa.</p>
   </div>
-  <noscript>
-    <p style="padding:24px;text-align:center">O Motor de Conteúdo precisa de JavaScript ativado.</p>
-  </noscript>
+  <div class="login-porta">
+    <h2>Motor de Conteúdo</h2>
+    <p class="apagado pequeno">Entre com a conta Google que tem acesso à pasta “Motor de Conteúdo”.</p>
+    <button type="button" class="google" data-acao="entrar" id="botao-entrar">
+      <svg width="20" height="20" style="width:1.25rem;height:1.25rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+      <span id="botao-entrar-texto">Entrar com Google</span>
+    </button>
+    <p class="nota atencao login-msg" id="login-msg" role="alert"></p>
+    <details>
+      <summary>Como deixar o app na tela do celular</summary>
+      <ol>
+        <li>Abra o endereço do app no Safari (iPhone) ou no Chrome (Android).</li>
+        <li>Toque em Compartilhar e depois em “Adicionar à Tela de Início”.</li>
+        <li>O app passa a abrir em tela cheia, como os outros do celular.</li>
+      </ol>
+    </details>
+    <button type="button" class="discreto" data-acao="abrir-sobre">Sobre o app</button>
+  </div>
+  <ol class="caminho" aria-label="O caminho de cada vídeo">
+    <li>Pautas</li><li>Roteiros</li><li>Gravação</li><li>Prévias</li><li>Pacote pronto</li>
+  </ol>
+</section>
+
+<!-- APP -->
+<div class="casca" id="casca" hidden>
+  <header class="ilha">
+    <a class="marca" href="#/inicio"><span class="marca-sinal" aria-hidden="true"></span><span>Motor de Conteúdo</span></a>
+    <nav class="ilha-nav" id="nav-topo" aria-label="Seções"></nav>
+    <button type="button" class="busca-b" data-acao="abrir-paleta" aria-label="Buscar e ir para uma tela" id="botao-busca"></button>
+    <a class="botao primario menor ilha-enviar" href="#/enviar">Enviar gravação</a>
+    <button type="button" class="redondo" data-acao="tema" id="botao-tema"></button>
+  </header>
+
+  <main class="conteudo" id="conteudo" tabindex="-1"></main>
+
+  <nav class="doca" id="nav-doca" aria-label="Seções"></nav>
+</div>
+
+<!-- Uma janela para tudo (confirmações, busca, ajuda) e outra para o teleprompter -->
+<dialog id="dialogo" aria-labelledby="dlg-titulo"></dialog>
+<dialog id="tele" class="tele" aria-label="Teleprompter"></dialog>
+<input type="file" id="arquivo" accept="video/*" hidden>
+<div class="avisos" id="avisos" role="status" aria-live="polite"></div>
+<noscript><p style="position:relative;z-index:3;padding:1.5rem;text-align:center">O Motor de Conteúdo precisa de JavaScript ativado.</p></noscript>
 </body>
 </html>
