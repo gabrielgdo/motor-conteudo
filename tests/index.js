@@ -15,3 +15,4 @@ import('./revisao.test.mjs');
 import('./telas.test.mjs');
 import('./sessao.test.mjs');
 import('./versao.test.mjs');
+import('./ponte.test.mjs');
