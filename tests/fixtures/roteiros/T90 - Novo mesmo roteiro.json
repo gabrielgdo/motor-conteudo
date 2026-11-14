@@ -1,0 +1,109 @@
+{
+ "arquivo": "T90 - Novo mesmo roteiro.md",
+ "id_no_nome": "T90",
+ "cabecalho": {
+  "id": "T90",
+  "titulo": "Por que a gente repete o mesmo tipo de relacionamento",
+  "plataformas": "instagram, tiktok",
+  "extras": "carrossel, threads, stories",
+  "duracao_alvo": "45 a 60 s",
+  "formato": "Jung explica",
+  "cta": "instagram enviar; tiktok comentar",
+  "valido_ate": "atemporal",
+  "status": "aprovado",
+  "teste": "sim",
+  "bruto": "sintetico"
+ },
+ "id": "T90",
+ "titulo": "Por que a gente repete o mesmo tipo de relacionamento",
+ "plataformas": [
+  "ig",
+  "tt"
+ ],
+ "teste": true,
+ "bruto": "sintetico",
+ "blocos": [
+  {
+   "rotulo": "FALA",
+   "texto": "Você jura que dessa vez escolheu diferente. E, três meses depois, está vivendo a mesma história."
+  },
+  {
+   "rotulo": "FALA",
+   "texto": "Não é azar. Jung chamava isso de complexo: um nó de memórias e emoções que se forma cedo."
+  },
+  {
+   "rotulo": "FALA",
+   "texto": "O cérebro também prefere o que já conhece. O familiar parece seguro, mesmo quando machuca."
+  },
+  {
+   "rotulo": "FALA",
+   "texto": "Manda este vídeo para quem vive dizendo que só atrai o mesmo tipo de gente."
+  }
+ ],
+ "falas": {
+  "ig": "Você jura que dessa vez escolheu diferente. E, três meses depois, está vivendo a mesma história. Não é azar. Jung chamava isso de complexo: um nó de memórias e emoções que se forma cedo. O cérebro também prefere o que já conhece. O familiar parece seguro, mesmo quando machuca. Manda este vídeo para quem vive dizendo que só atrai o mesmo tipo de gente.",
+  "tt": "Você jura que dessa vez escolheu diferente. E, três meses depois, está vivendo a mesma história. Não é azar. Jung chamava isso de complexo: um nó de memórias e emoções que se forma cedo. O cérebro também prefere o que já conhece. O familiar parece seguro, mesmo quando machuca. Manda este vídeo para quem vive dizendo que só atrai o mesmo tipo de gente.",
+  "todas": "Você jura que dessa vez escolheu diferente. E, três meses depois, está vivendo a mesma história. Não é azar. Jung chamava isso de complexo: um nó de memórias e emoções que se forma cedo. O cérebro também prefere o que já conhece. O familiar parece seguro, mesmo quando machuca. Manda este vídeo para quem vive dizendo que só atrai o mesmo tipo de gente."
+ },
+ "duas_aberturas": false,
+ "notas_intencao": "- Imagem de fios ou de um nó no ponto do complexo\n- Texto na tela: \"o familiar parece seguro\"",
+ "texto_na_tela": "",
+ "ganchos": {
+  "instagram": [],
+  "tiktok": []
+ },
+ "legendas": {
+  "instagram": "Repetir o mesmo tipo de relacionamento não é falta de sorte. Envie para quem precisa ouvir isso hoje.",
+  "tiktok": "Por que eu sempre me apaixono pelo mesmo tipo de pessoa? Me conta nos comentários."
+ },
+ "carrossel": [
+  "Por que a gente repete o mesmo tipo de relacionamento",
+  "Não é azar: é um complexo continuação do slide 2",
+  "O cérebro prefere o que já conhece"
+ ],
+ "threads": "A gente não repete relacionamentos por azar.\n\nPerceber o padrão vem antes de escolher diferente.",
+ "stories": [
+  "(enquete) Você já viveu a mesma história com pessoas diferentes?",
+  "(caixinha) Qual padrão você percebe nas suas relações?",
+  "(leva ao vídeo) Falei sobre isso no vídeo de hoje."
+ ],
+ "fontes": [
+  "Jung, C. G. A natureza da psique (Obras Completas, vol. 8/2).   [checagem: confirmada]",
+  "Zajonc, R. B. (1968). Attitudinal effects of mere exposure. JPSP, 9(2). https://doi.org/10.1037/h0025848 [checagem: confirmada]"
+ ],
+ "id_valido": true,
+ "id_confere": true,
+ "formato_roteiro": "novo",
+ "paragrafos": {
+  "ig": [
+   "Você jura que dessa vez escolheu diferente. E, três meses depois, está vivendo a mesma história.",
+   "Não é azar. Jung chamava isso de complexo: um nó de memórias e emoções que se forma cedo.",
+   "O cérebro também prefere o que já conhece. O familiar parece seguro, mesmo quando machuca.",
+   "Manda este vídeo para quem vive dizendo que só atrai o mesmo tipo de gente."
+  ],
+  "tt": [
+   "Você jura que dessa vez escolheu diferente. E, três meses depois, está vivendo a mesma história.",
+   "Não é azar. Jung chamava isso de complexo: um nó de memórias e emoções que se forma cedo.",
+   "O cérebro também prefere o que já conhece. O familiar parece seguro, mesmo quando machuca.",
+   "Manda este vídeo para quem vive dizendo que só atrai o mesmo tipo de gente."
+  ]
+ },
+ "abertura": {
+  "ig": "Você jura que dessa vez escolheu diferente. E, três meses depois, está vivendo a mesma história.",
+  "tt": "Você jura que dessa vez escolheu diferente. E, três meses depois, está vivendo a mesma história."
+ },
+ "tt_proprio": false,
+ "entrega": "Tom acolhedor, ritmo calmo.\nPausa curta depois de \"mesma história\".",
+ "aberturas_alternativas": [
+  "Não é azar. É um padrão, e ele tem nome.",
+  "O que as suas últimas três relações têm em comum?"
+ ],
+ "apoio_visual": [
+  "Imagem de fios ou de um nó no ponto do complexo",
+  "Texto na tela: \"o familiar parece seguro\""
+ ],
+ "teleprompter": "Você jura que dessa vez escolheu diferente. E, três meses depois, está vivendo a mesma história.\n\nNão é azar. Jung chamava isso de complexo: um nó de memórias e emoções que se forma cedo.\n\nO cérebro também prefere o que já conhece. O familiar parece seguro, mesmo quando machuca.\n\nManda este vídeo para quem vive dizendo que só atrai o mesmo tipo de gente.",
+ "cta": "instagram enviar; tiktok comentar",
+ "sem_cta": false,
+ "duracao_alvo": "45 a 60 s"
+}

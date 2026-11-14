@@ -1,0 +1,112 @@
+{
+ "arquivo": "T91 - Novo TikTok proprio.md",
+ "id_no_nome": "T91",
+ "cabecalho": {
+  "id": "T91",
+  "titulo": "Síndrome do impostor não é falta de competência",
+  "plataformas": "instagram, tiktok",
+  "formato": "verdade equilibrada",
+  "cta": "nenhum",
+  "valido_ate": "2026-11-22",
+  "status": "rascunho v2"
+ },
+ "id": "T91",
+ "titulo": "Síndrome do impostor não é falta de competência",
+ "plataformas": [
+  "ig",
+  "tt"
+ ],
+ "teste": true,
+ "bruto": "",
+ "blocos": [
+  {
+   "rotulo": "FALA",
+   "texto": "Você recebe um elogio e a primeira coisa que pensa é: uma hora vão descobrir."
+  },
+  {
+   "rotulo": "FALA",
+   "texto": "Isso tem nome, e não é falta de competência."
+  },
+  {
+   "rotulo": "FALA",
+   "texto": "A sensação de fraude costuma aparecer justamente em quem se cobra muito."
+  },
+  {
+   "rotulo": "FALA TT",
+   "texto": "Uma hora vão descobrir que você não sabe nada? Calma."
+  },
+  {
+   "rotulo": "FALA TT",
+   "texto": "Isso tem nome, e não é falta de competência."
+  },
+  {
+   "rotulo": "FALA TT",
+   "texto": "A sensação de fraude costuma aparecer em quem se cobra muito."
+  }
+ ],
+ "falas": {
+  "ig": "Você recebe um elogio e a primeira coisa que pensa é: uma hora vão descobrir. Isso tem nome, e não é falta de competência. A sensação de fraude costuma aparecer justamente em quem se cobra muito.",
+  "tt": "Uma hora vão descobrir que você não sabe nada? Calma. Isso tem nome, e não é falta de competência. A sensação de fraude costuma aparecer em quem se cobra muito.",
+  "todas": "Você recebe um elogio e a primeira coisa que pensa é: uma hora vão descobrir. Isso tem nome, e não é falta de competência. A sensação de fraude costuma aparecer justamente em quem se cobra muito. Uma hora vão descobrir que você não sabe nada? Calma. Isso tem nome, e não é falta de competência. A sensação de fraude costuma aparecer em quem se cobra muito."
+ },
+ "duas_aberturas": true,
+ "notas_intencao": "1. Close no rosto na primeira frase\n2. Texto \"síndrome do impostor\" na segunda\n3. Corte seco antes da última frase\n4. Este quarto item deve ser cortado",
+ "texto_na_tela": "",
+ "ganchos": {
+  "instagram": [],
+  "tiktok": []
+ },
+ "legendas": {
+  "instagram": "Síndrome do impostor não é diagnóstico.",
+  "tiktok": "Você também sente que vão descobrir?"
+ },
+ "carrossel": [
+  "Síndrome do impostor não é falta de competência",
+  "É a sensação de fraude apesar das evidências"
+ ],
+ "threads": "Síndrome do impostor não é diagnóstico.",
+ "stories": [
+  "(enquete) Você já se sentiu uma fraude no trabalho?",
+  "(Caixinha) O que você diria para quem sente isso?",
+  "Sem tipo nenhum aqui."
+ ],
+ "fontes": [
+  "Clance, P. R., & Imes, S. A. (1978). The impostor phenomenon in high achieving women. Psychotherapy: Theory, Research & Practice, 15(3). [checagem: divergente]",
+  "Autor inventado (2020). Revista que não existe. [checagem: não encontrada]",
+  "Bravata, D. M. et al. (2020). Prevalence of impostor syndrome: a systematic review. Journal of General Internal Medicine. [Checagem: Confirmada]"
+ ],
+ "id_valido": true,
+ "id_confere": true,
+ "formato_roteiro": "novo",
+ "paragrafos": {
+  "ig": [
+   "Você recebe um elogio e a primeira coisa que pensa é: uma hora vão descobrir.",
+   "Isso tem nome, e não é falta de competência.",
+   "A sensação de fraude costuma aparecer justamente em quem se cobra muito."
+  ],
+  "tt": [
+   "Uma hora vão descobrir que você não sabe nada? Calma.",
+   "Isso tem nome, e não é falta de competência.",
+   "A sensação de fraude costuma aparecer em quem se cobra muito."
+  ]
+ },
+ "abertura": {
+  "ig": "Você recebe um elogio e a primeira coisa que pensa é: uma hora vão descobrir.",
+  "tt": "Uma hora vão descobrir que você não sabe nada? Calma."
+ },
+ "tt_proprio": true,
+ "entrega": "Ritmo firme, sem dramatizar.",
+ "aberturas_alternativas": [
+  "Uma hora vão descobrir que eu não sei nada.",
+  "Se você já pensou isso depois de um elogio, fica."
+ ],
+ "apoio_visual": [
+  "Close no rosto na primeira frase",
+  "Texto \"síndrome do impostor\" na segunda",
+  "Corte seco antes da última frase"
+ ],
+ "teleprompter": "Você recebe um elogio e a primeira coisa que pensa é: uma hora vão descobrir.\n\nIsso tem nome, e não é falta de competência.\n\nA sensação de fraude costuma aparecer justamente em quem se cobra muito.",
+ "cta": "nenhum",
+ "sem_cta": true,
+ "duracao_alvo": "45 a 60 s"
+}

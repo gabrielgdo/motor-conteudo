@@ -1,0 +1,59 @@
+{
+ "arquivo": "T94 - Com BOM.md",
+ "id_no_nome": "T94",
+ "cabecalho": {},
+ "id": "T94",
+ "titulo": "",
+ "plataformas": [
+  "ig",
+  "tt"
+ ],
+ "teste": false,
+ "bruto": "",
+ "blocos": [
+  {
+   "rotulo": "FALA",
+   "texto": "Texto."
+  }
+ ],
+ "falas": {
+  "ig": "Texto.",
+  "tt": "Texto.",
+  "todas": "Texto."
+ },
+ "duas_aberturas": false,
+ "notas_intencao": "",
+ "texto_na_tela": "",
+ "ganchos": {
+  "instagram": [],
+  "tiktok": []
+ },
+ "legendas": {},
+ "carrossel": [],
+ "threads": "",
+ "stories": [],
+ "fontes": [],
+ "id_valido": true,
+ "id_confere": true,
+ "formato_roteiro": "novo",
+ "paragrafos": {
+  "ig": [
+   "Texto."
+  ],
+  "tt": [
+   "Texto."
+  ]
+ },
+ "abertura": {
+  "ig": "Texto.",
+  "tt": "Texto."
+ },
+ "tt_proprio": false,
+ "entrega": "",
+ "aberturas_alternativas": [],
+ "apoio_visual": [],
+ "teleprompter": "Texto.",
+ "cta": "",
+ "sem_cta": false,
+ "duracao_alvo": "45 a 60 s"
+}

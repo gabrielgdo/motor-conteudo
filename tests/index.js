@@ -4,3 +4,5 @@
 // com `node --test tests/*.test.mjs`).
 import('./parse.test.mjs');
 import('./model.test.mjs');
+import('./roteiro.test.mjs');
+import('./etapas.test.mjs');

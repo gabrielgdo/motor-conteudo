@@ -1,0 +1,92 @@
+{
+ "arquivo": "T92 bordas crlf.md",
+ "id_no_nome": "T92",
+ "cabecalho": {
+  "id": "T93",
+  "titulo": "Bordas do formato",
+  "teste": "Sim",
+  "bruto": "Gravado",
+  "cta": "'Nenhum.'",
+  "duracao_alvo": "30 a 40 s",
+  "plataformas": "Instagram"
+ },
+ "id": "T93",
+ "titulo": "Bordas do formato",
+ "plataformas": [
+  "ig"
+ ],
+ "teste": true,
+ "bruto": "gravado",
+ "blocos": [
+  {
+   "rotulo": "FALA",
+   "texto": "Primeira frase com espaço duro."
+  }
+ ],
+ "falas": {
+  "ig": "Primeira frase com espaço duro.",
+  "tt": "Primeira frase com espaço duro.",
+  "todas": "Primeira frase com espaço duro."
+ },
+ "duas_aberturas": false,
+ "notas_intencao": "Só um parágrafo sem marcador.\n\nOutro parágrafo.",
+ "texto_na_tela": "",
+ "ganchos": {
+  "instagram": [
+   {
+    "tipo": "pergunta",
+    "texto": "Primeiro gancho"
+   },
+   {
+    "tipo": "afirmação",
+    "texto": "Segundo gancho"
+   }
+  ],
+  "tiktok": [
+   {
+    "tipo": "x",
+    "texto": "Gancho colado no tipo linha solta que continua"
+   }
+  ]
+ },
+ "legendas": {
+  "instagram": "legenda com espaço antes",
+  "tiktok": "a última vence"
+ },
+ "carrossel": [],
+ "threads": "",
+ "stories": [
+  "(leva ao video) Sem acento.",
+  "( Enquete ) Com espaços."
+ ],
+ "fontes": [
+  "Fonte sem checagem nenhuma",
+  "Fonte colada no marcador [checagem: nao encontrada]"
+ ],
+ "id_valido": true,
+ "id_confere": false,
+ "formato_roteiro": "novo",
+ "paragrafos": {
+  "ig": [
+   "Primeira frase com espaço duro."
+  ],
+  "tt": [
+   "Primeira frase com espaço duro."
+  ]
+ },
+ "abertura": {
+  "ig": "Primeira frase com espaço duro.",
+  "tt": "Primeira frase com espaço duro."
+ },
+ "tt_proprio": false,
+ "entrega": "",
+ "aberturas_alternativas": [],
+ "apoio_visual": [
+  "Só um parágrafo sem marcador.",
+  "Outro parágrafo."
+ ],
+ "teleprompter": "Primeira frase com espaço duro.",
+ "cta": "'Nenhum.'",
+ "sem_cta": true,
+ "duracao_alvo": "30 a 40 s"
+}

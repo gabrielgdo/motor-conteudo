@@ -1,0 +1,121 @@
+{
+ "arquivo": "S46-01 - Formato com etiquetas.md",
+ "id_no_nome": "S46-01",
+ "cabecalho": {
+  "id": "S46-01",
+  "titulo": "Ansiedade de domingo à noite",
+  "plataformas": "Instagram; TikTok",
+  "extras": "carrossel, stories",
+  "formato": "lista com revelação",
+  "cta": "instagram salvar; tiktok comentar",
+  "valido_ate": "atemporal",
+  "status": "aprovado"
+ },
+ "id": "S46-01",
+ "titulo": "Ansiedade de domingo à noite",
+ "plataformas": [
+  "ig",
+  "tt"
+ ],
+ "teste": false,
+ "bruto": "",
+ "blocos": [
+  {
+   "rotulo": "GANCHO IG",
+   "texto": "Domingo à noite dá um aperto no peito?"
+  },
+  {
+   "rotulo": "GANCHO TT",
+   "texto": "Por que o domingo à noite pesa tanto?"
+  },
+  {
+   "rotulo": "PROMESSA",
+   "texto": "Em trinta segundos você vai entender de onde ele vem."
+  },
+  {
+   "rotulo": "PONTO 1",
+   "texto": "A antecipação ativa o mesmo alarme que a ameaça real. O corpo não sabe que segunda ainda não chegou."
+  },
+  {
+   "rotulo": "PONTO 2",
+   "texto": "E a semana que vem parece um bloco só, sem pausas."
+  },
+  {
+   "rotulo": "VIRADA",
+   "texto": "Quebrar a semana em partes menores tira o peso do domingo."
+  },
+  {
+   "rotulo": "FECHAMENTO IG",
+   "texto": "Salva este vídeo para o próximo domingo."
+  },
+  {
+   "rotulo": "FECHAMENTO TT",
+   "texto": "Me conta: o que mais pesa no seu domingo?"
+  }
+ ],
+ "falas": {
+  "ig": "Domingo à noite dá um aperto no peito? Em trinta segundos você vai entender de onde ele vem. A antecipação ativa o mesmo alarme que a ameaça real. O corpo não sabe que segunda ainda não chegou. E a semana que vem parece um bloco só, sem pausas. Quebrar a semana em partes menores tira o peso do domingo. Salva este vídeo para o próximo domingo.",
+  "tt": "Por que o domingo à noite pesa tanto? Em trinta segundos você vai entender de onde ele vem. A antecipação ativa o mesmo alarme que a ameaça real. O corpo não sabe que segunda ainda não chegou. E a semana que vem parece um bloco só, sem pausas. Quebrar a semana em partes menores tira o peso do domingo. Me conta: o que mais pesa no seu domingo?",
+  "todas": "Domingo à noite dá um aperto no peito? Por que o domingo à noite pesa tanto? Em trinta segundos você vai entender de onde ele vem. A antecipação ativa o mesmo alarme que a ameaça real. O corpo não sabe que segunda ainda não chegou. E a semana que vem parece um bloco só, sem pausas. Quebrar a semana em partes menores tira o peso do domingo. Salva este vídeo para o próximo domingo. Me conta: o que mais pesa no seu domingo?"
+ },
+ "duas_aberturas": true,
+ "notas_intencao": "Ênfase em \"mesmo alarme\".\nTom acolhedor na virada.",
+ "texto_na_tela": "O domingo não é o problema.",
+ "ganchos": {
+  "instagram": [
+   {
+    "tipo": "pergunta",
+    "texto": "Domingo à noite dá um aperto no peito?"
+   },
+   {
+    "tipo": "afirmação",
+    "texto": "O domingo não é o problema. Continua aqui."
+   }
+  ],
+  "tiktok": [
+   {
+    "tipo": "curiosidade",
+    "texto": "Por que o domingo à noite pesa tanto?"
+   },
+   {
+    "tipo": "",
+    "texto": "Sem tipo nenhum."
+   }
+  ]
+ },
+ "legendas": {
+  "instagram": "Salva para o próximo domingo.",
+  "tiktok": "O que pesa no seu domingo?"
+ },
+ "carrossel": [
+  " Ansiedade de domingo à noite",
+  " A antecipação ativa o alarme"
+ ],
+ "threads": "Domingo à noite pesa porque o corpo antecipa a semana inteira de uma vez.",
+ "stories": [
+  " (enquete) Domingo à noite pesa para você?",
+  " (leva ao video) Expliquei no vídeo de hoje."
+ ],
+ "fontes": [
+  "Grupe, D. W., & Nitschke, J. B. (2013). Uncertainty and anticipation in anxiety. Nature Reviews Neuroscience, 14(7). [checagem: confirmada]"
+ ],
+ "id_valido": true,
+ "id_confere": true,
+ "formato_roteiro": "etiquetas",
+ "paragrafos": {
+  "ig": [],
+  "tt": []
+ },
+ "abertura": {
+  "ig": "Domingo à noite dá um aperto no peito?",
+  "tt": "Por que o domingo à noite pesa tanto?"
+ },
+ "tt_proprio": false,
+ "entrega": "",
+ "aberturas_alternativas": [],
+ "apoio_visual": [],
+ "teleprompter": "Domingo à noite dá um aperto no peito?\n\nEm trinta segundos você vai entender de onde ele vem.",
+ "cta": "instagram salvar; tiktok comentar",
+ "sem_cta": false,
+ "duracao_alvo": "45 a 60 s"
+}
