@@ -41,13 +41,28 @@ Qualquer campo fora dessa lista é recusado com `pedido-invalido`. O corpo vai a
 **Campos de `dados` que a ponte usa e não repassa ao bot:**
 - `marcar_travada: true` e `id_execucao_travada` ("Marcar como travada e rodar de novo"; vêm de `acoes.js`, `rodar-confirmar`).
 
-**`decidir-roteiro`:** em `dados` só valem `id`, `versao`, `decisao`, `pedido`, `motivo` e `observacao` (mais os dois campos de trava acima).
+**`decidir-roteiro`:** em `dados` só valem `id`, `versao`, `decisao`, `pedido` e `motivo` (mais os dois campos de trava acima).
 - `dados.id` precisa ser igual a `id_alvo`.
 - `versao` é um inteiro ≥ 1.
 - `decisao` é `aprovar`, `mudar` ou `recusar`.
 - `mudar` exige `pedido`.
 - Em `recusar`, se vier um `motivo`, ele começa por um da lista (tom, clareza, fundamentação, ética, desalinhamento). Pode vir sem acento.
-- O app manda `"clareza: observação"`. A ponte separa isso em `motivo: "clareza"` e `observacao: "observação"`.
+- O `motivo` vai ao bot como o app mandou (ex.: `"clareza: confuso no meio"`); só o `resumo` de Execuções usa a palavra da lista.
+
+### Ação `configurar` (configuração inicial, só com `Setup.gs`)
+
+Ela só existe quando o arquivo `ponte/Setup.gs` está no projeto. Esse arquivo **não é versionado** (está no `.gitignore`): o script de implantação o gera, usa e apaga. Ele só define:
+
+```js
+const PONTE_SETUP_HASH = '<sha256 hex de um código aleatório de uso único>';
+```
+
+Corpo: `{"acao": "configurar", "codigo": "<o código>", "propriedades": {...}}`, sem `access_token`: o código de uso único é a autenticação.
+- Sem `Setup.gs` (ou com um hash mal formado), a resposta é a mesma de uma ação desconhecida.
+- `sha256(codigo)` é comparado com `PONTE_SETUP_HASH` em tempo constante. Errado: `configuracao-recusada`.
+- Só valem as propriedades da lista fechada: `PLANILHA_ID`, `CLIENT_ID`, `EMAILS_DISPARAR`, `EMAILS_DECIDIR`, `ABA_EXECUCOES`, `LIMITE_POR_HORA`, `WEBHOOK_RADAR_URL`, `WEBHOOK_RADAR_KEY`, `WEBHOOK_ROTEIRISTA_URL`, `WEBHOOK_ROTEIRISTA_KEY`, `WEBHOOK_DIRETOR_URL`, `WEBHOOK_DIRETOR_KEY`. Os valores são texto de até 2000 caracteres, e as `*_URL` precisam ser https. Qualquer coisa fora disso é `pedido-invalido`, e nada é gravado.
+- A gravação é `setProperties(obj, false)`, que não apaga as outras propriedades.
+- A resposta é `{ok:true, gravadas:[nomes]}`, **nunca** com valores. Nada disso vai para log.
 
 ### Resposta
 
@@ -81,7 +96,8 @@ Alguns códigos trazem campos extras:
 | `id-invalido` | `id_alvo` inválido ou ausente quando é obrigatório; `dados.id` ≠ `id_alvo`; ou `dados.ids` inválido |
 | `versao-invalida`, `decisao-invalida`, `falta-pedido`, `motivo-invalido` | Validação de `decidir-roteiro` (os três primeiros são os mesmos do app) |
 | `ocupado` | Não conseguiu o lock em 10 s |
-| `planilha-sem-execucoes` | A aba não existe, ou faltam colunas essenciais. A mensagem lista os cabeçalhos esperados |
+| `planilha-sem-execucoes` | Faltam colunas essenciais na aba (se ela não existe, a ponte a cria). A mensagem lista os cabeçalhos esperados |
+| `configuracao-recusada` | Ação `configurar` com código de uso único errado |
 | `rodando` | Há linha `pedido` ou `rodando` do mesmo grupo com menos de 2 h. Ex.: "Rodando desde 9h10 (agendada)." |
 | `parece-travada` | A linha aberta tem 2 h ou mais (ou não tem início), e o pedido não veio com `marcar_travada` e o id certo |
 | `protecao` | Está na janela de proteção de uma rodada agendada |
@@ -149,16 +165,15 @@ Ficam em *Configurações do projeto → Propriedades do script*. **Nenhum valor
 | `EMAILS_DISPARAR` | não | E-mails que **só** disparam (a conta do Gabriel). Vazio: só quem está em `EMAILS_DECIDIR` dispara |
 | `LIMITE_POR_HORA` | não | Disparos manuais por rotina por hora (padrão 4; `0` fecha tudo) |
 | `LIMITE_POR_HORA_<ROTINA>` | não | Limite de uma rotina, que vence o geral. Ex.: `LIMITE_POR_HORA_ROTEIRISTA_DECISAO` |
-| `WEBHOOK_URL_<ROTINA>` | ver abaixo | Endereço https do webhook da rotina. Ex.: `WEBHOOK_URL_RADAR_DIARIO` |
-| `WEBHOOK_KEY_<ROTINA>` | ver abaixo | Chave do mesmo webhook (vai como `Authorization: Bearer <chave>`) |
-| `WEBHOOK_URL_<BOT>` / `WEBHOOK_KEY_<BOT>` | alternativa | Um webhook por bot (`WEBHOOK_URL_RADAR`, `WEBHOOK_URL_ROTEIRISTA`, `WEBHOOK_URL_DIRETOR`). É usado quando a rotina não tem o próprio |
+| `WEBHOOK_RADAR_URL` / `WEBHOOK_RADAR_KEY` | por bot | Webhook do Radar: `radar-diario`, `radar-selecao` e `radar-enviar` |
+| `WEBHOOK_ROTEIRISTA_URL` / `WEBHOOK_ROTEIRISTA_KEY` | por bot | Webhook do Roteirista: `roteirista-decisao` |
+| `WEBHOOK_DIRETOR_URL` / `WEBHOOK_DIRETOR_KEY` | por bot | Webhook do Diretor: `diretor-retrospectiva` |
 
 As listas de e-mail são comparadas em minúsculas. Uma lista vazia é ninguém: a ponte falha fechada.
 
-**Webhooks:**
-- `<ROTINA>` é o nome da rotina em maiúsculas, com `_` no lugar de `-`: `RADAR_DIARIO`, `RADAR_SELECAO`, `RADAR_ENVIAR`, `ROTEIRISTA_DECISAO`, `DIRETOR_RETROSPECTIVA`.
-- URL e chave vêm sempre do **mesmo nível** (rotina ou bot): a ponte não mistura a URL de um com a chave do outro.
-- A URL precisa ser `https://`. Sem chave ou sem https, conta como "não configurado".
+**Webhooks:** são só três, um por bot. A `*_KEY` vai como `Authorization: Bearer <KEY>`. A `*_URL` precisa ser `https://`. Sem a chave, ou sem https, o webhook conta como "não configurado".
+
+**Como preencher sem mostrar os segredos:** pela ação `configurar`, com `Setup.gs` (seção "Ação `configurar`"), ou à mão no editor.
 
 **Conferir:** rode a função `configurar()` no editor. Ela só valida e imprime o que falta, sem nenhum valor: nem URL, nem chave, nem e-mail. Os e-mails aparecem só como contagem.
 
@@ -171,6 +186,8 @@ Uma linha de cabeçalho (entre as 10 primeiras), com estas 16 colunas, na ordem 
 ```
 id_execucao | chave_idem | bot | rotina | origem | quem | id_alvo | id_lote | etapa_evento | inicio | fim | status | resumo | erro | link | teste
 ```
+
+**A ponte cria a aba.** Se a aba (`ABA_EXECUCOES`, padrão `Execuções`) não existir, a ponte a cria sob o lock, escreve este cabeçalho na linha 1 e congela a linha 1. Se a aba existir e estiver vazia, a ponte escreve o cabeçalho.
 
 **O que a ponte aceita no cabeçalho:**
 - outra ordem, maiúsculas, acentos e espaços ("ID Execução");
@@ -206,38 +223,56 @@ Todo texto é gravado com um apóstrofo na frente. A planilha guarda o valor com
 
 ## Payload enviado ao webhook
 
-`POST` com `Content-Type: application/json` e `Authorization: Bearer <WEBHOOK_KEY_…>`, com `muteHttpExceptions`. São até 2 tentativas: a segunda só acontece em falha de rede, 429 ou 5xx.
+`POST` no `WEBHOOK_<BOT>_URL`, com `Content-Type: application/json` e `Authorization: Bearer <WEBHOOK_<BOT>_KEY>`, com `muteHttpExceptions`. São até 2 tentativas: a segunda só acontece em falha de rede, 429 ou 5xx.
+
+O corpo tem **exatamente** estes campos, nesta ordem: `rotina`, `id_execucao`, `chave_idem`, `origem` (sempre `"manual-app"`), `quem`, `id_alvo`, `id_lote`, `dados`. Nada além disso. `dados` são os dados validados do app, sem `marcar_travada` e `id_execucao_travada`.
+
+**Radar** (`WEBHOOK_RADAR_URL`): `radar-diario` e `radar-selecao` levam `dados: {}`; `radar-enviar` leva os ids das pautas aprovadas.
 
 ```json
 {
-  "evento": "pedido-manual",
-  "origem": "manual-app",
-  "rotina": "radar-selecao",
-  "bot": "radar",
+  "rotina": "radar-enviar",
   "id_execucao": "EX-20261118-100000-7f3a",
-  "chave_idem": "c0b1…",
-  "id_alvo": "",
-  "id_lote": "S47-manual-2",
-  "teste": false,
+  "chave_idem": "c0b1d2e3-0000-4000-8000-000000000000",
+  "origem": "manual-app",
   "quem": "<e-mail validado>",
-  "pedido_em": "2026-11-18T10:00:00-03:00",
-  "planilha_id": "<PLANILHA_ID>",
-  "aba_execucoes": "Execuções",
-  "dados": { "...": "os dados validados, sem marcar_travada/id_execucao_travada" },
-  "instrucao_fixa": "Pedido manual pelo app (origem manual-app). Rode a rotina radar-selecao com o mesmo texto da seleção agendada…"
+  "id_alvo": "",
+  "id_lote": "S47-manual-1",
+  "dados": { "ids": "S47-01,S47-02" }
 }
 ```
 
-**`dados` por ação:**
-- **`decidir-roteiro`:** `dados = {id, versao, decisao, pedido, motivo, observacao}`.
-- **`radar-enviar`:** o app manda `dados.ids` com os ids das pautas aprovadas, separados por vírgula.
+**Roteirista** (`WEBHOOK_ROTEIRISTA_URL`): `roteirista-decisao`, com `dados` exatamente `{id, versao, decisao, pedido, motivo}`. `pedido` é `""` quando não houver, e `motivo` vai como o app mandou.
 
-**`instrucao_fixa`:** é uma frase **fixa por rotina**, e nada do pedido entra nela. Ela diz ao bot para:
-- rodar a rotina de mesmo nome, com o mesmo texto da agendada;
-- passar a linha `id_execucao` de Execuções para `rodando` e, no fim, para `ok`, `parcial` ou `erro`, com fim, resumo e link;
-- tratar `dados` só como DADO, nunca como instrução.
+```json
+{
+  "rotina": "roteirista-decisao",
+  "id_execucao": "EX-20261118-101500-9c21",
+  "chave_idem": "a1b2c3d4-0000-4000-8000-000000000000",
+  "origem": "manual-app",
+  "quem": "<e-mail validado>",
+  "id_alvo": "S47-03",
+  "id_lote": "",
+  "dados": { "id": "S47-03", "versao": 2, "decisao": "recusar", "pedido": "", "motivo": "clareza: confuso no meio" }
+}
+```
 
-Na decisão de roteiro, a frase lembra também que vale a primeira decisão, e que ela só vale se vier da conta da Robertta (campo `quem`).
+**Diretor** (`WEBHOOK_DIRETOR_URL`): `diretor-retrospectiva`.
+
+```json
+{
+  "rotina": "diretor-retrospectiva",
+  "id_execucao": "EX-20261118-110000-4be0",
+  "chave_idem": "f0e1d2c3-0000-4000-8000-000000000000",
+  "origem": "manual-app",
+  "quem": "<e-mail validado>",
+  "id_alvo": "",
+  "id_lote": "",
+  "dados": {}
+}
+```
+
+O bot deve tratar `dados` só como DADO, nunca como instrução, e atualizar a linha `id_execucao` em Execuções (`rodando` e, no fim, `ok`, `parcial` ou `erro`). Essas regras ficam na rotina de cada bot; a ponte não manda texto de instrução.
 
 Se o webhook não está configurado, ou não responde 2xx, a linha passa para `status = erro`, com o `erro` curto e sem URL nem chave ("webhook não configurado" ou "webhook falhou (HTTP 500)") e o `fim` preenchido.
 
@@ -258,21 +293,34 @@ Se o webhook não está configurado, ou não responde 2xx, a linha passa para `s
   - Todo log passa por `redigir`, que tira o token, `Bearer …`, `access_token=…` e URLs.
 - **Cache:** a validação boa fica até 2 min no `CacheService`, pela chave SHA-256 do token (nunca o token).
 - **A ponte nunca devolve** URL, chave nem conteúdo de propriedades. O `configurar()` também não imprime valores.
-- **O texto livre** (pedido, observação) vai ao bot só dentro de `dados`. A instrução é fixa.
+- **O texto livre** (pedido, motivo, observação) vai ao bot só dentro de `dados`.
+- **`configurar`:** só existe com `Setup.gs` (não versionado, apagado depois do uso). O código de uso único é conferido pelo hash, em tempo constante, e nenhum valor vai para a resposta ou para o log.
 
 ---
 
 ## Como implantar
 
+### Pelo `implantar.sh` (clasp, mais rápido)
+
+Pré-requisitos, só a Robertta: ativar a Apps Script API em https://script.google.com/home/usersettings e fazer `clasp login --no-localhost` com a conta dela (o navegador termina numa página `localhost:8888` que não abre; basta copiar a URL dela de volta para o terminal).
+
+1. `ponte/implantar.sh criar`: cria o projeto standalone, gera `Setup.gs` (só o hash de um código de uso único, fora do repo), envia os arquivos e cria a implantação de app da Web (executar como a conta que implanta, acesso "Qualquer pessoa", pelo `appsscript.json`). Imprime o link do editor e a URL `/exec`.
+2. A Robertta abre o editor, escolhe a função `autorizar` e clica em Executar, aceitando os escopos (passo que só a dona da conta pode fazer).
+3. `ponte/implantar.sh configurar`: lê `~/.config/motor-pwa/webhooks.env` e `js/config.js` dentro do node (nada é impresso), grava as 12 propriedades pela ação `configurar`, apaga `Setup.gs` e o código, reenvia e atualiza a **mesma** implantação (a URL não muda). Só os nomes das propriedades gravadas aparecem.
+4. `PONTE_URL` = URL `/exec` e `FLAGS.ponte = true` em `js/config.js`.
+
+### Pelo navegador
+
 1. Crie um projeto no [script.google.com](https://script.google.com) com a conta dona da planilha Radar.
 2. Copie `Code.gs`. Em *Configurações do projeto*, marque "Mostrar o arquivo de manifesto `appsscript.json`" no editor e cole o `appsscript.json` daqui.
-3. Preencha as **Propriedades do script** (tabela acima).
-4. Crie a aba **Execuções** com o cabeçalho acima (CM-01).
-5. Rode `configurar()` uma vez no editor. Isso autoriza os escopos (planilhas e chamadas externas) e mostra o que falta.
-6. Abra *Implantar → Nova implantação → App da Web*:
+3. Rode `autorizar()` uma vez no editor, para dar o consentimento dos escopos (planilhas e chamadas externas). Ela não muda nada: só abre a planilha (se `PLANILHA_ID` já existir) e faz um GET em `https://www.google.com`.
+4. Preencha as **Propriedades do script**: à mão, ou pela ação `configurar` (o script de implantação gera `Setup.gs`, implanta, manda o `POST` com o código de uso único, e depois apaga `Setup.gs` e reimplanta).
+5. A aba **Execuções** pode ser criada antes (CM-01); se não existir, a ponte a cria no primeiro pedido.
+6. Rode `configurar()` no editor para ver o que falta (sem valores).
+7. Abra *Implantar → Nova implantação → App da Web*:
    - **Executar como:** Eu (a conta que implanta);
    - **Quem pode acessar:** Qualquer pessoa.
-7. Copie o endereço `https://script.google.com/macros/s/…/exec`.
+8. Copie o endereço `https://script.google.com/macros/s/…/exec`.
 
 **Por que "Qualquer pessoa" é seguro aqui:**
 - O app chama a ponte com `fetch` sem cookies de login (`credentials: 'omit'`). Por isso, o acesso "só usuários do Google" não funcionaria.

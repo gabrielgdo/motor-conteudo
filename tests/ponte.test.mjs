@@ -61,10 +61,10 @@ const PROPS = {
   PLANILHA_ID: 'planilha-falsa',
   EMAILS_DISPARAR: GABRIEL,
   EMAILS_DECIDIR: ` ${ROBERTTA.toUpperCase()} `,
-  WEBHOOK_URL_RADAR: URL_RADAR,
-  WEBHOOK_KEY_RADAR: CHAVE_RADAR,
-  WEBHOOK_URL_ROTEIRISTA_DECISAO: URL_ROTEIRISTA,
-  WEBHOOK_KEY_ROTEIRISTA_DECISAO: CHAVE_ROTEIRISTA,
+  WEBHOOK_RADAR_URL: URL_RADAR,
+  WEBHOOK_RADAR_KEY: CHAVE_RADAR,
+  WEBHOOK_ROTEIRISTA_URL: URL_ROTEIRISTA,
+  WEBHOOK_ROTEIRISTA_KEY: CHAVE_ROTEIRISTA,
 };
 
 const ehDataQualquer = (v) => Object.prototype.toString.call(v) === '[object Date]';
@@ -96,6 +96,7 @@ function criarAba(nome, linhas) {
   };
   aba.sheet = {
     getName: () => aba.nome,
+    setFrozenRows: (n) => { aba.congeladas = n; },
     getLastRow: ultimaLinha,
     getLastColumn: largura,
     getDataRange: () => ({
@@ -117,9 +118,12 @@ function criarAba(nome, linhas) {
 }
 
 function criarAmbiente({
-  agora = QUARTA_10, linhas = [CAB], props = PROPS, webhooks = {}, lockOk = true, nomeAba = 'Execuções', abrirLanca = null,
+  agora = QUARTA_10, linhas = [CAB], props = PROPS, webhooks = {}, lockOk = true, nomeAba = 'Execuções', abrirLanca = null, setupHash = null,
 } = {}) {
   const aba = criarAba(nomeAba, linhas);
+  const abas = { [nomeAba]: aba };
+  const propsVivas = { ...props };
+  const gravacoesDeProps = [];
   const chamadas = [];
   const logs = [];
   const respostas = [];
@@ -135,7 +139,17 @@ function criarAmbiente({
   const ctx = {
     console: { log: espiao('log'), info: espiao('info'), warn: espiao('warn'), error: espiao('error') },
     Logger: { log: espiao('Logger') },
-    PropertiesService: { getScriptProperties: () => ({ getProperties: () => ({ ...props }), getProperty: (k) => (k in props ? props[k] : null) }) },
+    PropertiesService: {
+      getScriptProperties: () => ({
+        getProperties: () => ({ ...propsVivas }),
+        getProperty: (k) => (k in propsVivas ? propsVivas[k] : null),
+        setProperties: (obj, apagarOutras) => {
+          gravacoesDeProps.push({ obj: { ...obj }, apagarOutras });
+          if (apagarOutras) for (const k of Object.keys(propsVivas)) delete propsVivas[k];
+          Object.assign(propsVivas, obj);
+        },
+      }),
+    },
     LockService: {
       getScriptLock: () => ({
         tryLock: () => { lock.pedidos++; if (!lockOk) return false; lock.segurando = true; return true; },
@@ -145,8 +159,11 @@ function criarAmbiente({
     SpreadsheetApp: {
       openById: (id) => {
         if (abrirLanca) throw new Error(abrirLanca);
-        assert.equal(id, props.PLANILHA_ID);
-        return { getSheetByName: (n) => (n === aba.nome ? aba.sheet : null) };
+        assert.equal(id, propsVivas.PLANILHA_ID);
+        return {
+          getSheetByName: (n) => (abas[n] ? abas[n].sheet : null),
+          insertSheet: (n) => { assert.ok(!abas[n]); abas[n] = criarAba(n, []); abas[n].criada = true; return abas[n].sheet; },
+        };
       },
       flush: () => {},
     },
@@ -164,6 +181,7 @@ function criarAmbiente({
           const t = TOKENS[tok];
           return t?.userinfo ? resp(200, t.userinfo) : resp(401, { error: 'invalid_token' });
         }
+        if (url === 'https://www.google.com') return resp(200, '<html>');
         const fila = filaWebhook[url];
         const codigo = fila ? (fila.length > 1 ? fila.shift() : fila[0]) : 200;
         if (codigo === 'lanca') throw new Error(`falhou ${url}`);
@@ -195,6 +213,8 @@ function criarAmbiente({
   };
   vm.createContext(ctx);
   vm.runInContext(CODIGO, ctx, { filename: 'Code.gs' });
+  // Setup.gs (não versionado) só define a constante; os arquivos do Apps Script dividem o escopo global
+  if (setupHash !== null) vm.runInContext('const PONTE_SETUP_HASH = ' + JSON.stringify(setupHash) + ';', ctx, { filename: 'Setup.gs' });
   ctx.agora_ = () => new Date(relogio.getTime());
 
   function post(corpo) {
@@ -207,7 +227,7 @@ function criarAmbiente({
   const execs = () => vm.runInContext('lerExecucoes', ctx)(aba.linhas).execucoes;
   const webhooksChamados = () => chamadas.filter((c) => c.url.startsWith('https://webhook.'));
   return {
-    ctx, aba, chamadas, logs, respostas, cache, lock, post, execs, webhooksChamados,
+    ctx, aba, abas, propsVivas, gravacoesDeProps, chamadas, logs, respostas, cache, lock, post, execs, webhooksChamados,
     pure: (nome) => vm.runInContext(nome, ctx),
     setAgora: (s) => { relogio = sp(s); },
   };
@@ -400,8 +420,8 @@ test('decidir-roteiro: valida id, versão, decisão, pedido e motivo', () => {
   assert.equal(amb.execs().length, 0);
 });
 
-test('decidir-roteiro: resumos curtos e dados do bot ({id, versao, decisao, pedido, motivo, observacao})', () => {
-  const amb = criarAmbiente();
+test('decidir-roteiro: resumos curtos e dados do bot exatamente {id, versao, decisao, pedido, motivo}', () => {
+  const amb = criarAmbiente({ props: { ...PROPS, LIMITE_POR_HORA: '20' } });
   const R = 'tok-falso-robertta';
   assert.equal(amb.post(decisao(R, 'S47-01', { versao: 2 })).ok, true);
   assert.equal(amb.post(decisao(R, 'S47-02', { versao: 3, decisao: 'mudar', pedido: 'Encurtar o gancho.' })).ok, true);
@@ -409,10 +429,17 @@ test('decidir-roteiro: resumos curtos e dados do bot ({id, versao, decisao, pedi
   assert.equal(amb.post(decisao(R, 'S47-04', { versao: 1, decisao: 'recusar', motivo: 'tom' })).ok, true);
   assert.deepEqual(json(amb.execs().map((e) => e.resumo)), ['aprovar v2', 'mudar v3', 'recusar v1 (clareza)', 'recusar v1 (tom)']);
   const corpos = amb.webhooksChamados().map((c) => JSON.parse(c.params.payload));
-  assert.deepEqual(corpos[1].dados, { id: 'S47-02', versao: 3, decisao: 'mudar', pedido: 'Encurtar o gancho.', motivo: '', observacao: '' });
-  assert.deepEqual(corpos[2].dados, { id: 'S47-03', versao: 1, decisao: 'recusar', pedido: '', motivo: 'clareza', observacao: 'confuso no meio' });
-  assert.match(corpos[0].instrucao_fixa, /primeira decisão/);
-  assert.match(corpos[0].instrucao_fixa, /Robertta/);
+  assert.deepEqual(corpos[0].dados, { id: 'S47-01', versao: 2, decisao: 'aprovar', pedido: '', motivo: '' });
+  assert.deepEqual(corpos[1].dados, { id: 'S47-02', versao: 3, decisao: 'mudar', pedido: 'Encurtar o gancho.', motivo: '' });
+  // o motivo vai como o app mandou (sem separar a observação)
+  assert.deepEqual(corpos[2].dados, { id: 'S47-03', versao: 1, decisao: 'recusar', pedido: '', motivo: 'Clareza: confuso no meio' });
+  // sem `pedido` no corpo do app: vai ''
+  const semPedido = decisao(R, 'S47-09', {});
+  delete semPedido.dados.pedido;
+  assert.equal(amb.post(semPedido).ok, true);
+  assert.equal(JSON.parse(amb.webhooksChamados().at(-1).params.payload).dados.pedido, '');
+  // observacao não é campo da decisão de roteiro
+  assert.equal(amb.post(decisao(R, 'S47-10', { observacao: 'x' })).codigo, 'pedido-invalido');
   assert.ok(amb.webhooksChamados().every((c) => c.url === URL_ROTEIRISTA && c.params.headers.Authorization === `Bearer ${CHAVE_ROTEIRISTA}`));
 });
 
@@ -587,7 +614,7 @@ test('id T: vai para Execuções com teste = sim; podeGravarNaAba recusa T em De
   assert.equal(r.ok, true);
   assert.equal(r.teste, true);
   assert.equal(amb.aba.linhas[1][15], 'sim');
-  assert.equal(JSON.parse(amb.webhooksChamados()[0].params.payload).teste, true);
+  assert.equal(JSON.parse(amb.webhooksChamados()[0].params.payload).id_alvo, 'T01-01'); // o bot vê o id T
   amb.post(decisao('tok-falso-robertta', 'S47-01', { versao: 1 }));
   assert.equal(amb.aba.linhas[2][15], 'não');
 
@@ -622,16 +649,21 @@ test('webhook não configurado: linha vira "erro" (sem URL nem chave) e a respos
   assert.equal(amb.webhooksChamados().length, 0);
 });
 
-test('webhook: só https e com chave do mesmo nível; o da rotina vence o do bot', () => {
+test('webhook: um por bot (WEBHOOK_<BOT>_URL/_KEY), só https e com chave; o esquema antigo não vale', () => {
   const amb = criarAmbiente();
   const escolher = amb.pure('escolherWebhook');
-  assert.equal(escolher({ WEBHOOK_URL_RADAR_DIARIO: 'http://inseguro.test/x', WEBHOOK_KEY_RADAR_DIARIO: 'k' }, 'radar-diario'), null);
-  assert.equal(escolher({ WEBHOOK_URL_RADAR_DIARIO: 'https://x.test/a' }, 'radar-diario'), null); // sem chave
-  assert.equal(escolher({ WEBHOOK_URL_RADAR_DIARIO: 'https://x.test/a', WEBHOOK_KEY_RADAR: 'k' }, 'radar-diario'), null); // não mistura níveis
-  assert.equal(escolher({ WEBHOOK_URL_RADAR_DIARIO: 'https://x.test/a', WEBHOOK_KEY_RADAR_DIARIO: 'k1', WEBHOOK_URL_RADAR: 'https://x.test/b', WEBHOOK_KEY_RADAR: 'k2' }, 'radar-diario').url, 'https://x.test/a');
-  assert.equal(escolher({ WEBHOOK_URL_RADAR: 'https://x.test/b', WEBHOOK_KEY_RADAR: 'k2' }, 'radar-selecao').origem, 'bot');
+  const radar = { WEBHOOK_RADAR_URL: 'https://x.test/r', WEBHOOK_RADAR_KEY: 'k' };
+  for (const r of ['radar-diario', 'radar-selecao', 'radar-enviar']) assert.equal(escolher(radar, r).url, 'https://x.test/r', r);
+  assert.equal(escolher(radar, 'roteirista-decisao'), null);
+  assert.equal(escolher({ WEBHOOK_ROTEIRISTA_URL: 'https://x.test/t', WEBHOOK_ROTEIRISTA_KEY: 'k' }, 'roteirista-decisao').url, 'https://x.test/t');
+  assert.equal(escolher({ WEBHOOK_DIRETOR_URL: 'https://x.test/d', WEBHOOK_DIRETOR_KEY: 'k' }, 'diretor-retrospectiva').url, 'https://x.test/d');
+  assert.equal(escolher({ WEBHOOK_RADAR_URL: 'http://inseguro.test/x', WEBHOOK_RADAR_KEY: 'k' }, 'radar-diario'), null);
+  assert.equal(escolher({ WEBHOOK_RADAR_URL: 'https://x.test/a' }, 'radar-diario'), null); // sem chave
+  assert.equal(escolher({ WEBHOOK_URL_RADAR: 'https://x.test/a', WEBHOOK_KEY_RADAR: 'k' }, 'radar-diario'), null); // esquema antigo
+  assert.equal(escolher({ WEBHOOK_URL_RADAR_DIARIO: 'https://x.test/a', WEBHOOK_KEY_RADAR_DIARIO: 'k' }, 'radar-diario'), null);
+  assert.equal(escolher(radar, 'motor-editar'), null);
 
-  const http = criarAmbiente({ props: { ...PROPS, WEBHOOK_URL_RADAR: 'http://webhook.exemplo.test/radar' } });
+  const http = criarAmbiente({ props: { ...PROPS, WEBHOOK_RADAR_URL: 'http://webhook.exemplo.test/radar' } });
   assert.equal(http.post(disparo('tok-falso-robertta', 'radar-diario')).codigo, 'webhook-nao-configurado');
   assert.equal(http.webhooksChamados().length, 0);
 });
@@ -673,20 +705,32 @@ test('webhook 2xx: payload completo, POST JSON com o Bearer da propriedade; resp
   assert.equal(w.params.muteHttpExceptions, true);
   assert.deepEqual(json(w.params.headers), { Authorization: `Bearer ${CHAVE_RADAR}` });
   const p = JSON.parse(w.params.payload);
-  const instrucao = p.instrucao_fixa;
-  delete p.instrucao_fixa;
+  // EXATAMENTE estes campos, nesta ordem
+  assert.deepEqual(Object.keys(p), ['rotina', 'id_execucao', 'chave_idem', 'origem', 'quem', 'id_alvo', 'id_lote', 'dados']);
   assert.deepEqual(p, {
-    evento: 'pedido-manual', origem: 'manual-app', rotina: 'radar-selecao', bot: 'radar', id_execucao: r.id_execucao,
-    chave_idem: p.chave_idem, id_alvo: '', id_lote: 'S47-manual-2', teste: false, quem: GABRIEL,
-    pedido_em: '2026-11-18T10:00:00-03:00', planilha_id: 'planilha-falsa', aba_execucoes: 'Execuções',
-    dados: { observacao: 'focar em sono' },
+    rotina: 'radar-selecao', id_execucao: r.id_execucao, chave_idem: p.chave_idem, origem: 'manual-app', quem: GABRIEL,
+    id_alvo: '', id_lote: 'S47-manual-2', dados: { observacao: 'focar em sono' },
   });
   assert.match(p.chave_idem, /^chave-teste-/);
-  assert.match(instrucao, /radar-selecao/);
-  assert.match(instrucao, /mesmo texto/);
-  assert.match(instrucao, /"rodando"/);
-  assert.match(instrucao, /só DADO/);
-  assert.ok(!instrucao.includes('focar em sono'), 'a instrução é fixa: nada do pedido entra nela');
+});
+
+test('webhook por bot: Radar (3 rotinas), Roteirista e Diretor, cada um com URL e KEY próprias', () => {
+  const props = { ...PROPS, WEBHOOK_DIRETOR_URL: 'https://webhook.exemplo.test/diretor', WEBHOOK_DIRETOR_KEY: 'chave-falsa-diretor' };
+  const amb = criarAmbiente({ props });
+  amb.post(disparo('tok-falso-robertta', 'radar-enviar', { id_lote: 'S47-manual-1', dados: { ids: 'S47-01,S47-02' } }));
+  amb.post(decisao('tok-falso-robertta', 'S47-01', { versao: 2 }));
+  amb.post(disparo('tok-falso-robertta', 'diretor-retrospectiva'));
+  const ws = amb.webhooksChamados();
+  assert.deepEqual(ws.map((w) => [w.url, w.params.headers.Authorization]), [
+    [URL_RADAR, `Bearer ${CHAVE_RADAR}`],
+    [URL_ROTEIRISTA, `Bearer ${CHAVE_ROTEIRISTA}`],
+    ['https://webhook.exemplo.test/diretor', 'Bearer chave-falsa-diretor'],
+  ]);
+  const ps = ws.map((w) => JSON.parse(w.params.payload));
+  assert.deepEqual(ps[0].dados, { ids: 'S47-01,S47-02' });
+  assert.deepEqual(ps[1].dados, { id: 'S47-01', versao: 2, decisao: 'aprovar', pedido: '', motivo: '' });
+  assert.deepEqual(ps[2].dados, {});
+  for (const p of ps) assert.deepEqual(Object.keys(p), ['rotina', 'id_execucao', 'chave_idem', 'origem', 'quem', 'id_alvo', 'id_lote', 'dados']);
 });
 
 /* ----------------------------------------------------------------- Execuções */
@@ -761,9 +805,31 @@ test('cabeçalho com sinônimos, outra ordem, maiúsculas e coluna extra: lê a 
   assert.equal(em('Coluna da Robertta'), '');
 });
 
-test('aba Execuções ausente ou sem colunas essenciais → planilha-sem-execucoes com os cabeçalhos esperados', () => {
+test('aba Execuções ausente: a ponte cria (insertSheet) com as 16 colunas e congela a linha 1; vazia: escreve o cabeçalho', () => {
   const sem = criarAmbiente({ nomeAba: 'Outra' });
   const r = sem.post(disparo('tok-falso-robertta', 'radar-diario'));
+  assert.equal(r.ok, true);
+  const nova = sem.abas['Execuções'];
+  assert.equal(nova.criada, true);
+  assert.equal(nova.congeladas, 1);
+  assert.deepEqual(json(nova.linhas[0]), CAB);
+  assert.equal(nova.linhas[1][0], r.id_execucao);
+  assert.deepEqual(json(sem.abas.Outra.linhas), [CAB]); // a outra aba não foi tocada
+
+  const vazia = criarAmbiente({ linhas: [] });
+  assert.equal(vazia.post(disparo('tok-falso-robertta', 'radar-diario')).ok, true);
+  assert.equal(vazia.aba.criada, undefined);
+  assert.equal(vazia.aba.congeladas, 1);
+  assert.deepEqual(json(vazia.aba.linhas[0]), CAB);
+  assert.equal(vazia.execs().length, 1);
+
+  const comNome = criarAmbiente({ nomeAba: 'Outra', props: { ...PROPS, ABA_EXECUCOES: 'Registro' } });
+  assert.equal(comNome.post(disparo('tok-falso-robertta', 'radar-diario')).ok, true);
+  assert.equal(comNome.abas.Registro.criada, true);
+});
+
+test('aba Execuções sem colunas essenciais → planilha-sem-execucoes com os cabeçalhos esperados', () => {
+  const r = criarAmbiente({ linhas: [['titulo qualquer']] }).post(disparo('tok-falso-robertta', 'radar-diario'));
   assert.equal(r.codigo, 'planilha-sem-execucoes');
   assert.match(r.mensagem, /id_execucao, chave_idem, bot, rotina, origem, quem, id_alvo, id_lote, etapa_evento, inicio, fim, status, resumo, erro, link, teste/);
 
@@ -824,18 +890,80 @@ test('redigir: tira token, Bearer, access_token= e URLs', () => {
 /* ----------------------------------------------------------------- configurar */
 
 test('configurar(): diz o que falta sem imprimir valores secretos', () => {
-  const amb = criarAmbiente({ props: { CLIENT_ID: CLIENT, PLANILHA_ID: 'planilha-falsa', EMAILS_DECIDIR: ROBERTTA, WEBHOOK_URL_RADAR: URL_RADAR, WEBHOOK_KEY_RADAR: CHAVE_RADAR, WEBHOOK_URL_DIRETOR: 'http://inseguro.test' } });
+  const amb = criarAmbiente({ props: { CLIENT_ID: CLIENT, PLANILHA_ID: 'planilha-falsa', EMAILS_DECIDIR: ROBERTTA, WEBHOOK_RADAR_URL: URL_RADAR, WEBHOOK_RADAR_KEY: CHAVE_RADAR, WEBHOOK_DIRETOR_URL: 'http://inseguro.test' } });
   const r = amb.ctx.configurar();
   assert.equal(r.ok, false);
-  assert.ok(r.faltas.some((f) => f.startsWith('diretor-retrospectiva')));
-  assert.ok(r.avisos.some((a) => a.startsWith('roteirista-decisao')));
+  assert.ok(r.faltas.some((f) => f.startsWith('diretor:')));
+  assert.ok(r.avisos.some((a) => a.startsWith('roteirista:')));
   const log = JSON.stringify(amb.logs);
   for (const s of [CHAVE_RADAR, URL_RADAR, ROBERTTA, 'inseguro.test', 'planilha-falsa', CLIENT]) assert.ok(!log.includes(s), s);
-  assert.ok(log.includes('radar-diario: webhook configurado (pela bot)'));
+  assert.ok(log.includes('radar: webhook configurado.'));
 
   const vazio = criarAmbiente({ props: {} }).ctx.configurar();
   assert.equal(vazio.ok, false);
   assert.ok(vazio.faltas.some((f) => f.startsWith('CLIENT_ID')));
+});
+
+/* ----------------------------------------------------------------- configuração inicial (Setup.gs) */
+
+const CODIGO_SETUP = 'codigo-falso-de-uso-unico-0123456789';
+const HASH_SETUP = createHash('sha256').update(CODIGO_SETUP, 'utf8').digest('hex');
+const configurar = (props, codigo = CODIGO_SETUP) => ({ acao: 'configurar', codigo, propriedades: props });
+const NOVAS = {
+  PLANILHA_ID: 'planilha-nova-falsa', WEBHOOK_RADAR_URL: 'https://webhook.exemplo.test/novo-radar', WEBHOOK_RADAR_KEY: 'chave-falsa-nova', EMAILS_DECIDIR: ROBERTTA,
+};
+
+test('acao configurar: sem Setup.gs é ação desconhecida; código errado e propriedade fora da lista são recusados', () => {
+  const sem = criarAmbiente();
+  const desconhecida = sem.post({ acao: 'qualquer-coisa', access_token: 'tok-falso-robertta' });
+  const r = sem.post(configurar(NOVAS));
+  assert.deepEqual(r, desconhecida);
+  assert.deepEqual(r, { ok: false, codigo: 'pedido-invalido', mensagem: 'Ação desconhecida.' });
+  assert.equal(sem.gravacoesDeProps.length, 0);
+
+  const amb = criarAmbiente({ setupHash: HASH_SETUP });
+  assert.equal(amb.post(configurar(NOVAS, 'codigo-errado-de-uso-unico-000000')).codigo, 'configuracao-recusada');
+  assert.equal(amb.post(configurar(NOVAS, 'curto')).codigo, 'configuracao-recusada');
+  assert.equal(amb.post(configurar({ ...NOVAS, WEBHOOK_URL_RADAR: 'https://x.test' })).codigo, 'pedido-invalido');
+  assert.equal(amb.post(configurar({ OUTRA: 'x' })).codigo, 'pedido-invalido');
+  assert.equal(amb.post(configurar({ WEBHOOK_DIRETOR_URL: 'http://inseguro.test/d' })).codigo, 'pedido-invalido');
+  assert.equal(amb.post(configurar({ PLANILHA_ID: 5 })).codigo, 'pedido-invalido');
+  assert.equal(amb.post(configurar({ PLANILHA_ID: 'a'.repeat(2001) })).codigo, 'pedido-invalido');
+  assert.equal(amb.post(configurar({})).codigo, 'pedido-invalido');
+  assert.equal(amb.post({ ...configurar(NOVAS), access_token: 'tok-falso-robertta' }).codigo, 'pedido-invalido');
+  assert.equal(amb.gravacoesDeProps.length, 0);
+  // hash mal formado em Setup.gs = sem Setup
+  assert.equal(criarAmbiente({ setupHash: 'abc' }).post(configurar(NOVAS)).mensagem, 'Ação desconhecida.');
+});
+
+test('acao configurar: grava só as da lista sem apagar as outras, devolve só os nomes, nada em log', () => {
+  const amb = criarAmbiente({ setupHash: HASH_SETUP.toUpperCase() });
+  const r = amb.post(configurar(NOVAS));
+  assert.deepEqual(r, { ok: true, gravadas: ['EMAILS_DECIDIR', 'PLANILHA_ID', 'WEBHOOK_RADAR_KEY', 'WEBHOOK_RADAR_URL'] });
+  assert.equal(amb.gravacoesDeProps.length, 1);
+  assert.equal(amb.gravacoesDeProps[0].apagarOutras, false);
+  assert.equal(amb.propsVivas.PLANILHA_ID, 'planilha-nova-falsa');
+  assert.equal(amb.propsVivas.CLIENT_ID, CLIENT); // as outras ficaram
+  const fora = JSON.stringify({ r: amb.respostas.map((x) => x.conteudo), l: amb.logs });
+  for (const v of [...Object.values(NOVAS), CODIGO_SETUP, HASH_SETUP]) assert.ok(!fora.includes(v), v);
+  assert.equal(amb.logs.length, 0);
+  // não mexe na planilha nem fala com ninguém
+  assert.equal(amb.chamadas.length, 0);
+  assert.equal(amb.lock.pedidos, 0);
+  // e as outras ações continuam iguais com Setup.gs presente
+  assert.equal(amb.post(disparo('tok-falso-gabriel', 'diretor-retrospectiva')).codigo, 'webhook-nao-configurado');
+  assert.equal(amb.pure('iguaisTempoConstante')('abc', 'abc'), true);
+  assert.equal(amb.pure('iguaisTempoConstante')('abc', 'abd'), false);
+  assert.equal(amb.pure('iguaisTempoConstante')('abc', 'abcd'), false);
+});
+
+test('autorizar(): só abre a planilha e faz um GET; não grava nada', () => {
+  const amb = criarAmbiente();
+  amb.ctx.autorizar();
+  assert.deepEqual(amb.chamadas.map((c) => c.url), ['https://www.google.com']);
+  assert.equal(amb.chamadas[0].params.muteHttpExceptions, true);
+  assert.deepEqual(json(amb.aba.linhas), [CAB]);
+  assert.equal(amb.gravacoesDeProps.length, 0);
 });
 
 /* ----------------------------------------------------------------- paridade com o app */
@@ -945,7 +1073,7 @@ test('contrato: o formato do corpo em js/integra.js continua o que a ponte esper
 test('contrato: a ponte aceita os corpos de disparar (com e sem "marcar como travada") e de decidirRoteiro', () => {
   const amb = criarAmbiente({
     linhas: [CAB, linha({ id_execucao: 'EX-velha', bot: 'diretor', rotina: 'diretor-retrospectiva', origem: 'manual-app', inicio: '2026-11-18 06:00', status: 'rodando' })],
-    props: { ...PROPS, WEBHOOK_URL_DIRETOR: 'https://webhook.exemplo.test/diretor', WEBHOOK_KEY_DIRETOR: 'chave-falsa-diretor' },
+    props: { ...PROPS, WEBHOOK_DIRETOR_URL: 'https://webhook.exemplo.test/diretor', WEBHOOK_DIRETOR_KEY: 'chave-falsa-diretor' },
   });
   const a = comoOAppLe(amb.post(corpoDoApp(corpoDisparar({ rotina: 'radar-diario', chave_idem: C.novaChaveIdem(), dados: {} }), 'tok-falso-gabriel')));
   assert.equal(typeof a.volta.id_execucao, 'string');
