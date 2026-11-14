@@ -106,19 +106,20 @@ function cartao(p, ctx) {
   } else if (enviada) {
     decisao = '<p class="pequeno apagado">Já foi para o Roteirista: a decisão não muda mais por aqui.</p>';
   } else if (decidida && !mudando) {
-    decisao = `<div class="decisao"><button type="button" class="botao calmo menor" data-acao="pauta-mudar" data-id="${esc(id)}"${ctx.bloqueio ? ' disabled' : ''}>Mudar decisão</button>${ctx.bloqueio ? `<span class="pequeno apagado">${esc(ctx.bloqueio)}</span>` : ''}</div>`;
+    decisao = `<div class="decisao"><button type="button" class="botao calmo" data-acao="pauta-mudar" data-id="${esc(id)}"${ctx.bloqueio ? ' disabled' : ''}>Mudar decisão</button>${ctx.bloqueio && !ctx.notaNoTopo ? `<span class="pequeno apagado">${esc(ctx.bloqueio)}</span>` : ''}</div>`;
   } else {
     const dis = ctx.bloqueio ? ' disabled' : '';
+    // Como no desenho aprovado: dois botões calmos; o check aparece quando "Aprovar" está marcado.
     decisao = `<div class="decisao" role="group" aria-label="Decisão sobre ${esc(titulo)}">
-      <button type="button" class="botao contorno menor sim" data-acao="pauta-decidir" data-id="${esc(id)}" data-valor="aprovada" aria-pressed="${pendente === 'aprovada'}"${dis}>${ic('check', 18)} Aprovar</button>
-      <button type="button" class="botao calmo menor nao" data-acao="pauta-decidir" data-id="${esc(id)}" data-valor="recusada" aria-pressed="${pendente === 'recusada'}"${dis}>Recusar</button>
-      ${mudando ? `<button type="button" class="botao calmo menor" data-acao="pauta-mudar" data-id="${esc(id)}">Deixar como estava</button>` : ''}
-      ${ctx.bloqueio ? `<span class="pequeno apagado">${esc(ctx.bloqueio)}</span>` : ''}
+      <button type="button" class="botao calmo sim" data-acao="pauta-decidir" data-id="${esc(id)}" data-valor="aprovada" aria-pressed="${pendente === 'aprovada'}"${dis}>${pendente === 'aprovada' ? ic('check', 18) : ''}Aprovar</button>
+      <button type="button" class="botao calmo nao" data-acao="pauta-decidir" data-id="${esc(id)}" data-valor="recusada" aria-pressed="${pendente === 'recusada'}"${dis}>Recusar</button>
+      ${mudando ? `<button type="button" class="botao calmo" data-acao="pauta-mudar" data-id="${esc(id)}">Deixar como estava</button>` : ''}
+      ${ctx.bloqueio && !ctx.notaNoTopo ? `<span class="pequeno apagado">${esc(ctx.bloqueio)}</span>` : ''}
     </div>
     ${pendente === 'recusada' && !ctx.bloqueio ? `<div class="pilha" style="gap:.875rem">
       ${segmento(`pm-${id}`, 'Por que recusar?', MOTIVOS_RECUSA.map((m) => [m, m.charAt(0).toUpperCase() + m.slice(1)]), '')}
       ${ctx.erros[`pm-${id}`] ? `<p class="erro">${esc(ctx.erros[`pm-${id}`])}</p>` : ''}
-      ${campo({ modelo: `po-${id}`, rotulo: 'Observação', opcional: true, exemplo: 'Ex.: já falamos disso em outubro' })}
+      ${campo({ modelo: `po-${id}`, rotulo: 'Observação', opcional: true, exemplo: 'Ex.: já falamos disso em outubro', dica: 'O Radar usa o motivo para acertar as próximas sugestões.' })}
     </div>` : ''}`;
   }
 
@@ -126,8 +127,8 @@ function cartao(p, ctx) {
     <div class="pauta-topo">
       ${anelNota(p.nota_v2)}
       <div class="pilha" style="gap:.5rem">
-        <div class="meta"><span class="id">${esc(id)}</span>${selo(rotuloEstado, tom)}${p.rede ? selo(nomeRede(p.rede)) : ''}${p.tema ? selo(p.tema) : ''}${teste ? selo('Teste') : ''}</div>
         <h2 id="p-${esc(id)}">${esc(titulo)}</h2>
+        <div class="meta"><span class="id">${esc(id)}</span>${ctx.filtro === 'decidir' && est.status === STATUS_PAUTA.proposta ? '' : selo(rotuloEstado, tom)}${p.rede ? selo(nomeRede(p.rede), 'espera') : ''}${p.tema ? selo(p.tema) : ''}${teste ? selo('Teste') : ''}</div>
       </div>
     </div>
     <dl>
@@ -204,9 +205,13 @@ export function htmlPautas({
     : filtro === 'todas' ? todas : todas.filter((p) => abertas.has(p.id_pauta));
   const nDecidir = todas.filter((p) => abertas.has(p.id_pauta)).length;
   const bloqueio = bloqueioDeDecisao({ email, dados, offline: dados.offline });
-  const ctx = { estado: est, pendentes, mudando, resultados, erros, bloqueio, agora };
+  // A conta que não decide: uma nota só, no topo (não repetida em cada cartão).
+  const notaNoTopo = bloqueio === NOTA_SO_ROBERTTA;
+  const ctx = { estado: est, pendentes, mudando, resultados, erros, bloqueio, agora, filtro, notaNoTopo };
 
-  const estrutural = !bloqueio || bloqueio === NOTA_SO_ROBERTTA ? '' : `<p class="nota atencao" ${largura}>${ic('alerta')}<span>${esc(bloqueio)}</span></p>`;
+  const estrutural = !bloqueio ? ''
+    : notaNoTopo ? `<p class="nota calma" ${largura}>${ic('info')}<span>${esc(NOTA_SO_ROBERTTA)} Esta conta vê as pautas e pode pedir rodadas, mas não aprova nem recusa.</span></p>`
+      : `<p class="nota atencao" ${largura}>${ic('alerta')}<span>${esc(bloqueio)}</span></p>`;
   const filtros = `<div class="filtros" role="group" aria-label="Filtrar pautas" style="margin-top:1.25rem">
     ${chipFiltro('filtroPautas', 'decidir', `Para decidir (${nDecidir})`, filtro)}${chipFiltro('filtroPautas', 'decididas', `Decididas (${todas.length - nDecidir})`, filtro)}${chipFiltro('filtroPautas', 'todas', `Todas (${todas.length})`, filtro)}
   </div>`;
@@ -226,8 +231,7 @@ function bandeja({ selecao, decisoes, pendentes, bloqueio, est }) {
     const aprov = ids.filter((id) => pendentes[id] === 'aprovada').length;
     const texto = [aprov ? `${aprov} ${aprov === 1 ? 'aprovada' : 'aprovadas'}` : '', n - aprov ? `${n - aprov} ${n - aprov === 1 ? 'recusada' : 'recusadas'}` : ''].filter(Boolean).join(', ');
     return `<div class="bandeja" role="region" aria-label="Decisões a confirmar">
-      <span class="bandeja-pontos" aria-hidden="true">${ids.map((id) => `<i class="${pendentes[id]}"></i>`).join('')}</span>
-      <span>${esc(texto)}, ainda não gravadas</span>
+      <span class="bandeja-texto"><span class="bandeja-pontos" aria-hidden="true">${ids.map((id) => `<i class="${pendentes[id]}"></i>`).join('')}</span><span>${esc(texto)}, ainda não gravadas</span></span>
       <button type="button" class="botao primario menor" data-acao="pautas-confirmar"${bloqueio ? ' disabled' : ''}>Confirmar decisões (${n})</button>
     </div>`;
   }
@@ -236,7 +240,7 @@ function bandeja({ selecao, decisoes, pendentes, bloqueio, est }) {
   const n = aprovadas.length;
   const so = bloqueio === NOTA_SO_ROBERTTA;
   return `<div class="bandeja" role="region" aria-label="Enviar ao Roteirista">
-    <span>${so ? esc(NOTA_SO_ROBERTTA) : `${n} ${n === 1 ? 'aprovada espera' : 'aprovadas esperam'} o Roteirista`}</span>
+    <span class="bandeja-texto">${n} ${n === 1 ? 'aprovada espera' : 'aprovadas esperam'} o Roteirista${so ? ' (só a conta da Robertta envia)' : ''}</span>
     <button type="button" class="botao primario menor" data-acao="pautas-enviar"${so ? ' disabled' : ''}>Enviar ao Roteirista (${n} ${n === 1 ? 'aprovada' : 'aprovadas'})</button>
   </div>`;
 }

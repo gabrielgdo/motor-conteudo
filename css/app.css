@@ -119,6 +119,11 @@ html[data-tema="dia"] .nav-conta{background:var(--vinho)}
   .ilha .nav-conta{position:static}
   .busca-b kbd{display:inline}
   .ilha .ilha-enviar{display:inline-flex}
+  /* Nada da ilha quebra linha. Com contadores na navegação (pautas, roteiros, vídeos…), falta largura
+     para tudo: a busca fica só com a lupa e o atalho, e os itens ficam um pouco mais juntos. */
+  .busca-b,.ilha .ilha-enviar{white-space:nowrap;flex-shrink:0}
+  .ilha:has(.nav-conta) .busca-b .txt{display:none}
+  .ilha:has(.nav-conta) .nav-link{padding:0 .75rem}
   .conteudo{padding:3.5rem 2rem 6rem}
 }
 
@@ -646,19 +651,27 @@ button.aviso.fixo:hover{filter:brightness(1.06)}
 /* Botões desabilitados (conta que não decide, conflito, gravando): continuam botões, só apagados */
 .botao:disabled{opacity:.5;cursor:not-allowed;transform:none;filter:none}
 .botao[aria-busy="true"]{cursor:progress}
-/* Faixa: uma linha dentro do painel que já existe. O texto nunca quebra (o fim vira "…"); se não
-   couber com os botões, os botões descem: no máximo duas linhas. Botões com 44px de toque. */
+/* Faixa: o texto é uma linha quando cabe; quando não cabe, os itens descem inteiros (nada é cortado
+   com "…"), e os botões ficam na linha de baixo, à direita. Botões com 44px de toque. */
 .faixa{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem .75rem;min-width:0;font-size:.875rem;line-height:1.35}
-.faixa-texto{flex:1 1 14rem;min-width:0;display:flex;align-items:center;gap:.5rem;white-space:nowrap;overflow:hidden}
-.faixa-nome{flex-shrink:0;font-weight:600;color:var(--tinta)}
-.faixa-item{flex-shrink:0;color:var(--tinta-2)}
+.faixa-texto{flex:1 1 14rem;min-width:0;display:flex;flex-wrap:wrap;align-items:center;gap:.25rem .5rem}
+.faixa-nome{font-weight:600;color:var(--tinta);white-space:nowrap}
+.faixa-item{color:var(--tinta-2);white-space:nowrap}
 .faixa-item::before{content:"·";margin-right:.5rem;color:var(--tinta-3)}
-.faixa-item:last-child{flex-shrink:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
 .faixa-item.apagado{color:var(--tinta-3)}
 .faixa-item .selo{vertical-align:middle}
 .faixa-botoes{display:flex;flex-wrap:wrap;gap:.5rem;margin-left:auto}
 .faixa .botao{min-height:2.75rem;padding:.5rem 1rem}
 @media (max-width:559px){.faixa-rot{display:none}}
+/* Faixa estreita (celular, ou a coluna do lado em Vídeos e Roteiros): os itens podem descer de
+   linha, então sai o "·" (que ficaria no começo da linha nova), e os botões dividem a largura. */
+.faixa{container-type:inline-size}
+@container (max-width:30rem){
+  .faixa-texto{gap:.25rem .75rem}
+  .faixa-item::before{display:none}
+  .faixa-botoes{flex:1 1 100%}
+  .faixa-botoes .botao{flex:1 1 auto}
+}
 .faixas{max-width:58.75rem;padding-top:.5rem;padding-bottom:.5rem}
 .faixas .faixa{padding:.625rem 0}
 .faixas .faixa + .faixa{border-top:1px solid var(--fio)}
@@ -677,16 +690,25 @@ button.aviso.fixo:hover{filter:brightness(1.06)}
 .erro-texto{color:var(--erro)}
 .resultado-gravar{color:var(--ok)}
 .resultado-recusado,.resultado-erro{color:var(--alerta)}
-/* Pautas: botões de decisão com 44px de toque; a nota da conta embaixo deles */
-.pauta .decisao .botao,.fixo .decisao .botao{min-height:2.75rem}
+/* Pautas: a nota da conta embaixo dos botões de decisão */
 .decisao > .pequeno{flex-basis:100%}
 .pauta .pauta-topo .pilha{min-width:0}
 .pauta h2{overflow-wrap:anywhere}
+/* Roteiros: a decisão do rascunho em três botões largos, empilhados (como no desenho aprovado) */
+.decisao.empilhada{display:grid;gap:.625rem}
+.decisao .botao[aria-pressed="true"].mudar{background:var(--acao-fundo)}
+/* Barra fixa: os pontos junto do texto; no celular, o botão desce e ocupa a largura */
+.bandeja-texto{display:flex;align-items:center;gap:.625rem;min-width:0}
 .bandeja .botao{min-height:2.75rem}
 @media (max-width:559px){
-  .bandeja{border-radius:var(--r-meio);padding:.75rem}
+  .bandeja{border-radius:var(--r-meio);padding:.625rem .75rem .75rem;gap:.5rem}
+  .bandeja-texto{padding:0 .25rem;font-size:.875rem}
   .bandeja .botao{flex:1 1 100%}
 }
+/* Janelas no celular: os botões do rodapé dividem a largura (sem um botão solto à direita) */
+@media (max-width:559px){.dlg-rodape .botao{flex:1 1 auto}}
+/* Filtros no celular: chips um pouco mais justos, para "Para decidir / Decididas / Todas" caber numa linha */
+@media (max-width:419px){.filtros .chip{padding:.5rem .75rem;font-size:.875rem}}
 @media (min-width:1080px){.bandeja{bottom:calc(1.25rem + env(safe-area-inset-bottom))}}
 /* Roteiros: o Histórico fica na coluna do conteúdo, embaixo; o aside continua fixo ao lado */
 .roteiro-historia{grid-column:1}

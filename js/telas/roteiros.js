@@ -122,7 +122,9 @@ export function decisaoDoRascunho(r, { email = '', escolha = '', exec = {}, erro
   const decide = podeDecidir(email);
   const dis = decide ? '' : ' disabled';
   const id = esc(r.id);
-  const botao = (valor, extra = '') => `<button type="button" class="botao ${valor === 'aprovar' ? 'contorno sim' : 'calmo nao'} menor" data-acao="roteiro-escolher" data-id="${id}" data-valor="${valor}" aria-pressed="${escolha === valor}"${dis}>${extra}${esc(DECISOES_ROTEIRO[valor])}</button>`;
+  // Como no desenho aprovado: três botões largos, um embaixo do outro (aprovar, pedir mudança, recusar).
+  const CLASSE = { aprovar: 'contorno sim', mudar: 'contorno mudar', recusar: 'calmo nao' };
+  const botao = (valor, extra = '') => `<button type="button" class="botao ${CLASSE[valor]} cheio" data-acao="roteiro-escolher" data-id="${id}" data-valor="${valor}" aria-pressed="${escolha === valor}"${dis}>${extra}${esc(DECISOES_ROTEIRO[valor])}</button>`;
   let detalhe = '';
   if (decide && escolha === 'mudar') {
     detalhe = campo({ modelo: `rp-${r.id}`, rotulo: 'O que mudar', tipo: 'textarea', linhas: 3, exemplo: 'Ex.: abrir com a pergunta, sem o dado' });
@@ -136,7 +138,7 @@ export function decisaoDoRascunho(r, { email = '', escolha = '', exec = {}, erro
     <p class="apagado pequeno">Rascunho v${r.versaoRoteiro}.${fontes ? ` ${esc(fontes)}.` : ''}</p>
     ${r.fontesConferidas ? '' : `<p class="meta">${selo('Em checagem de fontes', 'espera')}</p>`}
     ${faixaExecucao({ rotina: 'roteirista-decisao', rotulo: 'Decisão pelo app', idAlvo: r.id, dados: exec, agora })}
-    <div class="decisao" role="group" aria-label="Decisão sobre o rascunho v${r.versaoRoteiro}">
+    <div class="decisao empilhada" role="group" aria-label="Decisão sobre o rascunho v${r.versaoRoteiro}">
       ${botao('aprovar', ic('check', 18))}${botao('mudar')}${botao('recusar')}
     </div>
     ${decide ? '' : `<p class="pequeno apagado">${esc('Só a conta da Robertta decide.')}</p>`}

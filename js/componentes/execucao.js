@@ -209,7 +209,9 @@ export function janelaRodar({
     notas.push(`<p class="nota calma">${ic('info')}<span>${esc(notaDesligada)}</span></p>`);
     if (!/disabled/.test(confirmar)) confirmar = '';
   }
-  const corpo = `<dl class="confirmacao">${j.itens.map(itemHTML).join('')}</dl>${notas.join('')}`;
+  // As notas (o que segura o botão, a ponte desligada) vêm antes dos detalhes: no celular a janela
+  // rola, e o motivo de não haver botão ativo precisa estar à vista.
+  const corpo = `${notas.join('')}<dl class="confirmacao">${j.itens.map(itemHTML).join('')}</dl>`;
   return moldura(esc(j.titulo), corpo, `<button type="button" class="botao calmo" data-acao="fechar-janela">${confirmar ? 'Cancelar' : 'Fechar'}</button>${confirmar}`);
 }
 
