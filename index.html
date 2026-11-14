@@ -23,7 +23,8 @@
 <script>
 try {
   if (localStorage.getItem('motor-tema') === 'dia') document.documentElement.dataset.tema = 'dia';
-  if (sessionStorage.getItem('motor.sessao')) document.documentElement.classList.add('retomando');
+  // Logo depois do "Sair" (marca motor.saiu, js/saida.js) a entrada aparece sempre, sem esconder.
+  if (sessionStorage.getItem('motor.sessao') && !sessionStorage.getItem('motor.saiu')) document.documentElement.classList.add('retomando');
 } catch (e) { /* sem armazenamento */ }
 </script>
 <script type="module" src="./js/main.js"></script>
@@ -66,12 +67,13 @@ try {
 <!-- APP -->
 <div class="casca" id="casca" hidden>
   <header class="ilha">
-    <a class="marca" href="#/inicio"><span class="marca-sinal" aria-hidden="true"></span><span>Motor de Conteúdo</span></a>
+    <!-- No celular estreito (< 480px) a marca mostra só "Motor" (o nome curto do app instalado) para caber o Sair -->
+    <a class="marca" href="#/inicio" aria-label="Motor de Conteúdo, início"><span class="marca-sinal" aria-hidden="true"></span><span>Motor<span class="marca-resto"> de Conteúdo</span></span></a>
     <nav class="ilha-nav" id="nav-topo" aria-label="Seções"></nav>
     <button type="button" class="busca-b" data-acao="abrir-paleta" aria-label="Buscar e ir para uma tela" id="botao-busca"></button>
     <a class="botao primario menor ilha-enviar" href="#/enviar">Enviar gravação</a>
     <button type="button" class="redondo" data-acao="tema" id="botao-tema"></button>
-    <!-- Sair: na ilha a partir de 720px; no celular, o link "Sair" fica junto da data do Início -->
+    <!-- Sair: botão redondo ao lado do tema, em todas as telas e larguras -->
     <button type="button" class="redondo ilha-sair" data-acao="sair" id="botao-sair" aria-label="Sair da conta" title="Sair da conta"></button>
   </header>
 

@@ -3,14 +3,16 @@
 // accounts.google.com, drive.google.com, fontes) nem respostas do Drive/Sheets.
 // Estratégia: rede primeiro (o app sempre pega a versão publicada quando há internet) e cache
 // como reserva offline. Ao publicar mudanças, aumente a versão abaixo: o sw.js muda de conteúdo,
-// o navegador instala este SW no lugar do anterior e o app mostra "Nova versão".
+// o navegador instala este SW no lugar do anterior e a página recarrega sozinha uma vez (ou, com
+// trabalho em andamento, mostra "Nova versão"; js/versao.js). O próprio sw.js é buscado sem o
+// cache HTTP (register com updateViaCache: 'none', em js/main.js).
 //
 // Troca do app antigo: o SW antigo da raiz (caches "motor-shell-") é substituído por este assim que
 // o navegador vê que o sw.js mudou; o activate apaga os caches dele e os da prévia do app novo,
 // que ficava numa subpasta ("motor-novo-").
 
 const PREFIXO = 'motor-app-';
-const VERSAO = `${PREFIXO}v5`;
+const VERSAO = `${PREFIXO}v6`;
 const CACHES_ANTIGOS = ['motor-shell-', 'motor-novo-', PREFIXO];
 
 const ARQUIVOS = [
@@ -34,6 +36,8 @@ const ARQUIVOS = [
   './js/acoes.js',
   './js/roteador.js',
   './js/visual.js',
+  './js/versao.js',
+  './js/saida.js',
   './js/telas/pecas.js',
   './js/telas/inicio.js',
   './js/telas/pautas.js',

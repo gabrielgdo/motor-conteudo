@@ -21,9 +21,13 @@ const eventos = [];
 globalThis.window = { dispatchEvent: (ev) => { eventos.push(ev.type); return true; } };
 globalThis.sessionStorage = new StorageFalso();
 globalThis.localStorage = new StorageFalso();
+// fetch falso: a revogação do token (auth.revogarToken) nunca sai para a rede nos testes.
+const revogacoes = [];
+globalThis.fetch = (url, op) => { revogacoes.push({ url, op }); return Promise.resolve({ ok: true }); };
+const tokensRevogados = () => revogacoes.map((r) => r.op.body.get('token'));
 
 const auth = await import('../js/auth.js');
-const { limparArmazenamento, chaveParaApagar, opcoesDeEntrada, desligarGoogle, PREFIXO_UPLOAD, CHAVE_TEMA } = auth;
+const { limparArmazenamento, chaveParaApagar, opcoesDeEntrada, desligarGoogle, revogarToken, URL_REVOGAR, PREFIXO_UPLOAD, CHAVE_TEMA } = auth;
 const { chaveSessao } = await import('../js/upload.js');
 
 const EMAIL = 'robertta.c.alonso@gmail.com';
@@ -98,20 +102,41 @@ test('opcoesDeEntrada: com e-mail lembrado usa login_hint; depois de sair (ou se
 
 /* --------------------------------------------------------- Google (puro) */
 
-test('desligarGoogle: revoga o token e desliga a seleção automática; GIS ausente ou que lança não quebra', () => {
+test('revogarToken: POST keepalive no endpoint do Google, sem o GIS; fetch que lança ou rejeita não quebra', async () => {
+  const pedidos = [];
+  assert.equal(revogarToken('tok-7', (url, op) => { pedidos.push({ url, op }); return Promise.resolve(); }), true);
+  assert.equal(pedidos[0].url, URL_REVOGAR);
+  assert.equal(pedidos[0].op.method, 'POST');
+  assert.equal(pedidos[0].op.keepalive, true); // segue mesmo com a página recarregando logo depois
+  assert.equal(pedidos[0].op.mode, 'no-cors');
+  assert.equal(pedidos[0].op.body.get('token'), 'tok-7');
+  assert.equal(revogarToken('', () => assert.fail('sem token não pede')), false);
+  assert.equal(revogarToken('tok', null), false);
+  assert.equal(revogarToken('tok', () => { throw new Error('sem rede'); }), false);
+  assert.equal(revogarToken('tok', () => Promise.reject(new Error('offline'))), true);
+  await new Promise((r) => setImmediate(r)); // a rejeição foi tratada (não vira erro solto)
+});
+
+test('desligarGoogle: revoga pelo fetch e desliga a seleção automática; sem fetch usa o GIS; GIS ausente ou que lança não quebra', () => {
   const g = gisFalso();
-  desligarGoogle(g, 'tok-9');
-  assert.deepEqual(g.revogados, ['tok-9']);
+  const pedidos = [];
+  desligarGoogle(g, 'tok-9', (url, op) => { pedidos.push(op.body.get('token')); return Promise.resolve(); });
+  assert.deepEqual(pedidos, ['tok-9']);
+  assert.deepEqual(g.revogados, []); // pelo fetch, sem pedir de novo ao GIS
   assert.equal(g.autoSelectDesligado, 1);
+  // Sem fetch (ou fetch que lança): o GIS, se carregado, revoga
+  desligarGoogle(g, 'tok-8', null);
+  desligarGoogle(g, 'tok-6', () => { throw new Error('x'); });
+  assert.deepEqual(g.revogados, ['tok-8', 'tok-6']);
 
   assert.doesNotThrow(() => desligarGoogle(undefined, 'tok'));
   assert.doesNotThrow(() => desligarGoogle({}, 'tok'));
   assert.doesNotThrow(() => desligarGoogle({ accounts: { oauth2: {} } }, 'tok')); // só o id carregou, ou nada
   assert.doesNotThrow(() => desligarGoogle({ get accounts() { throw new Error('GIS quebrado'); } }, 'tok'));
 
-  // revoke lançando (sem rede) não impede desligar a seleção automática
+  // revoke lançando (sem rede, sem fetch) não impede desligar a seleção automática
   let desligou = false;
-  desligarGoogle({ accounts: { oauth2: { revoke() { throw new Error('rede'); } }, id: { disableAutoSelect() { desligou = true; } } } }, 'tok');
+  desligarGoogle({ accounts: { oauth2: { revoke() { throw new Error('rede'); } }, id: { disableAutoSelect() { desligou = true; } } } }, 'tok', null);
   assert.ok(desligou);
   // disableAutoSelect lançando também não quebra
   assert.doesNotThrow(() => desligarGoogle({ accounts: { id: { disableAutoSelect() { throw new Error('x'); } } } }, 'tok'));
@@ -155,13 +180,39 @@ test('sair: revoke lançando, window.google que lança ao ser lido e armazenamen
 
 test('sair: revoga o token atual e desliga a seleção automática, sem esperar a resposta', () => {
   const g = gisFalso();
-  g.accounts.oauth2.revoke = (token) => { g.revogados.push(token); }; // nunca chama o callback
   window.google = g;
-  sessionStorage.setItem('motor.sessao', sessaoValida());
-  auth.sair();
-  assert.deepEqual(g.revogados, ['tok-1']);
+  revogacoes.length = 0;
+  const fetchAntes = globalThis.fetch;
+  globalThis.fetch = (url, op) => { revogacoes.push({ url, op }); return new Promise(() => {}); }; // nunca responde
+  try {
+    sessionStorage.setItem('motor.sessao', sessaoValida());
+    auth.sair();
+  } finally {
+    globalThis.fetch = fetchAntes;
+  }
+  assert.deepEqual(tokensRevogados(), ['tok-1']);
   assert.equal(g.autoSelectDesligado, 1);
   assert.equal(auth.estaLogado(), false);
+});
+
+test('encerrarSessao: limpa tudo ANTES e sem o Google (nada é revogado aqui) e devolve o token', () => {
+  const g = gisFalso();
+  window.google = g;
+  revogacoes.length = 0;
+  sessionStorage.setItem('motor.sessao', sessaoValida());
+  localStorage.setItem('motor.email', EMAIL);
+  assert.equal(auth.encerrarSessao(), 'tok-1');
+  assert.equal(sessionStorage.getItem('motor.sessao'), null);
+  assert.equal(localStorage.getItem('motor.email'), null);
+  assert.deepEqual(revogacoes, []);
+  assert.deepEqual(g.revogados, []);
+  assert.equal(g.autoSelectDesligado, 0);
+  assert.equal(auth.encerrarSessao(), null); // de novo, sem sessão: null, sem lançar
+  // A segunda metade revoga, e nunca lança, mesmo com o GIS quebrado
+  Object.defineProperty(window, 'google', { configurable: true, get() { throw new Error('bloqueado'); } });
+  assert.doesNotThrow(() => auth.desligarGoogleDaJanela('tok-1'));
+  delete window.google;
+  assert.deepEqual(tokensRevogados(), ['tok-1']);
 });
 
 test('sair: renovação pendente é rejeitada com "saiu", sem o aviso de sessão expirada; depois nada renova', async () => {
@@ -257,4 +308,92 @@ test('reiniciarEstado: volta o estado da tela ao começo e apaga rascunhos e a l
   assert.deepEqual(estado.versaoVista, {});
   assert.ok(!('extra' in estado));
   assert.deepEqual(rascunho, {});
+});
+
+/* ------------------------------------- a ordem do sair na tela (js/saida.js) */
+
+const { executarSaida, marcarSaida, tirarSaida, urlDaEntrada, CHAVE_SAIDA } = await import('../js/saida.js');
+
+/** Roda o sair como o acoes.js faz, com o auth.js de verdade e a tela falsa. Devolve a ordem dos passos. */
+function sairComoNaTela({ limpezaQueLanca = false, mensagem = '' } = {}) {
+  const ordem = [];
+  const r = executarSaida({
+    storage: sessionStorage,
+    mensagem,
+    encerrar: () => { ordem.push('encerrar'); return auth.encerrarSessao(); },
+    mostrarEntrada: () => { ordem.push(auth.estaLogado() ? 'entrada COM sessão' : 'entrada'); },
+    limpezas: [
+      () => { ordem.push('limpeza'); if (limpezaQueLanca) throw new Error('player do iPhone'); },
+      () => ordem.push('limpeza 2'),
+    ],
+    desligar: (token) => { ordem.push(`desligar ${token}`); auth.desligarGoogleDaJanela(token); },
+    recarregar: () => ordem.push('recarregar'),
+  });
+  return { ordem, erros: r.erros };
+}
+
+test('sair na tela: sem window.google e sem fetch, limpa, mostra a entrada e recarrega', () => {
+  delete window.google;
+  const fetchAntes = globalThis.fetch;
+  delete globalThis.fetch;
+  try {
+    sessionStorage.setItem('motor.sessao', sessaoValida());
+    localStorage.setItem('motor.email', EMAIL);
+    const { ordem, erros } = sairComoNaTela();
+    assert.deepEqual(ordem, ['encerrar', 'entrada', 'limpeza', 'limpeza 2', 'desligar tok-1', 'recarregar']);
+    assert.deepEqual(erros, []);
+    assert.equal(sessionStorage.getItem('motor.sessao'), null);
+    assert.equal(localStorage.getItem('motor.email'), null);
+  } finally {
+    globalThis.fetch = fetchAntes;
+  }
+  assert.deepEqual(tirarSaida(sessionStorage), { mensagem: '' });
+});
+
+test('sair na tela: revoke do GIS lançando, fetch lançando e uma limpeza que falha não impedem nada', () => {
+  window.google = { accounts: { oauth2: { revoke() { throw new Error('sem rede'); } }, id: { disableAutoSelect() { throw new Error('x'); } } } };
+  const fetchAntes = globalThis.fetch;
+  globalThis.fetch = () => { throw new Error('offline'); };
+  try {
+    sessionStorage.setItem('motor.sessao', sessaoValida());
+    const { ordem, erros } = sairComoNaTela({ limpezaQueLanca: true, mensagem: 'Esta conta não tem acesso.' });
+    assert.deepEqual(ordem, ['encerrar', 'entrada', 'limpeza', 'limpeza 2', 'desligar tok-1', 'recarregar']);
+    assert.deepEqual(erros.map((e) => e.passo), ['limpeza 0']); // só a limpeza que lançou; o resto seguiu
+    assert.equal(auth.estaLogado(), false);
+  } finally {
+    globalThis.fetch = fetchAntes;
+    delete window.google;
+  }
+  // A página recarregada lê a marca: fica na entrada, com a mensagem; a marca some depois de lida
+  assert.deepEqual(tirarSaida(sessionStorage), { mensagem: 'Esta conta não tem acesso.' });
+  assert.equal(tirarSaida(sessionStorage), null);
+});
+
+test('sair na tela: um passo que lança antes da entrada não impede o resto; nada retoma a sessão', () => {
+  sessionStorage.setItem('motor.sessao', sessaoValida());
+  let recarregou = false;
+  const r = executarSaida({
+    storage: sessionStorage,
+    encerrar: () => auth.encerrarSessao(),
+    mostrarEntrada: () => { throw new Error('DOM'); },
+    recarregar: () => { recarregou = true; },
+  });
+  assert.deepEqual(r.erros.map((e) => e.passo), ['mostrarEntrada']);
+  assert.ok(recarregou); // a página recarregada abre na entrada
+  assert.equal(auth.retomarSessao(), null); // e não entra sozinha
+  assert.ok(sessionStorage.getItem(CHAVE_SAIDA)); // a marca de saída ficou para ela
+  tirarSaida(sessionStorage);
+});
+
+test('marca de saída e endereço da entrada: sem rota nem parâmetros; armazenamento quebrado não lança', () => {
+  assert.equal(urlDaEntrada({ origin: 'https://motor.rocambrea.com', pathname: '/', hash: '#/videos/S46-01', search: '?x=1' }), 'https://motor.rocambrea.com/');
+  assert.equal(urlDaEntrada({ origin: 'http://localhost:8000', pathname: '/index.html' }), 'http://localhost:8000/index.html');
+  const quebrado = { getItem() { throw new Error('x'); }, setItem() { throw new Error('x'); }, removeItem() { throw new Error('x'); } };
+  assert.equal(marcarSaida(quebrado, 'oi'), false);
+  assert.equal(tirarSaida(quebrado), null);
+  assert.equal(marcarSaida(null), false);
+  assert.equal(tirarSaida(null), null);
+  assert.deepEqual(tirarSaida(new StorageFalso({ [CHAVE_SAIDA]: 'não é json' })), { mensagem: '' });
+  // A marca é gravada DEPOIS da limpeza; a limpeza de um sair seguinte também a apaga (é motor.*)
+  assert.ok(chaveParaApagar(CHAVE_SAIDA));
 });

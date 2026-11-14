@@ -15,6 +15,7 @@ import { Tele } from './componentes/tele.js';
 import { Players } from './componentes/players.js';
 import { Downloads } from './componentes/downloads.js';
 import { Tema } from './visual.js';
+import { executarSaida, urlDaEntrada, tirarSaida, sessaoSegura } from './saida.js';
 
 /* ---- Login ⇄ app ---- */
 
@@ -46,6 +47,7 @@ export function pintarBotaoSair() {
 }
 
 export function entrarNoApp() {
+  tirarSaida(sessaoSegura()); // entrou de novo: a marca de "acabou de sair" não vale mais
   estado.logada = true;
   pintarBotaoSair();
   document.documentElement.classList.remove('retomando');
@@ -61,7 +63,7 @@ export function entrarNoApp() {
   carregar();
 }
 
-export function mostrarLogin(mensagem = '') {
+export function mostrarLogin(mensagem = '', { preparar = true } = {}) {
   estado.logada = false;
   document.documentElement.classList.remove('retomando');
   $('#casca').hidden = true;
@@ -70,34 +72,43 @@ export function mostrarLogin(mensagem = '') {
   document.title = 'Motor de Conteúdo';
   mensagemLogin(mensagem);
   // Carrega o GIS antes do clique: assim o popup do Google sai direto do toque e não é bloqueado.
-  Integra.prepararLogin().catch(() => { /* o erro aparece se ela tentar entrar */ });
+  if (preparar) Integra.prepararLogin().catch(() => { /* o erro aparece se ela tentar entrar */ });
   window.scrollTo(0, 0);
 }
 
 /**
- * Sai da conta: fecha janelas e teleprompter, para os players e revoga as URLs dos vídeos, esquece
- * downloads em andamento, revoga o token e limpa o armazenamento (Integra.sair → auth.sair), apaga
- * os dados em memória, o estado das telas, os rascunhos e a lista de ajustes, e volta para a tela de
- * entrada com o endereço sem rota. Nada renova sozinho depois disso.
+ * Sai da conta (ordem em js/saida.js): primeiro apaga a sessão e o armazenamento e mostra a entrada,
+ * de forma síncrona e sem depender do Google; depois fecha janelas e teleprompter, para os players e
+ * revoga as URLs dos vídeos, esquece downloads, apaga dados, estado, rascunhos e a lista de ajustes;
+ * então revoga o token (sem esperar) e recarrega a página no endereço do app sem rota
+ * (location.replace), para nada da conta ficar em memória nem no bfcache. Nada renova sozinho.
  */
 export function sairDaConta(mensagem = '') {
-  fecharJanela();
-  Tele.fechar();
-  Players.liberar();
-  Downloads.liberar();
-  Integra.sair();
-  limparDados();
-  reiniciarEstado();
-  Paleta.termo = '';
-  Paleta.i = 0;
-  // Avisos da sessão que acabou (fica só o de "Nova versão do app").
-  document.querySelectorAll('#avisos .aviso').forEach((a) => { if (a.dataset.aviso !== 'versao') a.remove(); });
-  // Nada da conta fica no DOM escondido.
-  for (const sel of ['#conteudo', '#nav-topo', '#nav-doca']) { const el = $(sel); if (el) el.innerHTML = ''; }
-  pintarBotaoSair();
-  if (location.hash) history.replaceState(null, '', location.pathname + location.search);
-  mostrarLogin(mensagem);
-  $('#botao-entrar')?.focus({ preventScroll: true }); // o botão que abriu a janela de confirmação sumiu
+  executarSaida({
+    storage: sessaoSegura(),
+    mensagem,
+    encerrar: () => Integra.encerrar(),
+    mostrarEntrada: () => {
+      if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+      mostrarLogin(mensagem, { preparar: false }); // a página recarrega logo em seguida
+    },
+    limpezas: [
+      () => fecharJanela(),
+      () => Tele.fechar(),
+      () => Players.liberar(),
+      () => Downloads.liberar(),
+      () => limparDados(),
+      () => reiniciarEstado(),
+      () => { Paleta.termo = ''; Paleta.i = 0; },
+      // Avisos da sessão que acabou e nada da conta no DOM escondido.
+      () => document.querySelectorAll('#avisos .aviso').forEach((a) => a.remove()),
+      () => { for (const sel of ['#conteudo', '#nav-topo', '#nav-doca']) { const el = $(sel); if (el) el.innerHTML = ''; } },
+      () => pintarBotaoSair(),
+      () => $('#botao-entrar')?.focus({ preventScroll: true }),
+    ],
+    desligar: (token) => Integra.desligarGoogle(token),
+    recarregar: () => location.replace(urlDaEntrada(location)),
+  });
 }
 
 /* ---- As ações ---- */

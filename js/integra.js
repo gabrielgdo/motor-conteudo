@@ -32,10 +32,19 @@ export const Integra = {
   /** Revoga o token (sem esperar), cancela renovações, apaga a sessão e as chaves do app no
       armazenamento (menos o tema e os envios retomáveis) e esquece os caches do Drive e da planilha. */
   sair() {
-    auth.sair();
-    drive.esquecerTudo();
-    sheet.invalidarPostados();
+    Integra.desligarGoogle(Integra.encerrar());
   },
+
+  /** Primeira metade do sair, síncrona e sem depender do Google: devolve o token para revogar depois. */
+  encerrar() {
+    const token = auth.encerrarSessao();
+    try { drive.esquecerTudo(); } catch { /* segue */ }
+    try { sheet.invalidarPostados(); } catch { /* segue */ }
+    return token;
+  },
+
+  /** Segunda metade: revoga o token no Google sem esperar resposta (sem GIS também). Nunca lança. */
+  desligarGoogle: (token) => auth.desligarGoogleDaJanela(token),
 
   email: () => auth.emailAtual(),
 

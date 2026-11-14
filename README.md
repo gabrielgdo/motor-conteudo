@@ -36,6 +36,8 @@ js/
   estado.js             estado da tela (rota, filtros) e rascunho dos campos
   util.js               esc, datas, formatos, ícones
   acoes.js              o que cada data-acao faz; passagem login ⇄ app
+  saida.js              a ordem segura do "Sair" (puro) e a marca de saída
+  versao.js             nova versão: recarregar sozinho ou avisar, com anti-laço (puro)
   roteador.js           rotas por hash, navegação, View Transitions, foco
   visual.js             véu WebGL, tema Noite/Dia, luz dos cartões
   telas/                uma por tela (inicio, pautas, roteiros, videos, enviar, prontos, resultados) + pecas
@@ -67,17 +69,26 @@ Rotas: `#/inicio #/pautas #/roteiros #/roteiros/<id> #/videos #/videos/<id> #/en
   do Google Drive com o nome `<id>.<extensão>`.
 - **Prontos**: um cartão por pacote de 5-Prontos; copiar a legenda, baixar cada arquivo ou todos.
 - **Pautas** e **Resultados**: "em breve", sem dado falso.
-- **Sair da conta**: botão redondo na ilha, ao lado do tema, a partir de 720px de largura
-  (tablet e computador); no celular, link "Sair" junto da data do Início (a ilha não comporta mais
-  um botão de 360 a 430px). Também na busca rápida. Sempre com a confirmação "Sair da conta?".
-  Ao sair: o token é revogado e a seleção automática do Google é desligada (sem esperar resposta;
-  sem GIS ou sem rede, sai do mesmo jeito); a renovação agendada ou pendente é cancelada (sem o
-  aviso de sessão expirada) e nada relê o Drive nem renova sozinho; saem do sessionStorage e do
-  localStorage todas as chaves `motor.*`/`motor-*`, **menos** `motor-tema` (o tema) e
-  `motor.upload.*` (envios retomáveis); dados em memória, vídeos (URLs de Blob revogadas),
-  downloads em andamento, estado das telas, rascunhos e a lista de ajustes são esquecidos; a tela
-  volta para a entrada sem rota no endereço. O app não usa IndexedDB. O próximo "Entrar com
-  Google" abre a escolha de conta (`prompt: 'select_account'`, sem `login_hint`).
+- **Sair da conta**: botão redondo na ilha, ao lado do tema, em todas as telas e larguras (no
+  celular, abaixo de 720px, a busca da ilha vira só o ícone e, abaixo de 480px, a marca mostra só
+  "Motor", para caber de 360 a 430px). Também na busca rápida. Sempre com a confirmação "Sair da
+  conta?". Ordem do sair (`js/saida.js`), cada passo protegido: primeiro, sem depender do Google,
+  a renovação agendada ou pendente é cancelada (sem o aviso de sessão expirada) e saem do
+  sessionStorage e do localStorage todas as chaves `motor.*`/`motor-*`, **menos** `motor-tema` (o
+  tema) e `motor.upload.*` (envios retomáveis); a tela de entrada aparece na hora; dados em
+  memória, vídeos (URLs de Blob revogadas), downloads em andamento, estado das telas, rascunhos e a
+  lista de ajustes são esquecidos; depois o token é revogado direto no endpoint do Google (fetch
+  `keepalive`, sem esperar resposta e sem precisar do GIS) e a seleção automática é desligada; por
+  fim a página recarrega no endereço sem rota (`location.replace`), com a marca `motor.saiu` em
+  sessionStorage, para nada da conta ficar em memória nem no bfcache do iPhone e nada entrar
+  sozinho. O app não usa IndexedDB. O próximo "Entrar com Google" abre a escolha de conta
+  (`prompt: 'select_account'`, sem `login_hint`).
+- **Nova versão**: ao abrir, ao voltar a ficar visível e no `pageshow` do bfcache (o app instalado
+  no iPhone volta da memória sem recarregar), a página procura um `sw.js` novo e pergunta a versão
+  do SW que a controla. Versão diferente: recarrega sozinha uma vez se não houver trabalho em
+  andamento (download, ajustes, vídeo tocando, janela aberta, login em curso); senão, mostra "Nova
+  versão do app. Toque para atualizar.". Um marcador em sessionStorage (`motor-recarga-para`)
+  impede recarregar duas vezes para a mesma versão (`js/versao.js`).
 
 **Etapa 2**: gravar no Drive. Aprovar/pedir mudança no roteiro; aprovar (`<id> aprovado.md`) ou
 pedir ajustes (`<id> ajustes vN.md`) nas prévias; envio da gravação pelo app (`js/upload.js`);
@@ -108,7 +119,8 @@ Cobrem o leitor de roteiro (paridade com o `roteiro.py`), as regras de etapa, o 
 projeto + roteiro → objeto das telas (`montarRoteiro`), as funções puras de `js/parse.js` e
 `js/model.js` (nomes de arquivo, YAML, datas, pedido de ajustes, horários do pacote), as partes
 puras do `js/upload.js`, o "Sair" (`tests/sair.test.mjs`: chaves apagadas e mantidas, GIS ausente
-ou com erro, renovação cancelada, escolha de conta no login seguinte) e o PWA (`tests/sw.test.mjs`: todo arquivo da lista do `sw.js` existe,
+ou com erro, renovação cancelada, escolha de conta no login seguinte, a ordem do sair e a marca de
+saída, a decisão "recarregar sozinho ou avisar" e o anti-laço) e o PWA (`tests/sw.test.mjs`: todo arquivo da lista do `sw.js` existe,
 todo módulo do app está nela, versão do cache igual à do `js/main.js`, manifest, nenhum caminho
 para fora da raiz).
 
@@ -118,10 +130,10 @@ O GitHub Pages publica a raiz da branch `main` em `https://motor.rocambrea.com/`
 nas configurações do Pages, não num arquivo CNAME). O `.nojekyll` impede o processamento pelo Jekyll.
 
 1. Rode `node --test tests/`.
-2. **Aumente a versão do cache** em `sw.js` (`VERSAO`, hoje `motor-app-v4` → `motor-app-v5`…) e, igual,
+2. **Aumente a versão do cache** em `sw.js` (`VERSAO`, hoje `motor-app-v6` → `motor-app-v7`…) e, igual,
    em `js/main.js` (`VERSAO_APP`); o teste confere que as duas batem. É a mudança no `sw.js` que
-   faz o navegador instalar o SW novo e o app aberto mostrar "Nova versão do app. Toque para
-   atualizar.". Se criar um arquivo novo do app, inclua-o na lista `ARQUIVOS` do `sw.js` (o teste
+   faz o navegador instalar o SW novo e o app aberto recarregar sozinho uma vez (ou, com trabalho
+   em andamento, mostrar "Nova versão do app. Toque para atualizar."). Se criar um arquivo novo do app, inclua-o na lista `ARQUIVOS` do `sw.js` (o teste
    avisa se faltar um módulo ou se a lista apontar para um arquivo que não existe).
 3. Commit e push na `main`. O Pages publica em um ou dois minutos.
 
@@ -133,3 +145,8 @@ instala o novo: ele assume na hora (`skipWaiting` + `clients.claim`) e apaga os 
 (`motor-shell-` do app anterior, `motor-novo-` da prévia e versões anteriores de `motor-app-`).
 O SW busca a navegação e os arquivos do app na rede primeiro, sem o cache HTTP; o cache do SW só
 serve sem internet.
+
+Uma página aberta com uma versão até a v5 não tem a recarga automática (ela chegou na v6): nela, a
+atualização aparece como a faixa "Nova versão do app. Toque para atualizar." ao voltar para o app.
+Basta tocar na faixa uma vez (ou fechar o app no seletor de apps do iPhone e abrir de novo). Da v6
+em diante, a troca de versão acontece sozinha.

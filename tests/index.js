@@ -9,3 +9,4 @@ import('./dados.test.mjs');
 import('./parte2.test.mjs');
 import('./sw.test.mjs');
 import('./sair.test.mjs');
+import('./versao.test.mjs');

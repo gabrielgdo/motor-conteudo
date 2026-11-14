@@ -80,17 +80,11 @@ function nosDe(r) {
   return `<div class="nos">${lista.map(([nome, st]) => `<span class="no ${st === 'sem-dados' ? '' : st}"><i>${st === 'feito' ? ic('check', 14) : ''}</i>${nome}<span class="vh">: ${fala[st]}</span></span>`).join('')}</div>`;
 }
 
-/* "Sair" do celular (< 720px, onde a ilha não comporta mais um botão redondo); a partir de 720px o
-   CSS esconde este link e mostra o botão da ilha. */
-function botaoSairHero() {
-  const email = Integra.email();
-  return `<button type="button" class="discreto hero-sair" data-acao="sair" aria-label="${esc(email ? `Sair da conta (${email})` : 'Sair da conta')}">Sair</button>`;
-}
-
+/* O "Sair" fica na ilha, em todas as telas e larguras (index.html, #botao-sair). */
 function hero(frase) {
   const nome = nomeDe(Integra.email());
   return `<section class="hero" aria-labelledby="t-hero">
-    <div class="hero-topo"><p class="hero-data">${esc(dataLonga(hoje()))}, semana ${semana().numero}</p>${botaoSairHero()}</div>
+    <p class="hero-data">${esc(dataLonga(hoje()))}, semana ${semana().numero}</p>
     <h1 id="t-hero">${saudacao()}${nome ? `, ${esc(nome)}` : ''}.</h1>
     <p class="hero-frase">${frase}</p>
   </section>`;

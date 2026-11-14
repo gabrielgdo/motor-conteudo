@@ -78,15 +78,45 @@ export function limparArmazenamento(storage) {
   return apagar;
 }
 
+/** Endpoint de revogação do Google (o mesmo que o google.accounts.oauth2.revoke do GIS usa). */
+export const URL_REVOGAR = 'https://oauth2.googleapis.com/revoke';
+
 /**
- * Desliga a conta no Google sem esperar resposta: revoga o token (se o GIS estiver carregado) e
- * desliga a seleção automática. GIS ausente, que lança ou sem rede não impede a saída.
+ * Revoga o token direto no Google, sem o GIS (no app instalado no iPhone o script do GIS pode não
+ * ter carregado). keepalive: o pedido segue mesmo com a página recarregando logo depois do "Sair".
+ * no-cors: não precisa ler a resposta. Devolve true se o pedido saiu. Nunca lança nem rejeita.
  */
-export function desligarGoogle(google, token) {
+export function revogarToken(token, buscar) {
+  if (!token || typeof buscar !== 'function') return false;
   try {
-    const oauth2 = google?.accounts?.oauth2;
-    if (token && typeof oauth2?.revoke === 'function') oauth2.revoke(token, () => {});
-  } catch { /* sem GIS ou sem rede: sai do mesmo jeito */ }
+    const p = buscar(URL_REVOGAR, {
+      method: 'POST', mode: 'no-cors', credentials: 'omit', keepalive: true,
+      body: new URLSearchParams({ token }),
+    });
+    if (p && typeof p.catch === 'function') p.catch(() => {});
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function fetchDaJanela() {
+  try { return typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : null; } catch { return null; }
+}
+
+/**
+ * Desliga a conta no Google sem esperar resposta: revoga o token (pelo fetch; sem fetch, pelo GIS,
+ * se carregado) e desliga a seleção automática. GIS ausente, que lança ou sem rede não impede nada.
+ */
+export function desligarGoogle(google, token, buscar = fetchDaJanela()) {
+  let revogou = false;
+  try { revogou = revogarToken(token, buscar); } catch { /* segue */ }
+  if (!revogou) {
+    try {
+      const oauth2 = google?.accounts?.oauth2;
+      if (token && typeof oauth2?.revoke === 'function') oauth2.revoke(token, () => {});
+    } catch { /* sem GIS ou sem rede: sai do mesmo jeito */ }
+  }
   try {
     const id = google?.accounts?.id;
     if (typeof id?.disableAutoSelect === 'function') id.disableAutoSelect();
@@ -348,24 +378,35 @@ export async function renovarInterativo() {
 }
 
 /**
- * "Sair": revoga o token e desliga a seleção automática no Google (sem esperar resposta), cancela
- * o timer e qualquer renovação ou pedido de token pendente (rejeitados com o código 'saiu', sem o
- * aviso "sessão expirou") e apaga do sessionStorage e do localStorage as chaves de sessão, conta e
- * dados (ficam o tema e as sessões de envio retomável). O próximo login abre a escolha de conta.
- * Nunca lança.
+ * Primeira metade do "Sair", síncrona e sem o Google: cancela o timer e qualquer renovação ou
+ * pedido de token pendente (rejeitados com o código 'saiu', sem o aviso "sessão expirou") e apaga
+ * do sessionStorage e do localStorage as chaves de sessão, conta e dados (ficam o tema e as sessões
+ * de envio retomável). O próximo login abre a escolha de conta. Devolve o token que estava em uso
+ * (para revogar depois, com desligarGoogleDaJanela) ou null. Nunca lança.
  */
-export function sair() {
+export function encerrarSessao() {
   geracao++;
   depoisDeSair = true;
-  const s = lerSessao();
-  desligarGoogle(googleDaJanela(), s?.access_token);
+  let token = null;
+  try { token = lerSessao()?.access_token || null; } catch { /* sem armazenamento */ }
   limparSessao();
   if (pedidoAtual) {
     const p = pedidoAtual;
     pedidoAtual = null;
     try { p.reject(erroSaiu()); } catch { /* ignorar */ }
   }
-  if (renovacao || renovacaoCtl) falharRenovacao(erroSaiu());
+  if (renovacao || renovacaoCtl) { try { falharRenovacao(erroSaiu()); } catch { /* ignorar */ } }
   limparArmazenamento(armazenamento('sessionStorage'));
   limparArmazenamento(armazenamento('localStorage'));
+  return token;
+}
+
+/** Segunda metade do "Sair": revoga o token e desliga a seleção automática. Nunca lança. */
+export function desligarGoogleDaJanela(token) {
+  try { desligarGoogle(googleDaJanela(), token); } catch { /* sai do mesmo jeito */ }
+}
+
+/** "Sair" completo: encerrarSessao() e, depois, desligarGoogleDaJanela(). Nunca lança. */
+export function sair() {
+  desligarGoogleDaJanela(encerrarSessao());
 }
