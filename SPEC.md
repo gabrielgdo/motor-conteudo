@@ -31,6 +31,12 @@ com cache `motor-app-vN` (rede primeiro, reserva offline, nunca Drive/Sheets nem
 - Ponte no Apps Script para disparar o Radar, o Roteirista e o Diretor (`Integra.ponte.disparar`,
   `Integra.ponte.decidirRoteiro`), atrás de `FLAGS.ponte` e `PONTE_URL` (`js/config.js`).
 
+## Controle manual (branch controle-manual)
+- Sem tela nova: faixa de execução de uma linha (`js/componentes/execucao.js`), janela de
+  confirmação com custos e limites (`moldura()`) e avisos. Ver o README.
+- Pautas (Seleção/Decisões) e decisões de prévia em 4-Revisao já gravam; disparos e decisão de
+  roteiro ficam atrás de `FLAGS.ponte` (desligada: a janela explica e manda pedir no chat).
+
 ## Etapa 3
 - Pautas a partir das abas Seleção e Decisões da planilha Radar.
 - Resultados a partir da aba Desempenho (números por vídeo e por rede, vencedores).

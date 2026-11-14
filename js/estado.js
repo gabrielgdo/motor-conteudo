@@ -7,7 +7,7 @@
 const inicial = () => ({
   logada: false,
   rota: { nome: 'inicio', id: null },
-  filtroPautas: 'todas',
+  filtroPautas: 'decidir', // decidir | decididas | todas
   filtroRoteiros: 'aprovar',
   abaRoteiro: 'ig',
   versaoVista: {}, // id do roteiro -> número da versão do vídeo que está na tela
@@ -16,6 +16,12 @@ const inicial = () => ({
   arquivo: null, // { nome, total, file } do vídeo escolhido (etapa 2)
   envio: null, // { id, nome, nomeFinal, total, enviado, fase } (etapa 2)
   erros: {},
+  // Controle manual (só em memória, somem ao sair):
+  decisoesPauta: {}, // id_pauta -> 'aprovada' | 'recusada' (ainda não confirmada)
+  mudandoPauta: {}, // id_pauta -> true: pauta já decidida aberta para mudar a decisão
+  resultadoPautas: {}, // id_pauta -> {acao, mensagem} da última gravação
+  decisaoRoteiro: {}, // id do roteiro -> 'aprovar' | 'mudar' | 'recusar' (ainda não enviada)
+  janela: null, // janela de confirmação aberta: {tipo, ...} (js/acoes.js)
 });
 
 export const estado = inicial();

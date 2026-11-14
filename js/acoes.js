@@ -2,11 +2,21 @@
 // Aqui também ficam as passagens login ⇄ app (entrarNoApp, mostrarLogin, sairDaConta).
 
 import { $, NOME_REDE, relogio, ic } from './util.js';
+import { FLAGS } from './config.js';
 import { estado, rascunho, reiniciarEstado } from './estado.js';
 import { Integra } from './integra.js';
-import { carregar, iniciarDados, limparDados, estadoDados, rot, ultima, anexo, textoDoAnexo, tentarAnexosDeNovo } from './dados.js';
+import {
+  carregar, iniciarDados, limparDados, estadoDados, rot, ultima, anexo, textoDoAnexo, tentarAnexosDeNovo,
+  execucoesLidas, pautasLidas, relerManual,
+} from './dados.js';
 import { textoDosAjustes } from './parse.js';
-import { pendentesDe } from './telas/videos.js';
+import { novaChaveIdem, planejarDecisaoRoteiro, podeDecidir, avaliarDisparo, rotinaConhecida, ROTINAS } from './controle.js';
+import { estadoDasPautas } from './selecao.js';
+import { janelaRodar, janelaDetalhes, NOTA_PONTE_DESLIGADA } from './componentes/execucao.js';
+import { pendentesDe, janelaPrevia } from './telas/videos.js';
+import {
+  janelaDecisoes, pedidosDaTela, resultadosDaGravacao, aprovadasParaEnviar, loteDaProximaSelecao, bloqueioDeDecisao,
+} from './telas/pautas.js';
 import { arquivoDeLegenda } from './telas/prontos.js';
 import { desenhar, rotear } from './roteador.js';
 import { abrirJanela, fecharJanela, avisar, removerAviso, copiarTexto, janelaSobre, janelaSair } from './componentes/janelas.js';
@@ -98,6 +108,51 @@ export function sairDaConta(mensagem = '') {
   if (location.hash) history.replaceState(null, '', location.pathname + location.search);
   mostrarLogin(mensagem);
   $('#botao-entrar')?.focus({ preventScroll: true }); // o botão que abriu a janela de confirmação sumiu
+}
+
+/* ---- Janelas de confirmação do controle manual ----
+   estado.janela guarda o que está aberto ({tipo:'rodar'|'decisoes'|'previa'|'detalhes', ...}); a
+   chave_idem nasce quando a janela "Rodar agora?" abre e vale até ela fechar. */
+
+function pintarJanela() {
+  const j = estado.janela;
+  if (!j) return;
+  let html = '';
+  if (j.tipo === 'rodar') {
+    html = janelaRodar({
+      rotina: j.rotina, idAlvo: j.idAlvo, email: Integra.email(), agora: new Date(), dados: execucoesLidas(), extras: j.extras,
+      etapa: j.etapa, enviando: j.enviando, erro: j.erro, notaDesligada: j.notaDesligada, podeTravar: j.acao === 'disparar',
+    });
+  } else if (j.tipo === 'decisoes') {
+    html = janelaDecisoes({ itens: j.itens, enviando: j.enviando, resultados: j.resultados, erro: j.erro });
+  } else if (j.tipo === 'previa') {
+    html = janelaPrevia({
+      id: j.id, versao: j.versao, decisao: j.decisao, ajustes: j.ajustes, teste: j.teste,
+      execucoes: execucoesLidas().execucoes || [], enviando: j.enviando, erro: j.erro,
+    });
+  }
+  if (html) abrirJanela(html);
+}
+
+/** As Execuções chegaram com a janela "Rodar agora?" aberta: os conflitos passam a valer. */
+export function aoMudarManual() {
+  if (estado.janela?.tipo === 'rodar' && !estado.janela.enviando && $('#dialogo')?.open) pintarJanela();
+}
+
+function abrirRodar(janela) {
+  estado.janela = {
+    tipo: 'rodar', acao: 'disparar', idAlvo: '', idLote: '', extras: [], dados: {}, etapa: 'confirmar', enviando: false, erro: '',
+    notaDesligada: NOTA_PONTE_DESLIGADA, ...janela, chaveIdem: novaChaveIdem(),
+  };
+  pintarJanela();
+}
+
+const limparCampos = (...modelos) => { for (const m of modelos) delete rascunho[m]; };
+
+/** Conta e planilha permitem decidir pautas agora? (o motivo aparece na tela) */
+function podeDecidirPautas() {
+  const dados = pautasLidas();
+  return !!dados.selecao && !bloqueioDeDecisao({ email: Integra.email(), dados, offline: dados.offline });
 }
 
 /* ---- As ações ---- */
@@ -198,7 +253,7 @@ export const ACOES = {
   },
   'ajuste-adicionar'(el) {
     const r = rot(el.dataset.id);
-    if (r && lerAjuste(r)) avisar('Ajuste na lista. Adicione outros ou copie a lista.');
+    if (r && lerAjuste(r)) avisar(FLAGS.revisaoPeloApp ? 'Ajuste na lista. Adicione outros ou envie a lista ao motor.' : 'Ajuste na lista. Adicione outros ou copie a lista.');
     desenhar();
   },
   'ajuste-remover'(el) {
@@ -218,6 +273,240 @@ export const ACOES = {
     desenhar();
     const ok = await copiarTexto(texto);
     avisar(ok ? `${lista.length === 1 ? 'Ajuste copiado' : `${lista.length} ajustes copiados`}. Cole no chat do Diretor.` : 'Não consegui copiar. Selecione o texto e copie à mão.');
+  },
+
+  /* -- vídeos: decisão da prévia em 4-Revisao (FLAGS.revisaoPeloApp) -- */
+  'previa-aprovar'(el) {
+    const r = rot(el.dataset.id);
+    const v = r && ultima(r);
+    if (!r || !v || !FLAGS.revisaoPeloApp || !podeDecidir(Integra.email())) return;
+    Players.parar();
+    estado.janela = { tipo: 'previa', id: r.id, versao: v.n, decisao: 'aprovar', ajustes: [], teste: r.teste, enviando: false, erro: '' };
+    pintarJanela();
+  },
+  'ajustes-enviar'(el) {
+    const r = rot(el.dataset.id);
+    const v = r && ultima(r);
+    if (!r || !v || !FLAGS.revisaoPeloApp || !podeDecidir(Integra.email())) return;
+    if ((rascunho['aj-pedido'] || '').trim() && !lerAjuste(r)) { desenhar(); return; } // inclui o que ficou digitado
+    const lista = pendentesDe(r, v);
+    if (!lista.length) return;
+    desenhar();
+    Players.parar();
+    estado.janela = { tipo: 'previa', id: r.id, versao: v.n, decisao: 'ajustar', ajustes: lista.map((a) => ({ ...a })), teste: r.teste, enviando: false, erro: '' };
+    pintarJanela();
+  },
+  async 'previa-gravar'(el) {
+    const j = estado.janela;
+    if (j?.tipo !== 'previa' || j.enviando || el.disabled) return;
+    el.disabled = true; // o toque duplo não grava duas vezes
+    j.enviando = true;
+    j.erro = '';
+    pintarJanela();
+    try {
+      const res = await Integra.drive.gravarDecisaoPrevia({
+        id: j.id, decisao: j.decisao, versao: j.versao, ajustes: j.ajustes, observacoes: (rascunho['pv-obs'] || '').trim(),
+      });
+      if (estado.janela !== j) return;
+      if (!res.ok) { j.enviando = false; j.erro = res.mensagem; pintarJanela(); return; }
+      const r = rot(j.id);
+      const v = r?.video.versoes.find((x) => x.n === j.versao);
+      if (v && j.decisao === 'ajustar') pendentesDe(r, v).length = 0;
+      limparCampos('pv-obs');
+      fecharJanela();
+      avisar(`“${res.nome}” gravado em 4-Revisao. O motor pega o arquivo em 1 a 6 min.`);
+      carregar({ forcar: true });
+    } catch (e) {
+      if (estado.janela !== j || !estado.logada) return;
+      j.enviando = false;
+      j.erro = e?.message || 'Não consegui gravar no Drive agora. Tente de novo.';
+      pintarJanela();
+    }
+  },
+
+  /* -- controle manual: faixas de execução e "Rodar agora" -- */
+  'rodar-abrir'(el) {
+    const rotina = el.dataset.valor;
+    if (!rotinaConhecida(rotina) || !ROTINAS[rotina].disparavel || rotina === 'roteirista-decisao') return;
+    const extras = [];
+    let idLote = '';
+    if (rotina === 'radar-selecao') {
+      idLote = loteDaProximaSelecao({ execucoes: execucoesLidas().execucoes || [], selecao: pautasLidas().selecao, agora: new Date() });
+      extras.push({ chave: 'lote', rotulo: 'Lote que vai nascer', texto: `${idLote}: as pautas entram na aba Seleção com ids novos e status “proposta”.` });
+    }
+    abrirRodar({ rotina, idAlvo: el.dataset.id || '', idLote, extras });
+  },
+  'rodar-travada'() {
+    const j = estado.janela;
+    if (j?.tipo !== 'rodar' || j.acao !== 'disparar') return;
+    j.etapa = 'travada';
+    pintarJanela();
+  },
+  async 'rodar-confirmar'(el) {
+    const j = estado.janela;
+    if (j?.tipo !== 'rodar' || j.enviando || el.disabled) return;
+    el.disabled = true; // desabilita no toque
+    const exec = execucoesLidas();
+    const d = avaliarDisparo({ execucoes: exec.execucoes || [], rotina: j.rotina, idAlvo: j.idAlvo, email: Integra.email(), agora: new Date() });
+    const travada = el.dataset.valor === 'travada';
+    if (!d.pode && !(travada && d.motivo === 'parece-travada')) { pintarJanela(); return; }
+    j.enviando = true;
+    j.erro = '';
+    pintarJanela();
+    try {
+      if (j.acao === 'decidir-roteiro') {
+        await Integra.ponte.decidirRoteiro({ ...j.payload, chave_idem: j.chaveIdem });
+      } else {
+        const marcar = travada ? { marcar_travada: true, id_execucao_travada: String(d.trava?.linha?.id_execucao || '') } : {};
+        await Integra.ponte.disparar({ rotina: j.rotina, id_alvo: j.idAlvo, id_lote: j.idLote, chave_idem: j.chaveIdem, dados: { ...j.dados, ...marcar } });
+      }
+      if (estado.janela !== j) return;
+      fecharJanela();
+      if (j.acao === 'decidir-roteiro') {
+        delete estado.decisaoRoteiro[j.idAlvo];
+        limparCampos(`rp-${j.idAlvo}`, `rm-${j.idAlvo}`, `ro-${j.idAlvo}`);
+        avisar('Decisão enviada ao Roteirista. O andamento aparece na faixa.');
+      } else {
+        avisar(`${ROTINAS[j.rotina].rotulo}: pedido enviado. O andamento aparece na faixa.`);
+      }
+      relerManual('execucoes');
+      if (j.rotina === 'radar-enviar' || j.rotina === 'radar-selecao') relerManual('pautas');
+      desenhar();
+    } catch (e) {
+      if (estado.janela !== j || !estado.logada) return;
+      j.enviando = false;
+      j.erro = e?.message || 'A ponte não respondeu. Tente de novo.';
+      pintarJanela();
+    }
+  },
+  'execucao-detalhes'(el) {
+    const v = el.dataset.valor || '';
+    const bot = v.startsWith('bot:') ? v.slice(4) : '';
+    estado.janela = { tipo: 'detalhes' };
+    abrirJanela(janelaDetalhes({ rotina: bot ? '' : v, bot, idAlvo: el.dataset.id || '', dados: execucoesLidas(), agora: new Date() }));
+  },
+
+  /* -- pautas -- */
+  'pautas-recarregar'() { relerManual('pautas'); desenhar(); },
+  'pauta-decidir'(el) {
+    if (!podeDecidirPautas()) return;
+    const id = el.dataset.id;
+    const valor = el.dataset.valor;
+    if (estado.decisoesPauta[id] === valor) delete estado.decisoesPauta[id];
+    else estado.decisoesPauta[id] = valor;
+    delete estado.resultadoPautas[id];
+    delete estado.erros[`pm-${id}`];
+    desenhar();
+  },
+  'pauta-mudar'(el) {
+    const id = el.dataset.id;
+    if (estado.mudandoPauta[id]) {
+      delete estado.mudandoPauta[id];
+      delete estado.decisoesPauta[id];
+      limparCampos(`pm-${id}`, `po-${id}`);
+    } else {
+      if (!podeDecidirPautas()) return;
+      estado.mudandoPauta[id] = true;
+      delete estado.resultadoPautas[id];
+    }
+    desenhar();
+  },
+  'pautas-confirmar'() {
+    if (!podeDecidirPautas()) return;
+    const dados = pautasLidas();
+    const { pedidos, erros } = pedidosDaTela(estado.decisoesPauta, rascunho, dados.selecao);
+    if (Object.keys(erros).length) {
+      estado.erros = { ...estado.erros, ...erros };
+      desenhar();
+      avisar('Escolha o motivo de cada recusa antes de confirmar.');
+      document.querySelector(`[name="${CSS.escape(Object.keys(erros)[0])}"]`)?.closest('.pauta')?.scrollIntoView({ block: 'center' });
+      return;
+    }
+    if (!pedidos.length) return;
+    const est = estadoDasPautas(dados.selecao, dados.decisoes);
+    const porId = new Map(dados.selecao.pautas.map((p) => [p.id_pauta, p]));
+    const itens = pedidos.map((p) => {
+      const atual = est.get(p.id_pauta)?.status;
+      return { ...p, titulo: porId.get(p.id_pauta)?.titulo || '', de: atual === 'aprovada' || atual === 'recusada' ? atual : '' };
+    });
+    estado.janela = { tipo: 'decisoes', itens, pedidos, enviando: false, resultados: null, erro: '' };
+    pintarJanela();
+  },
+  async 'pautas-gravar'(el) {
+    const j = estado.janela;
+    if (j?.tipo !== 'decisoes' || j.enviando || el.disabled) return;
+    el.disabled = true;
+    j.enviando = true;
+    j.erro = '';
+    pintarJanela();
+    try {
+      const vistas = pautasLidas().decisoes?.decisoes || [];
+      const res = await Integra.planilha.gravarDecisoes({ pedidos: j.pedidos, decisoesVistas: vistas });
+      if (estado.janela !== j) return;
+      j.enviando = false;
+      if (!res.ok) { j.erro = res.mensagem || 'Nada foi gravado.'; pintarJanela(); return; }
+      const resultados = resultadosDaGravacao(res);
+      Object.assign(estado.resultadoPautas, resultados);
+      for (const [id, r] of Object.entries(resultados)) {
+        if (r.acao === 'erro') continue;
+        delete estado.decisoesPauta[id];
+        delete estado.mudandoPauta[id];
+        limparCampos(`pm-${id}`, `po-${id}`);
+      }
+      j.resultados = resultados;
+      pintarJanela();
+      relerManual('pautas');
+      desenhar();
+    } catch (e) {
+      if (estado.janela !== j || !estado.logada) return;
+      j.enviando = false;
+      j.erro = e?.message || 'A planilha não respondeu. Nada foi gravado.';
+      pintarJanela();
+    }
+  },
+  'pautas-enviar'() {
+    const dados = pautasLidas();
+    if (!dados.selecao || !podeDecidir(Integra.email())) return;
+    const aprovadas = aprovadasParaEnviar(dados.selecao, dados.decisoes);
+    if (!aprovadas.length) return;
+    const lotes = [...new Set(aprovadas.map((p) => p.id_lote).filter(Boolean))];
+    abrirRodar({
+      rotina: 'radar-enviar',
+      idLote: lotes.length === 1 ? lotes[0] : '',
+      dados: { ids: aprovadas.map((p) => p.id_pauta).join(',') },
+      extras: [{ chave: 'pautas', rotulo: aprovadas.length === 1 ? 'A pauta que vai' : `As ${aprovadas.length} pautas que vão`, lista: aprovadas.map((p) => `${p.id_pauta} · ${p.titulo || ''}`) }],
+    });
+  },
+
+  /* -- roteiros: decisão do rascunho (pela ponte, ao Roteirista) -- */
+  'roteiro-escolher'(el) {
+    if (!podeDecidir(Integra.email())) return;
+    const id = el.dataset.id;
+    if (estado.decisaoRoteiro[id] === el.dataset.valor) delete estado.decisaoRoteiro[id];
+    else estado.decisaoRoteiro[id] = el.dataset.valor;
+    estado.erros = {};
+    desenhar();
+  },
+  'roteiro-confirmar'(el) {
+    const id = el.dataset.id;
+    const r = rot(id);
+    if (!r || r.etapa !== 'rascunho' || !podeDecidir(Integra.email())) return;
+    const plano = planejarDecisaoRoteiro({
+      id, versao: r.versaoRoteiro, decisao: estado.decisaoRoteiro[id], pedido: rascunho[`rp-${id}`], motivo: rascunho[`rm-${id}`], observacao: rascunho[`ro-${id}`],
+    });
+    if (!plano.ok) {
+      estado.erros = {};
+      if (plano.erros.pedido) estado.erros[`rp-${id}`] = plano.erros.pedido;
+      if (plano.erros.motivo) estado.erros[`rm-${id}`] = plano.erros.motivo;
+      desenhar();
+      if (!plano.erros.pedido && !plano.erros.motivo) avisar(Object.values(plano.erros)[0]);
+      return;
+    }
+    abrirRodar({
+      rotina: 'roteirista-decisao', acao: 'decidir-roteiro', idAlvo: id, payload: plano.payload,
+      extras: [{ chave: 'decisao', rotulo: 'Sua decisão', texto: plano.resumo }],
+      notaDesligada: 'O disparo pelo app ainda não está ligado. Por enquanto, responda ao Roteirista no chat.',
+    });
   },
 
   /* -- enviar gravação -- */
@@ -309,6 +598,6 @@ export function ligarAcoes() {
   });
   /* Janelas: clicar fora fecha */
   $('#dialogo').addEventListener('click', (ev) => { if (ev.target === ev.currentTarget) fecharJanela(); });
-  $('#dialogo').addEventListener('close', () => { estado.erros = {}; });
+  $('#dialogo').addEventListener('close', () => { estado.erros = {}; estado.janela = null; });
   window.addEventListener('hashchange', () => { if (estado.logada) rotear(); });
 }

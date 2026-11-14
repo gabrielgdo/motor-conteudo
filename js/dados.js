@@ -186,6 +186,8 @@ export function montarRoteiro(p, lido, agora = new Date(), { postadosLidos = tru
       pendentes: [],
       historico: historico(p).map((e) => [quando(e.quando, agora), textoHistorico(e.texto)]),
     },
+    // O mesmo histórico com a data (ISO), para juntar com as linhas de Execuções do id.
+    eventos: historico(p).map((e) => ({ quando: e.quando, texto: textoHistorico(e.texto) })),
     pacote: null,
     vencedor: !!p.vencedor,
   };
@@ -304,6 +306,9 @@ export function carregar({ forcar = false } = {}) {
     emitir();
   });
   st.promessa = promessa;
+  // "Atualizar" (e a releitura automática) também relê Execuções e Pautas, na próxima vez que uma
+  // tela pedir.
+  if (forcar) vencerManual();
   return promessa;
 }
 
@@ -333,6 +338,63 @@ export function limparDados() {
   cacheLido.clear();
   anexos.clear();
   filaAnexos.length = 0;
+  for (const k of Object.keys(manual)) manual[k] = novaLeitura();
+}
+
+/* ------------------------------- controle manual: Execuções e Pautas (planilha Radar) */
+
+// Lidas sob demanda: a primeira tela (ou o contador da navegação) que pede dispara a leitura, uma
+// vez por sessão e de novo depois de cada "Atualizar". A tela nunca espera: recebe o que já há
+// ({fase:'carregando'} na primeira vez) e se redesenha com o evento 'motor:manual'. Erro não tenta
+// de novo sozinho (só com "Atualizar" ou "Tentar de novo"). Sem internet, nada é pedido.
+const novaLeitura = () => ({ fase: 'vazio', dados: null, erro: null, lidoEm: 0, vencido: false, promessa: null });
+const manual = { execucoes: novaLeitura(), pautas: novaLeitura() };
+const LEITORES = {
+  execucoes: (forcar) => Integra.execucoes.ler(forcar),
+  pautas: (forcar) => Integra.planilha.lerPautas(forcar),
+};
+
+function vencerManual() {
+  for (const l of Object.values(manual)) if (l.fase !== 'vazio') l.vencido = true;
+}
+
+function lerManual(chave, forcar = false) {
+  const l = manual[chave];
+  if (l.promessa || !st.ligado || st.offline) return l;
+  if (!forcar && l.fase !== 'vazio' && !l.vencido) return l;
+  const ger = geracao;
+  const reler = forcar || l.vencido;
+  l.vencido = false;
+  l.fase = l.dados ? 'atualizando' : 'carregando';
+  l.promessa = LEITORES[chave](reler).then((dados) => {
+    if (ger !== geracao) return;
+    Object.assign(l, { dados, erro: null, fase: 'pronto', lidoEm: Date.now() });
+  }, (erro) => {
+    if (ger !== geracao) return;
+    l.erro = erro;
+    l.fase = l.dados ? 'pronto' : 'erro';
+  }).finally(() => {
+    if (ger !== geracao) return;
+    l.promessa = null;
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('motor:manual'));
+  });
+  return l;
+}
+
+const vistaManual = (l) => ({ fase: l.fase, erro: l.erro, lidoEm: l.lidoEm, offline: st.offline, ...(l.dados || {}) });
+
+/** Aba Execuções: {fase, erro, offline, execucoes?, cabecalho?, abaAusente?}. Dispara a leitura se preciso. */
+export const execucoesLidas = () => vistaManual(lerManual('execucoes'));
+
+/** Abas Seleção e Decisões: {fase, erro, offline, selecao?, decisoes?, colunasProntas?, decisoesAusente?}. */
+export const pautasLidas = () => vistaManual(lerManual('pautas'));
+
+/** Relê agora (depois de gravar ou disparar, e no "Tentar de novo"). */
+export function relerManual(chave) {
+  const l = manual[chave];
+  if (!l) return;
+  if (l.promessa) { l.vencido = true; return; } // relê assim que a leitura em andamento terminar
+  lerManual(chave, true);
 }
 
 /* ------------------------------------------- anexos (textos lidos sob demanda) */

@@ -10,7 +10,7 @@
 // que ficava numa subpasta ("motor-novo-").
 
 const PREFIXO = 'motor-app-';
-const VERSAO = `${PREFIXO}v5`;
+const VERSAO = `${PREFIXO}v6`; // branch controle-manual: reconciliar no merge com a correção do Sair (ver README)
 const CACHES_ANTIGOS = ['motor-shell-', 'motor-novo-', PREFIXO];
 
 const ARQUIVOS = [
@@ -34,6 +34,9 @@ const ARQUIVOS = [
   './js/acoes.js',
   './js/roteador.js',
   './js/visual.js',
+  './js/controle.js',
+  './js/selecao.js',
+  './js/revisao.js',
   './js/telas/pecas.js',
   './js/telas/inicio.js',
   './js/telas/pautas.js',
@@ -48,6 +51,7 @@ const ARQUIVOS = [
   './js/componentes/players.js',
   './js/componentes/downloads.js',
   './js/componentes/grafico.js',
+  './js/componentes/execucao.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/apple-touch-icon.png',

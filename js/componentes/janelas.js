@@ -121,11 +121,13 @@ export function janelaSobre() {
       <li>Mostra o que espera por você e em que etapa está cada roteiro da semana</li>
       <li>Mostra os roteiros, com a versão do Instagram, a do TikTok e os textos extras</li>
       <li>Toca as prévias dos vídeos, com o tempo exato do ponto em que você quer um ajuste</li>
-      <li>Deixa baixar os pacotes prontos, com os arquivos no tamanho original</li></ul></div>
+      <li>Deixa baixar os pacotes prontos, com os arquivos no tamanho original</li>
+      <li>Escolher as pautas da semana (aba Seleção da planilha Radar) e aprovar a prévia ou pedir ajustes, gravando a decisão direto no Drive</li>
+      <li>Mostra a última rodada de cada bot, com o tempo médio, quando a aba Execuções existir</li></ul></div>
     <div><h3>O que chega nas próximas etapas</h3><ul>
-      <li>Aprovar um roteiro ou uma prévia, ou pedir ajuste, gravando a decisão direto no Drive</li>
+      <li>Rodar os bots pelo app e decidir o roteiro, quando a ponte com os bots estiver ligada</li>
       <li>Enviar a gravação pelo app, em pedaços, sem perder nada se a internet cair</li>
-      <li>Escolher as pautas e ver os resultados de cada vídeo, a partir da planilha Radar</li></ul></div>
+      <li>Ver os resultados de cada vídeo, a partir da planilha Radar</li></ul></div>
     <p class="pequeno apagado">O app não publica nada nas redes: a postagem continua com você.</p>
     ${instalar ? `<details>${instalar.innerHTML}</details>` : ''}</div>`);
 }

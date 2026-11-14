@@ -12,3 +12,4 @@ import('./sair.test.mjs');
 import('./controle.test.mjs');
 import('./selecao.test.mjs');
 import('./revisao.test.mjs');
+import('./telas.test.mjs');

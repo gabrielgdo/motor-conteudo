@@ -7,7 +7,7 @@ import { estado } from './estado.js';
 import { Integra } from './integra.js';
 import { estadoDados } from './dados.js';
 import { aoMudarDados, aoMudarDuracao } from './roteador.js';
-import { ligarAcoes, entrarNoApp, mostrarLogin, pintarBotaoSair } from './acoes.js';
+import { ligarAcoes, entrarNoApp, mostrarLogin, pintarBotaoSair, aoMudarManual } from './acoes.js';
 import { avisoFixo, removerAviso } from './componentes/janelas.js';
 import { Paleta } from './componentes/paleta.js';
 import { Tele } from './componentes/tele.js';
@@ -32,6 +32,8 @@ window.addEventListener('motor:dados', () => {
 
 // Textos baixados sob demanda (notas da prévia, pedidos de ajuste, legendas do pacote) chegaram.
 window.addEventListener('motor:anexo', () => aoMudarDados());
+// Abas Execuções, Seleção e Decisões da planilha Radar chegaram (controle manual, js/dados.js).
+window.addEventListener('motor:manual', () => { aoMudarDados(); aoMudarManual(); });
 // Um vídeo da prévia descobriu a duração real: a linha do tempo dos ajustes ganha as marcas.
 window.addEventListener('motor:duracao', () => aoMudarDuracao());
 
@@ -45,7 +47,7 @@ window.addEventListener('unhandledrejection', (e) => {
    inclusive no lugar do SW do app antigo. Quando um SW novo passa a controlar a página, ela pergunta
    a versão dele: se for outra que a desta página, mostra "Nova versão" (tocar recarrega). Se for a
    mesma (a página já veio da rede com os arquivos novos), não há o que avisar. */
-const VERSAO_APP = 'motor-app-v5'; // igual a VERSAO em sw.js (tests/sw.test.mjs confere)
+const VERSAO_APP = 'motor-app-v6'; // igual a VERSAO em sw.js (tests/sw.test.mjs confere)
 
 function avisarNovaVersao() {
   avisoFixo('versao', 'Nova versão do app. Toque para atualizar.', { acao: 'nova-versao', icone: 'atualizar' });

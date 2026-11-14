@@ -16,14 +16,17 @@
 // Só o envio do vídeo (drive.enviarVideo) segue para a etapa 2: lança Error('Disponível na
 // etapa 2') e traz, no comentário, a chamada real (procure "INTEGRAÇÃO:").
 //
-// As regras puras (controle.js, selecao.js, revisao.js) são carregadas sob demanda (import()),
-// só quando uma destas funções roda; elas entram na lista do service worker na parte B.
+// As regras puras (controle.js, selecao.js, revisao.js) são importadas aqui e estão na lista do
+// service worker (sw.js).
 
 import * as auth from './auth.js';
 import * as drive from './drive.js';
 import * as sheet from './sheet.js';
 import { CONFIG, FLAGS, PONTE_URL, REVISAO_FOLDER, PASTAS } from './config.js';
 import { idValido } from './parse.js';
+import * as C from './controle.js';
+import * as S from './selecao.js';
+import { planejarArquivoRevisao } from './revisao.js';
 
 const naEtapa2 = () => { throw new Error('Disponível na etapa 2'); };
 
@@ -36,10 +39,6 @@ export class ErroIntegra extends Error {
 }
 
 export const MENSAGEM_PONTE_DESLIGADA = 'O disparo pelo app ainda não está ligado.';
-
-const regrasControle = () => import('./controle.js');
-const regrasSelecao = () => import('./selecao.js');
-const regrasRevisao = () => import('./revisao.js');
 
 /** Nome da aba: chave de CONFIG.abas ('selecao', 'decisoes', 'execucoes'…) ou o próprio nome. */
 const nomeDaAba = (aba) => CONFIG.abas[aba] || String(aba || '');
@@ -191,7 +190,6 @@ export const Integra = {
         aceita nomes repetidos). → {ok:true, arquivo, nome} | {ok:false, motivo, mensagem}. */
     async gravarDecisaoPrevia({ id, decisao, versao, ajustes = [], observacoes = '' } = {}) {
       if (!FLAGS.revisaoPeloApp) throw new ErroIntegra('Decidir a prévia pelo app está desligado.', 'desligado');
-      const { planejarArquivoRevisao } = await regrasRevisao();
       const arquivosExistentes = await Integra.drive.listarRevisao(true);
       const plano = planejarArquivoRevisao({
         id, decisao, versao, ajustes, observacoes, arquivosExistentes, email: auth.emailAtual(), agora: new Date(),
@@ -225,12 +223,22 @@ export const Integra = {
 
     /** Seleção e Decisões lidas e interpretadas → {selecao, decisoes, colunasProntas}. */
     async lerPautas(forcar = false) {
-      const S = await regrasSelecao();
+      // Sem a aba Seleção: o erro 'aba-ausente' sobe (a tela explica). Sem a aba Decisões: as pautas
+      // aparecem, mas decidir fica desligado (decisoesAusente).
       const [sel, dec] = await Promise.all([
-        sheet.lerAba(nomeDaAba('selecao'), { forcar }), sheet.lerAba(nomeDaAba('decisoes'), { forcar }),
+        sheet.lerAba(nomeDaAba('selecao'), { forcar }),
+        sheet.lerAba(nomeDaAba('decisoes'), { forcar }).catch((e) => {
+          if (e?.codigo === 'aba-ausente') return null;
+          throw e;
+        }),
       ]);
-      const decisoes = S.lerDecisoes(dec.linhas);
-      return { selecao: S.lerSelecao(sel.linhas), decisoes, colunasProntas: S.colunasDecisoesProntas(decisoes.cabecalho) };
+      const decisoes = S.lerDecisoes(dec ? dec.linhas : []);
+      return {
+        selecao: S.lerSelecao(sel.linhas),
+        decisoes,
+        colunasProntas: !!dec && S.colunasDecisoesProntas(decisoes.cabecalho),
+        decisoesAusente: !dec,
+      };
     },
 
     /** Grava as decisões de pauta feitas no app: relê Seleção e Decisões na hora, planeja
@@ -241,7 +249,6 @@ export const Integra = {
         → o plano ({ok, erro?, mensagem?, resultados, ...}) com `gravado` (linhas acrescentadas). */
     async gravarDecisoes({ pedidos, decisoesVistas = [] } = {}) {
       if (!FLAGS.decisoesPeloApp) throw new ErroIntegra('Gravar decisões de pauta pelo app está desligado.', 'desligado');
-      const S = await regrasSelecao();
       const [sel, dec] = await Promise.all([
         sheet.lerAba(nomeDaAba('selecao'), { forcar: true }), sheet.lerAba(nomeDaAba('decisoes'), { forcar: true }),
       ]);
@@ -272,7 +279,6 @@ export const Integra = {
   execucoes: {
     /** Aba Execuções → {execucoes, cabecalho, abaAusente}. Sem a aba: lista vazia e abaAusente: true. */
     async ler(forcar = false) {
-      const C = await regrasControle();
       try {
         const aba = await sheet.lerAba(nomeDaAba('execucoes'), { forcar });
         const t = C.lerExecucoes(aba.linhas);
@@ -289,7 +295,6 @@ export const Integra = {
         vai em `dados`, como dado. → a resposta da ponte ({ok, id_execucao, ...}). */
     async disparar({ rotina, id_alvo = '', id_lote = '', chave_idem, dados = {} } = {}) {
       exigirPonte();
-      const C = await regrasControle();
       if (!C.rotinaConhecida(rotina) || !C.ROTINAS[rotina].disparavel) throw new ErroIntegra('Rotina fora da lista do app.', 'rotina-desconhecida');
       if (rotina === 'roteirista-decisao') throw new ErroIntegra('A decisão de roteiro vai por ponte.decidirRoteiro.', 'rotina-desconhecida');
       if (!C.podeDisparar(auth.emailAtual())) throw new ErroIntegra('Esta conta não pode disparar rodadas.', 'sem-permissao');
@@ -305,7 +310,6 @@ export const Integra = {
         conta da Robertta. → a resposta da ponte. */
     async decidirRoteiro({ id, versao, decisao, pedido = '', motivo = '', chave_idem } = {}) {
       exigirPonte();
-      const C = await regrasControle();
       if (!C.podeDecidir(auth.emailAtual())) throw new ErroIntegra('Só a conta da Robertta decide.', 'sem-permissao');
       if (!idValido(id)) throw new ErroIntegra(`Id inválido: ${id}`, 'id-invalido');
       const v = Number(versao);

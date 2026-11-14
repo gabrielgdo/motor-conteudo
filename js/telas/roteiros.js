@@ -1,11 +1,16 @@
 // ROTEIROS (#/roteiros e #/roteiros/<id>): a lista com os filtros e o detalhe com as abas
-// Instagram, TikTok, Extras e Fontes, como no desenho aprovado. Aprovar, pedir mudança e recusar
-// pelo app chegam na etapa 2: por enquanto, o aside só mostra a decisão e o teleprompter.
+// Instagram, TikTok, Extras e Fontes, como no desenho aprovado. No rascunho, o aside "Sua decisão"
+// leva ao Roteirista (pela ponte, Integra.ponte.decidirRoteiro) aprovar, pedir mudança ou recusar
+// com motivo; acima, a faixa da rotina roteirista-decisao do id. O bloco Histórico junta o Drive e
+// as linhas de Execuções do id.
 
 import { esc, ic, NOME_REDE, validade } from '../util.js';
 import { estado } from '../estado.js';
-import { ativos, rot, falasDe } from '../dados.js';
-import { cab, selo, vt, chipFiltro, passoDe, destinoDe, naoAchei, comDados, linkDoDrive, vazio, rodapeAtualizado, voltar } from './pecas.js';
+import { Integra } from '../integra.js';
+import { ativos, rot, falasDe, execucoesLidas } from '../dados.js';
+import { podeDecidir, DECISOES_ROTEIRO, MOTIVOS_ROTEIRO } from '../controle.js';
+import { faixaExecucao, historicoComExecucoes, blocoHistorico } from '../componentes/execucao.js';
+import { cab, selo, vt, chipFiltro, passoDe, destinoDe, naoAchei, comDados, linkDoDrive, vazio, rodapeAtualizado, voltar, campo, segmento } from './pecas.js';
 
 const enc = encodeURIComponent;
 const plural = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
@@ -107,14 +112,43 @@ function painelFontes(r) {
 
 /* ---- Detalhe ---- */
 
-function acoesDe(r) {
-  if (r.etapa === 'rascunho') {
-    const fontes = resumoFontes(r);
-    return `
+/**
+ * Decisão do rascunho no aside (puro: recebe a conta, a escolha e as Execuções).
+ * Aprovar / Pedir mudança (campo do pedido) / Recusar (motivo da lista curta + observação) e o
+ * botão que abre a confirmação. A conta que não decide vê tudo desabilitado, com a nota.
+ */
+export function decisaoDoRascunho(r, { email = '', escolha = '', exec = {}, erros = {}, agora = new Date() } = {}) {
+  const fontes = resumoFontes(r);
+  const decide = podeDecidir(email);
+  const dis = decide ? '' : ' disabled';
+  const id = esc(r.id);
+  const botao = (valor, extra = '') => `<button type="button" class="botao ${valor === 'aprovar' ? 'contorno sim' : 'calmo nao'} menor" data-acao="roteiro-escolher" data-id="${id}" data-valor="${valor}" aria-pressed="${escolha === valor}"${dis}>${extra}${esc(DECISOES_ROTEIRO[valor])}</button>`;
+  let detalhe = '';
+  if (decide && escolha === 'mudar') {
+    detalhe = campo({ modelo: `rp-${r.id}`, rotulo: 'O que mudar', tipo: 'textarea', linhas: 3, exemplo: 'Ex.: abrir com a pergunta, sem o dado' });
+  } else if (decide && escolha === 'recusar') {
+    detalhe = `${segmento(`rm-${r.id}`, 'Por que recusar?', MOTIVOS_ROTEIRO.map((m) => [m, m.charAt(0).toUpperCase() + m.slice(1)]), '')}
+      ${erros[`rm-${r.id}`] ? `<p class="erro">${esc(erros[`rm-${r.id}`])}</p>` : ''}
+      ${campo({ modelo: `ro-${r.id}`, rotulo: 'Observação', opcional: true, exemplo: 'Ex.: a tese não se sustenta' })}`;
+  }
+  return `
     <h2>Sua decisão</h2>
     <p class="apagado pequeno">Rascunho v${r.versaoRoteiro}.${fontes ? ` ${esc(fontes)}.` : ''}</p>
     ${r.fontesConferidas ? '' : `<p class="meta">${selo('Em checagem de fontes', 'espera')}</p>`}
-    <p class="nota calma">${ic('info')}<span>Aprovar, pedir mudança ou recusar pelo app chega na próxima etapa. Por enquanto, responda ao Roteirista no chat.</span></p>`;
+    ${faixaExecucao({ rotina: 'roteirista-decisao', rotulo: 'Decisão pelo app', idAlvo: r.id, dados: exec, agora })}
+    <div class="decisao" role="group" aria-label="Decisão sobre o rascunho v${r.versaoRoteiro}">
+      ${botao('aprovar', ic('check', 18))}${botao('mudar')}${botao('recusar')}
+    </div>
+    ${decide ? '' : `<p class="pequeno apagado">${esc('Só a conta da Robertta decide.')}</p>`}
+    ${detalhe}
+    ${decide && escolha ? `<button type="button" class="botao primario cheio" data-acao="roteiro-confirmar" data-id="${id}">${esc(escolha === 'aprovar' ? `Aprovar a v${r.versaoRoteiro}` : escolha === 'mudar' ? 'Pedir a mudança' : 'Recusar o rascunho')}</button>` : ''}`;
+}
+
+function acoesDe(r) {
+  if (r.etapa === 'rascunho') {
+    return decisaoDoRascunho(r, {
+      email: Integra.email(), escolha: estado.decisaoRoteiro[r.id] || '', exec: execucoesLidas(), erros: estado.erros, agora: new Date(),
+    });
   }
   const aprovado = r.etapa === 'aprovado';
   const tele = r.falas.length || r.teleprompter
@@ -152,6 +186,7 @@ export function vRoteiro(id) {
       <div role="tabpanel" id="painel-roteiro" aria-labelledby="aba-${aba}">${painel}</div>
     </section>
     <aside class="painel pilha fixo" aria-label="Ações do roteiro">${acoesDe(r)}</aside>
+    ${blocoHistorico(historicoComExecucoes(r.eventos, execucoesLidas().execucoes, r.id), 'roteiro-historia')}
   </div>
   ${rodapeAtualizado()}`;
   });

@@ -641,3 +641,52 @@ button.aviso.fixo:hover{filter:brightness(1.06)}
 /* Prontos: andamento do download dentro do botão redondo */
 .arquivos .redondo .baixando{font-size:.6875rem;font-weight:700;font-variant-numeric:tabular-nums}
 .redondo[aria-busy="true"]{cursor:progress}
+
+/* ===== 17. Controle manual: faixa de execução, janelas de confirmação, registro ===== */
+/* Botões desabilitados (conta que não decide, conflito, gravando): continuam botões, só apagados */
+.botao:disabled{opacity:.5;cursor:not-allowed;transform:none;filter:none}
+.botao[aria-busy="true"]{cursor:progress}
+/* Faixa: uma linha dentro do painel que já existe. O texto nunca quebra (o fim vira "…"); se não
+   couber com os botões, os botões descem: no máximo duas linhas. Botões com 44px de toque. */
+.faixa{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem .75rem;min-width:0;font-size:.875rem;line-height:1.35}
+.faixa-texto{flex:1 1 14rem;min-width:0;display:flex;align-items:center;gap:.5rem;white-space:nowrap;overflow:hidden}
+.faixa-nome{flex-shrink:0;font-weight:600;color:var(--tinta)}
+.faixa-item{flex-shrink:0;color:var(--tinta-2)}
+.faixa-item::before{content:"·";margin-right:.5rem;color:var(--tinta-3)}
+.faixa-item:last-child{flex-shrink:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.faixa-item.apagado{color:var(--tinta-3)}
+.faixa-item .selo{vertical-align:middle}
+.faixa-botoes{display:flex;flex-wrap:wrap;gap:.5rem;margin-left:auto}
+.faixa .botao{min-height:2.75rem;padding:.5rem 1rem}
+@media (max-width:559px){.faixa-rot{display:none}}
+.faixas{max-width:58.75rem;padding-top:.5rem;padding-bottom:.5rem}
+.faixas .faixa{padding:.625rem 0}
+.faixas .faixa + .faixa{border-top:1px solid var(--fio)}
+.painel > .faixa:first-child:not(:only-child){padding-bottom:.875rem;border-bottom:1px solid var(--fio)}
+/* Janela "Rodar agora?" e as de decisão: o que vai acontecer, item por item */
+.confirmacao{margin:0;display:grid;gap:.75rem}
+.confirmacao dt{font-size:.8125rem;font-weight:600;color:var(--tinta-3)}
+.confirmacao dd{margin:.125rem 0 0;font-size:.9375rem}
+.confirmacao .mudancas{font-size:.9375rem}
+.dlg-corpo .campo textarea{min-height:5rem}
+/* "Detalhes": as últimas linhas da aba Execuções */
+.registro{display:grid}
+.registro li{display:grid;gap:.25rem;padding:.75rem 0;overflow-wrap:anywhere}
+.registro li + li{border-top:1px solid var(--fio)}
+.registro-topo{display:flex;align-items:center;justify-content:space-between;gap:.5rem;font-weight:600;font-size:.90625rem}
+.erro-texto{color:var(--erro)}
+.resultado-gravar{color:var(--ok)}
+.resultado-recusado,.resultado-erro{color:var(--alerta)}
+/* Pautas: botões de decisão com 44px de toque; a nota da conta embaixo deles */
+.pauta .decisao .botao,.fixo .decisao .botao{min-height:2.75rem}
+.decisao > .pequeno{flex-basis:100%}
+.pauta .pauta-topo .pilha{min-width:0}
+.pauta h2{overflow-wrap:anywhere}
+.bandeja .botao{min-height:2.75rem}
+@media (max-width:559px){
+  .bandeja{border-radius:var(--r-meio);padding:.75rem}
+  .bandeja .botao{flex:1 1 100%}
+}
+@media (min-width:1080px){.bandeja{bottom:calc(1.25rem + env(safe-area-inset-bottom))}}
+/* Roteiros: o Histórico fica na coluna do conteúdo, embaixo; o aside continua fixo ao lado */
+.roteiro-historia{grid-column:1}

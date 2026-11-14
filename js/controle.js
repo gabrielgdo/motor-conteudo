@@ -16,7 +16,7 @@
 import { ALLOWED } from './config.js';
 import {
   lerTabela, linhaNaOrdem, lerDataHora, momentoNoFuso, dataNoFuso, horaCurta, formatarDataHora,
-  normalizarCabecalho, ehTeste,
+  normalizarCabecalho, ehTeste, idValido,
 } from './parse.js';
 
 /* ------------------------------------------------------ aba Execuções */
@@ -495,4 +495,50 @@ export function novaExecucao({ rotina, idAlvo = '', idLote = '', email = '', ago
 /** Registro → linha na ordem do cabeçalho real da aba Execuções. */
 export function linhaExecucao(cabecalho, registro) {
   return linhaNaOrdem(cabecalho, registro, COLUNAS_EXECUCOES, SINONIMOS_EXECUCOES);
+}
+
+/* ------------------------------------------------- decisão de roteiro */
+
+export const DECISOES_ROTEIRO = Object.freeze({ aprovar: 'Aprovar', mudar: 'Pedir mudança', recusar: 'Recusar' });
+export const MOTIVOS_ROTEIRO = Object.freeze(['tom', 'clareza', 'fundamentação', 'ética', 'desalinhamento']);
+export const MAX_PEDIDO_ROTEIRO = 2000;
+const MAX_MOTIVO_ROTEIRO = 500;
+
+const umaLinha = (s) => String(s ?? '').replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim();
+// O pedido pode ter parágrafos: só tira os caracteres de controle (menos a quebra de linha).
+const textoLivre = (s) => String(s ?? '').replace(/\r\n?/g, '\n').replace(/[\u0000-\u0009\u000b-\u001f\u007f]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+
+/** Motivo da lista curta de recusa de roteiro (aceita sem acento e com outra caixa) ou ''. */
+export function motivoDeRoteiro(v) {
+  const s = normalizarCabecalho(v);
+  return MOTIVOS_ROTEIRO.find((m) => normalizarCabecalho(m) === s) || '';
+}
+
+/**
+ * Decisão de roteiro da tela → o que vai para Integra.ponte.decidirRoteiro (sem a chave_idem, que
+ * nasce quando a janela abre). Aprovar: sem texto. Pedir mudança: `pedido` obrigatório. Recusar:
+ * motivo da lista curta + observação opcional ("clareza: <observação>").
+ * → {ok:true, payload:{id, versao, decisao, pedido, motivo}, resumo} | {ok:false, erros:{campo: mensagem}}.
+ */
+export function planejarDecisaoRoteiro({ id, versao, decisao, pedido = '', motivo = '', observacao = '' } = {}) {
+  const erros = {};
+  const v = Number(versao);
+  if (!idValido(String(id || ''))) erros.id = `Id inválido: ${id}`;
+  if (!Number.isInteger(v) || v < 1) erros.versao = `Versão inválida: ${versao}`;
+  if (!Object.prototype.hasOwnProperty.call(DECISOES_ROTEIRO, decisao)) erros.decisao = 'Escolha aprovar, pedir mudança ou recusar.';
+  const p = textoLivre(pedido).slice(0, MAX_PEDIDO_ROTEIRO).trim();
+  let m = '';
+  if (decisao === 'mudar' && !p) erros.pedido = 'Escreva o que mudar.';
+  if (decisao === 'recusar') {
+    const daLista = motivoDeRoteiro(motivo);
+    if (!daLista) erros.motivo = 'Escolha o motivo da recusa.';
+    const o = umaLinha(observacao);
+    m = (daLista && o ? `${daLista}: ${o}` : daLista).slice(0, MAX_MOTIVO_ROTEIRO).trimEnd();
+  }
+  if (Object.keys(erros).length) return { ok: false, erros };
+  const payload = { id, versao: v, decisao, pedido: decisao === 'mudar' ? p : '', motivo: m };
+  const resumo = decisao === 'aprovar' ? `Aprovar o rascunho v${v}`
+    : decisao === 'mudar' ? `Pedir mudança no rascunho v${v}: ${p}`
+      : `Recusar o rascunho v${v} (${m})`;
+  return { ok: true, payload, resumo };
 }

@@ -5,13 +5,22 @@ import { nomeDe } from '../config.js';
 import { Integra } from '../integra.js';
 import { porEtapa, semPostar, ultima, daSemana, semana, estadoDados, temDados, postouTudo } from '../dados.js';
 import { selo, vt, passoDe, destinoDe, painelErro, vazio, rodapeAtualizado } from './pecas.js';
+import { contarParaDecidir } from './pautas.js';
 
 const enc = encodeURIComponent;
 const comTeste = (tipo, r) => (r.teste ? `${tipo} · teste` : tipo);
 
 function pendencias() {
   const p = [];
-  // Pautas: o card só aparece quando houver dado real da aba Seleção (etapa 3).
+  // Pautas: o cartão só aparece com dado real da aba Seleção (pautas para decidir, sem os testes).
+  const nPautas = contarParaDecidir();
+  if (nPautas) {
+    p.push({
+      href: '#/pautas', icone: 'pautas', tipo: 'Pautas', titulo: 'Escolher as pautas da semana',
+      detalhe: nPautas === 1 ? '1 sugestão do Radar para aprovar ou recusar' : `${nPautas} sugestões do Radar para aprovar ou recusar`,
+      ir: 'Escolher',
+    });
+  }
   porEtapa('rascunho').forEach((r) => p.push({
     href: `#/roteiros/${enc(r.id)}`, icone: 'roteiros', tipo: comTeste('Roteiro', r), titulo: `Aprovar “${r.curto}”`,
     detalhe: r.fontesConferidas ? `Rascunho v${r.versaoRoteiro}, com as fontes conferidas` : `Rascunho v${r.versaoRoteiro}, com as fontes ainda em checagem`,

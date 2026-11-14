@@ -1,13 +1,22 @@
 // VÍDEOS (#/videos e #/videos/<id>): as prévias do Instagram e do TikTok lado a lado, tocando os
 // arquivos reais de 4-Revisao (componentes/players.js), a linha do tempo dos ajustes com a duração
-// real e o painel de revisão. Aprovar e enviar ajustes pelo app chegam na etapa 2: a lista de
-// ajustes funciona em memória e pode ser copiada para colar no chat do Diretor.
+// real e o painel de revisão. Com FLAGS.revisaoPeloApp, "Aprovar" grava `<id> aprovado.md` e
+// "Enviar ajustes" grava `<id> ajustes vN.md` em 4-Revisao (js/revisao.js confere os nomes logo
+// antes), sempre com a janela de confirmação; "Copiar a lista" continua como ação secundária.
+// Sem a flag, volta ao jeito anterior (copiar a lista para o chat do Diretor). A faixa do motor e o
+// Histórico leem a aba Execuções (bot = motor).
 
 import { esc, ic, relogio, NOME_REDE } from '../util.js';
+import { FLAGS } from '../config.js';
 import { estado } from '../estado.js';
-import { porEtapa, rot, ultima, anexo } from '../dados.js';
+import { Integra } from '../integra.js';
+import { porEtapa, rot, ultima, anexo, execucoesLidas } from '../dados.js';
 import { parseAjustes, segundosDoTempo } from '../parse.js';
+import { podeDecidir, ROTINAS, estatisticasTempo } from '../controle.js';
+import { nomeArquivoRevisao } from '../revisao.js';
 import { Players } from '../componentes/players.js';
+import { moldura } from '../componentes/janelas.js';
+import { faixaExecucao, historicoComExecucoes, blocoHistorico } from '../componentes/execucao.js';
 import { cab, selo, vt, passoDe, naoAchei, comDados, vazio, campo, segmento, rodapeAtualizado, voltar } from './pecas.js';
 
 const enc = encodeURIComponent;
@@ -88,8 +97,18 @@ function resumoDoMotor(v) {
   return texto ? `<div class="pequeno resumo-motor"><strong>Resumo do motor:</strong> ${esc(texto)}</div>` : '';
 }
 
+/** Faixa do motor para o id (só leitura): a última linha de Execuções com bot = motor. */
+const faixaMotor = (r, exec) => faixaExecucao({
+  bot: 'motor', rotulo: 'Motor de edição', idAlvo: r.id, dados: exec, semRegistro: 'o motor ainda não publica o andamento no app',
+});
+
+const NOTA_SO_ROBERTTA = 'Só a conta da Robertta decide.';
+
 function painelRevisao(r, v, ehAtual) {
   const atual = ultima(r);
+  const exec = execucoesLidas();
+  const pelaApp = FLAGS.revisaoPeloApp;
+  const decide = podeDecidir(Integra.email());
   if (v && !ehAtual) {
     const pedidos = pedidosDoArquivo(v);
     return `<section class="painel pilha ordem-2"><h2>Versão anterior</h2>
@@ -99,10 +118,22 @@ function painelRevisao(r, v, ehAtual) {
   }
   if (r.etapa === 'previa' && v) {
     const pend = pendentesDe(r, v);
+    const id = esc(r.id);
+    const aprovar = pelaApp ? `
+      <p class="apagado pequeno">Aprovar grava “${esc(nomeArquivoRevisao(r.id, 'aprovar', v.n))}” em 4-Revisao, e o motor monta o pacote final.</p>
+      <button type="button" class="botao primario cheio" data-acao="previa-aprovar" data-id="${id}"${decide ? '' : ' disabled'}>${ic('check')} Aprovar a v${v.n}</button>
+      ${decide ? '' : `<p class="pequeno apagado">${NOTA_SO_ROBERTTA}</p>`}`
+      : `<p class="nota calma">${ic('info')}<span>Aprovar e enviar ajustes pelo app chega na próxima etapa. Por enquanto, mande ao Diretor no chat.</span></p>`;
+    const listaPronta = pend.length ? (pelaApp
+      ? `<button type="button" class="botao primario cheio" data-acao="ajustes-enviar" data-id="${id}"${decide ? '' : ' disabled'}>${ic('enviar')} Enviar ${pend.length === 1 ? 'o ajuste' : `os ${pend.length} ajustes`}</button>
+      <button type="button" class="botao calmo cheio" data-acao="ajustes-copiar" data-id="${id}">${ic('copiar')} Copiar a lista</button>
+      ${decide ? '' : `<p class="pequeno apagado">${NOTA_SO_ROBERTTA}</p>`}`
+      : `<button type="button" class="botao primario cheio" data-acao="ajustes-copiar" data-id="${id}">${ic('copiar')} Copiar a lista</button>`) : '';
     return `
     <section class="painel pilha ordem-2" aria-labelledby="t-aprovar"><h2 id="t-aprovar">Está bom assim?</h2>
+      ${faixaMotor(r, exec)}
       ${resumoDoMotor(v)}
-      <p class="nota calma">${ic('info')}<span>Aprovar e enviar ajustes pelo app chega na próxima etapa. Por enquanto, mande ao Diretor no chat.</span></p>
+      ${aprovar}
     </section>
     <section class="painel pilha ordem-2" aria-labelledby="t-ajuste"><h2 id="t-ajuste">Pedir ajuste</h2>
       ${segmento('aj-versao', 'Em qual versão?', [['ig', 'Instagram'], ['tt', 'TikTok'], ['ambas', 'As duas']], 'ambas')}
@@ -111,7 +142,7 @@ function painelRevisao(r, v, ehAtual) {
       ${campo({ modelo: 'aj-como', rotulo: 'Como você imagina', opcional: true, exemplo: 'Ex.: deixar o enquadramento parado' })}
       <button type="button" class="botao contorno" data-acao="ajuste-adicionar" data-id="${esc(r.id)}">Adicionar à lista</button>
       ${pend.length ? `<ul class="pedidos" aria-label="Ajustes na lista">${pend.map((a, i) => `<li><div>${textoPedido(a)}</div><button type="button" class="redondo" data-acao="ajuste-remover" data-id="${esc(r.id)}" data-valor="${i}" aria-label="Tirar este ajuste da lista">${ic('lixo', 18)}</button></li>`).join('')}</ul>
-      <button type="button" class="botao primario cheio" data-acao="ajustes-copiar" data-id="${esc(r.id)}">${ic('copiar')} Copiar a lista</button>` : ''}
+      ${listaPronta}` : ''}
     </section>`;
   }
   const textos = {
@@ -122,6 +153,7 @@ function painelRevisao(r, v, ehAtual) {
     pronto: ['Pacote pronto', 'Os arquivos finais estão em Prontos.'],
   }[r.etapa] || ['Com o motor', 'O Diretor avisa quando houver novidade.'];
   return `<section class="painel pilha ordem-2"><h2>${textos[0]}</h2><p>${textos[1]}</p>
+    ${r.etapa === 'pronto' ? '' : faixaMotor(r, exec)}
     ${r.etapa === 'ajustes' && v ? listaPedidos(pedidosDoArquivo(v)) : ''}
     ${r.etapa === 'pronto' ? '<a class="botao primario" href="#/prontos">Abrir em Prontos</a>' : ''}
   </section>`;
@@ -169,11 +201,43 @@ export function vVideo(id) {
         <div class="players">${player('ig')}${player('tt')}</div>
         ${linhaDoTempo(v, pinosDe(r, v, ehAtual))}
       </section>` : ''}
-      ${r.video.historico.length ? `<section class="painel ordem-3" aria-labelledby="t-historia"><h2 id="t-historia">Histórico</h2>
-        <ol class="historia">${r.video.historico.map(([quando, t]) => `<li><time>${esc(quando)}</time>${esc(t)}</li>`).join('')}</ol></section>` : ''}
+      ${blocoHistorico(historicoComExecucoes(r.eventos, execucoesLidas().execucoes, r.id), 'ordem-3')}
     </div>
     <div class="revisao-b">${painelRevisao(r, v, ehAtual)}</div>
   </div>
   ${rodapeAtualizado()}`;
   });
+}
+
+/* ---- Janela de confirmação da prévia ---- */
+
+/**
+ * "Aprovar a prévia?" / "Enviar os ajustes?" (puro). Diz o arquivo que vai nascer em 4-Revisao, o
+ * que o motor faz com ele (tempo e custo do catálogo) e que a decisão vale a partir dali.
+ *   id, versao (a prévia vista), decisao ('aprovar' | 'ajustar'), ajustes, teste, execucoes,
+ *   enviando, erro (mensagem, ex.: "já decidido (arquivo criado às 10h12)")
+ */
+export function janelaPrevia({ id, versao, decisao, ajustes = [], teste = false, execucoes = [], enviando = false, erro = '' } = {}) {
+  const nome = nomeArquivoRevisao(id, decisao, versao);
+  const aprovar = decisao === 'aprovar';
+  const rotina = aprovar ? 'motor-finalizar' : 'motor-revisar';
+  const c = ROTINAS[rotina].confirmacao;
+  const tempo = estatisticasTempo(execucoes, rotina);
+  const itens = [
+    ['O que vai acontecer', aprovar
+      ? `O app grava “${nome}” em 4-Revisao. O motor pega o arquivo em 1 a 6 min e monta o pacote final; depois disso, uma mudança vira ajuste do vídeo final.`
+      : `O app grava “${nome}” em 4-Revisao com ${ajustes.length === 1 ? 'o ajuste abaixo' : `os ${ajustes.length} ajustes abaixo`}. O motor pega o arquivo em 1 a 6 min e faz a v${Number(versao) + 1}; depois disso, um ajuste novo entra na próxima versão.`],
+    ['O que o motor produz', c.produz.replace(/<id>/g, id)],
+    ['Tempo', tempo.medido ? `${tempo.texto}, mais 1 a 6 min até o vigia ver o arquivo` : 'ainda sem medição (mais 1 a 6 min até o vigia ver o arquivo)'],
+    ['Custo', c.custo],
+    ['Se já tiver sido decidido', 'Logo antes de gravar, o app confere 4-Revisao: se a decisão já existir (pelo app ou pelo Diretor), nada é gravado.'],
+  ];
+  const lista = aprovar ? '' : `<ul class="pedidos">${ajustes.map((a) => `<li><div>${textoPedido(a)}</div></li>`).join('')}</ul>`;
+  const corpo = `${teste ? `<p class="meta">${selo('Teste')}<span class="pequeno apagado">Id de teste: o motor trata como teste.</span></p>` : ''}
+    <dl class="confirmacao">${itens.map(([t, d]) => `<div><dt>${esc(t)}</dt><dd>${esc(d)}</dd></div>`).join('')}</dl>
+    ${lista}
+    ${campo({ modelo: 'pv-obs', rotulo: aprovar ? 'Observações para o pacote final' : 'Observações', opcional: true, exemplo: aprovar ? 'Ex.: capa com o rosto' : 'Ex.: manter a música' })}
+    ${erro ? `<p class="nota atencao" role="alert">${ic('alerta')}<span>${esc(erro)}</span></p>` : ''}`;
+  const rodape = `<button type="button" class="botao calmo" data-acao="fechar-janela">${erro ? 'Fechar' : 'Cancelar'}</button>${erro ? '' : `<button type="button" class="botao primario" data-acao="previa-gravar" data-id="${esc(id)}" data-valor="${esc(decisao)}"${enviando ? ' disabled aria-busy="true"' : ''}>${enviando ? 'Gravando…' : aprovar ? `Aprovar a v${Number(versao)}` : `Enviar ${ajustes.length === 1 ? 'o ajuste' : `os ${ajustes.length} ajustes`}`}</button>`}`;
+  return moldura(aprovar ? `Aprovar a prévia v${Number(versao)}?` : `Enviar ${ajustes.length === 1 ? 'o ajuste' : `os ${ajustes.length} ajustes`} da v${Number(versao)}?`, corpo, rodape);
 }

@@ -6,7 +6,7 @@ import { $, ic } from './util.js';
 import { estado } from './estado.js';
 import { porEtapa, semPostar, estadoDados } from './dados.js';
 import { vInicio } from './telas/inicio.js';
-import { vPautas } from './telas/pautas.js';
+import { vPautas, contarParaDecidir } from './telas/pautas.js';
 import { vRoteiros, vRoteiro } from './telas/roteiros.js';
 import { vVideos, vVideo, linhaDoTempoAtual } from './telas/videos.js';
 import { vEnviar } from './telas/enviar.js';
@@ -27,7 +27,7 @@ export const ROTAS = {
 
 export const NAVEGACAO = [
   { rota: 'inicio', rotulo: 'Início', icone: 'inicio' },
-  { rota: 'pautas', rotulo: 'Pautas', icone: 'pautas', conta: () => 0 }, // etapa 3: aba Seleção da planilha
+  { rota: 'pautas', rotulo: 'Pautas', icone: 'pautas', conta: () => contarParaDecidir() }, // pautas para decidir (aba Seleção)
   { rota: 'roteiros', rotulo: 'Roteiros', icone: 'roteiros', conta: () => porEtapa('rascunho').length },
   { rota: 'videos', rotulo: 'Vídeos', icone: 'videos', conta: () => porEtapa('previa').length },
   { rota: 'prontos', rotulo: 'Prontos', icone: 'prontos', conta: () => semPostar().length },
