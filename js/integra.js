@@ -29,7 +29,8 @@ export const Integra = {
   /** Toque no aviso "Sua sessão expirou": renova com popup (gesto do usuário). */
   renovarInterativo: () => auth.renovarInterativo(),
 
-  /** Revoga o token, limpa a sessão e os caches de dados. */
+  /** Revoga o token (sem esperar), cancela renovações, apaga a sessão e as chaves do app no
+      armazenamento (menos o tema e os envios retomáveis) e esquece os caches do Drive e da planilha. */
   sair() {
     auth.sair();
     drive.esquecerTudo();
@@ -37,6 +38,9 @@ export const Integra = {
   },
 
   email: () => auth.emailAtual(),
+
+  /** Há sessão guardada? (depois de sair, não: nada relê o Drive nem renova sozinho) */
+  temSessao: () => auth.estaLogado(),
 
   /* ----------------------------------------------------------- leitura */
 

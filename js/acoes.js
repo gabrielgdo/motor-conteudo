@@ -1,15 +1,15 @@
 // AÇÕES: todo elemento com data-acao="nome" chama ACOES.nome(elemento) ao ser clicado.
 // Aqui também ficam as passagens login ⇄ app (entrarNoApp, mostrarLogin, sairDaConta).
 
-import { $, NOME_REDE, relogio } from './util.js';
-import { estado, rascunho } from './estado.js';
+import { $, NOME_REDE, relogio, ic } from './util.js';
+import { estado, rascunho, reiniciarEstado } from './estado.js';
 import { Integra } from './integra.js';
 import { carregar, iniciarDados, limparDados, estadoDados, rot, ultima, anexo, textoDoAnexo, tentarAnexosDeNovo } from './dados.js';
 import { textoDosAjustes } from './parse.js';
 import { pendentesDe } from './telas/videos.js';
 import { arquivoDeLegenda } from './telas/prontos.js';
 import { desenhar, rotear } from './roteador.js';
-import { abrirJanela, fecharJanela, avisar, removerAviso, copiarTexto, janelaSobre } from './componentes/janelas.js';
+import { abrirJanela, fecharJanela, avisar, removerAviso, copiarTexto, janelaSobre, janelaSair } from './componentes/janelas.js';
 import { Paleta } from './componentes/paleta.js';
 import { Tele } from './componentes/tele.js';
 import { Players } from './componentes/players.js';
@@ -34,8 +34,20 @@ function textoDoErro(e) {
   return 'Não foi possível entrar agora. Verifique a internet e tente de novo.';
 }
 
+/** Botão "Sair" da ilha: ícone e rótulo com o e-mail da conta (o e-mail muda se a conta trocar). */
+export function pintarBotaoSair() {
+  const b = $('#botao-sair');
+  if (!b) return;
+  if (!b.firstChild) b.innerHTML = ic('sair');
+  const email = Integra.email();
+  const rotulo = email ? `Sair da conta (${email})` : 'Sair da conta';
+  b.setAttribute('aria-label', rotulo);
+  b.title = rotulo;
+}
+
 export function entrarNoApp() {
   estado.logada = true;
+  pintarBotaoSair();
   document.documentElement.classList.remove('retomando');
   mensagemLogin('');
   $('#tela-login').hidden = true;
@@ -62,16 +74,30 @@ export function mostrarLogin(mensagem = '') {
   window.scrollTo(0, 0);
 }
 
+/**
+ * Sai da conta: fecha janelas e teleprompter, para os players e revoga as URLs dos vídeos, esquece
+ * downloads em andamento, revoga o token e limpa o armazenamento (Integra.sair → auth.sair), apaga
+ * os dados em memória, o estado das telas, os rascunhos e a lista de ajustes, e volta para a tela de
+ * entrada com o endereço sem rota. Nada renova sozinho depois disso.
+ */
 export function sairDaConta(mensagem = '') {
   fecharJanela();
   Tele.fechar();
   Players.liberar();
+  Downloads.liberar();
   Integra.sair();
   limparDados();
-  estado.pendentes = {};
-  estado.versaoVista = {};
-  removerAviso('sessao');
+  reiniciarEstado();
+  Paleta.termo = '';
+  Paleta.i = 0;
+  // Avisos da sessão que acabou (fica só o de "Nova versão do app").
+  document.querySelectorAll('#avisos .aviso').forEach((a) => { if (a.dataset.aviso !== 'versao') a.remove(); });
+  // Nada da conta fica no DOM escondido.
+  for (const sel of ['#conteudo', '#nav-topo', '#nav-doca']) { const el = $(sel); if (el) el.innerHTML = ''; }
+  pintarBotaoSair();
+  if (location.hash) history.replaceState(null, '', location.pathname + location.search);
   mostrarLogin(mensagem);
+  $('#botao-entrar')?.focus({ preventScroll: true }); // o botão que abriu a janela de confirmação sumiu
 }
 
 /* ---- As ações ---- */
@@ -90,14 +116,15 @@ export const ACOES = {
       await Integra.entrar();
       entrarNoApp();
     } catch (e) {
-      if (e?.codigo !== 'substituido') mensagemLogin(textoDoErro(e));
+      if (e?.codigo !== 'substituido' && e?.codigo !== 'saiu') mensagemLogin(textoDoErro(e));
     } finally {
       b.disabled = false;
       b.removeAttribute('aria-busy');
       $('#botao-entrar-texto').textContent = 'Entrar com Google';
     }
   },
-  sair() { sairDaConta(); },
+  sair() { if (estado.logada) abrirJanela(janelaSair(Integra.email())); },
+  'confirmar-sair'() { sairDaConta(); },
   async 'renovar-sessao'(el) {
     if (el.disabled) return;
     el.disabled = true;
@@ -107,6 +134,7 @@ export const ACOES = {
       avisar('Sessão renovada.');
     } catch (e) {
       if (e?.codigo === 'nao_permitido') { sairDaConta(e.message); return; }
+      if (e?.codigo === 'saiu' || !estado.logada) return;
       avisar(e?.message || 'Não consegui renovar a sessão. Toque de novo no aviso.');
     } finally {
       el.disabled = false;
@@ -222,6 +250,7 @@ export const ACOES = {
     const a = r?.pacote?.arquivos.find((x) => x.file.id === el.dataset.valor);
     if (!a) return;
     try { await Downloads.baixar(a); } catch (e) {
+      if (!estado.logada || e?.codigo === 'saiu') return; // saiu da conta no meio do download
       avisar(`Não consegui baixar ${a.nome}: ${e?.message || 'o Drive não respondeu.'}`);
     }
   },
@@ -258,7 +287,7 @@ export function ligarAcoes() {
     if (!el) return;
     if (el.tagName === 'A' && el.getAttribute('href') === '#') ev.preventDefault();
     const r = executar(el.dataset.acao, el, ev);
-    if (r && typeof r.catch === 'function') r.catch((e) => avisar(e?.message || 'Algo deu errado. Tente de novo.'));
+    if (r && typeof r.catch === 'function') r.catch((e) => { if (estado.logada && e?.codigo !== 'saiu') avisar(e?.message || 'Algo deu errado. Tente de novo.'); });
   });
   document.addEventListener('input', (ev) => {
     const t = ev.target;

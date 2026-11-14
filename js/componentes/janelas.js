@@ -1,7 +1,7 @@
 // Avisos rápidos, avisos fixos (sessão expirada, sem internet, nova versão), janelas, cópia e a
 // janela "Sobre o app".
 
-import { $, ic } from '../util.js';
+import { $, esc, ic } from '../util.js';
 import { estado } from '../estado.js';
 
 /* ---- Avisos ---- */
@@ -58,6 +58,12 @@ export function fecharJanela() {
 }
 /** `titulo` e `corpo`/`rodape` são HTML (escape os dados antes). */
 export const moldura = (titulo, corpo, rodape = '') => `<div class="dlg"><header class="dlg-cab"><h2 id="dlg-titulo">${titulo}</h2><button type="button" class="redondo" data-acao="fechar-janela" aria-label="Fechar">${ic('fechar')}</button></header><div class="dlg-corpo">${corpo}</div>${rodape ? `<footer class="dlg-rodape">${rodape}</footer>` : ''}</div>`;
+
+/** Confirmação de "Sair" (botão da ilha, link do Início ou a busca rápida). */
+export function janelaSair(email) {
+  return moldura('Sair da conta?', `<p>Você volta para a tela de entrada. Para usar de novo, entre com Google.</p>${email ? `<p class="conta-atual">${ic('sair', 18)}<span>Conta conectada: <strong>${esc(email)}</strong></span></p>` : ''}`,
+    '<button type="button" class="botao calmo" data-acao="fechar-janela">Ficar</button><button type="button" class="botao primario" data-acao="confirmar-sair">Sair</button>');
+}
 
 /* ---- Área de transferência e downloads ---- */
 

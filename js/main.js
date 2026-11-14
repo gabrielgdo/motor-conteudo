@@ -7,7 +7,7 @@ import { estado } from './estado.js';
 import { Integra } from './integra.js';
 import { estadoDados } from './dados.js';
 import { aoMudarDados, aoMudarDuracao } from './roteador.js';
-import { ligarAcoes, entrarNoApp, mostrarLogin } from './acoes.js';
+import { ligarAcoes, entrarNoApp, mostrarLogin, pintarBotaoSair } from './acoes.js';
 import { avisoFixo, removerAviso } from './componentes/janelas.js';
 import { Paleta } from './componentes/paleta.js';
 import { Tele } from './componentes/tele.js';
@@ -19,7 +19,8 @@ import { Veu, Tema, ligarLuz } from './visual.js';
 window.addEventListener('motor:sessao-expirada', () => {
   if (estado.logada) avisoFixo('sessao', 'Sua sessão expirou. Toque aqui para continuar.', { acao: 'renovar-sessao', icone: 'alerta' });
 });
-window.addEventListener('motor:sessao-renovada', () => removerAviso('sessao'));
+// Depois de renovar (a sessão nova já está gravada): o rótulo do "Sair" mostra a conta atual.
+window.addEventListener('motor:sessao-renovada', () => { removerAviso('sessao'); pintarBotaoSair(); });
 window.addEventListener('motor:conta-trocada', () => aoMudarDados()); // a saudação usa o nome da conta
 
 /* ---- Dados: redesenha a tela e mostra/tira o aviso de sem internet ---- */
@@ -44,7 +45,7 @@ window.addEventListener('unhandledrejection', (e) => {
    inclusive no lugar do SW do app antigo. Quando um SW novo passa a controlar a página, ela pergunta
    a versão dele: se for outra que a desta página, mostra "Nova versão" (tocar recarrega). Se for a
    mesma (a página já veio da rede com os arquivos novos), não há o que avisar. */
-const VERSAO_APP = 'motor-app-v3'; // igual a VERSAO em sw.js (tests/sw.test.mjs confere)
+const VERSAO_APP = 'motor-app-v4'; // igual a VERSAO em sw.js (tests/sw.test.mjs confere)
 
 function avisarNovaVersao() {
   avisoFixo('versao', 'Nova versão do app. Toque para atualizar.', { acao: 'nova-versao', icone: 'atualizar' });
@@ -72,6 +73,7 @@ function registrarSw() {
 
 /* ---- Começo ---- */
 document.getElementById('botao-busca').innerHTML = `${ic('pautas', 18)}<span class="txt">Ir para</span><kbd>${/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘K' : 'Ctrl K'}</kbd>`;
+pintarBotaoSair();
 Veu.iniciar();
 Tema.aplicar(Tema.lembrado());
 ligarAcoes();

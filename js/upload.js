@@ -1,7 +1,7 @@
 // Upload resumível para o Drive (sessão resumable + PUT em pedaços de 8 MiB via XMLHttpRequest).
 // O cálculo de offsets, backoff e ETA fica em funções puras exportadas (testadas em tests/).
 
-import { getToken, renovar } from './auth.js';
+import { getToken, renovar, PREFIXO_UPLOAD } from './auth.js';
 
 export const PEDACO = 8 * 1024 * 1024; // 8 MiB (múltiplo de 256 KiB)
 export const VALIDADE_SESSAO_MS = 6 * 24 * 60 * 60 * 1000; // 6 dias
@@ -60,9 +60,9 @@ export function formatarDuracao(seg) {
   return `${Math.floor(s / 3600)} h ${Math.floor((s % 3600) / 60)} min`;
 }
 
-/** Chave da sessão no localStorage. */
+/** Chave da sessão no localStorage (o prefixo vem do auth.js, que o preserva ao sair da conta). */
 export function chaveSessao(id, arquivo) {
-  return `motor.upload.${id}.${arquivo.name}.${arquivo.size}.${arquivo.lastModified}`;
+  return `${PREFIXO_UPLOAD}${id}.${arquivo.name}.${arquivo.size}.${arquivo.lastModified}`;
 }
 
 /** A sessão salva ainda vale? */

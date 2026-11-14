@@ -577,6 +577,17 @@ dialog[open]{animation:abre .22s cubic-bezier(.2,.7,.2,1)}
 .google[disabled]{opacity:.72;cursor:progress;filter:none}
 .discreto{align-self:flex-start;background:none;border:0;padding:.25rem 0;font-size:.875rem;font-weight:600;color:var(--tinta-2);text-decoration:underline;text-underline-offset:.1875rem}
 .discreto:hover{color:var(--tinta)}
+/* Sair: botão redondo na ilha a partir de 720px (no celular a ilha não comporta mais um, de 360 a
+   430px); abaixo disso, o link "Sair" junto da data do Início, no tom da data */
+.ilha .ilha-sair{display:none}
+.hero-topo{display:flex;align-items:baseline;justify-content:space-between;gap:1rem}
+.hero-sair{flex-shrink:0;align-self:baseline;min-height:2.75rem;margin:-.875rem 0;padding:.875rem 0 .875rem 1rem;font-weight:500}
+@media (min-width:720px){.ilha .ilha-sair{display:grid}.hero-sair{display:none}}
+/* Janela "Sair da conta?": a conta conectada, com e-mails longos quebrando sem estourar a janela */
+.conta-atual{display:flex;align-items:center;gap:.625rem;padding:.75rem 1rem;border-radius:var(--r-controle);background:var(--espera-fundo);color:var(--tinta-2);font-size:.90625rem;line-height:1.4}
+.conta-atual .ic{flex-shrink:0}
+.conta-atual span{min-width:0}
+.conta-atual strong{color:var(--tinta);font-weight:600;overflow-wrap:anywhere}
 /* Com sessão guardada, a tela de login não pisca enquanto o app abre (a classe vem do script do <head>) */
 html.retomando #tela-login{visibility:hidden}
 /* Avisos que ficam até serem resolvidos: sessão expirada, sem internet, nova versão */

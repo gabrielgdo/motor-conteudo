@@ -25,7 +25,7 @@ js/
   main.js               início: escutas, tema, sessão retomada ou login, service worker
   config.js             client_id, escopos, contas, pastas, planilha, regras (CONFIG, nomeDe)
   integra.js            o ÚNICO módulo que fala com o mundo externo (usa auth/drive/sheet)
-  auth.js               GIS, sessão em sessionStorage, renovação silenciosa
+  auth.js               GIS, sessão em sessionStorage, renovação silenciosa, limpeza ao sair
   drive.js              Drive API v3 (listagens com cache, textos, blobs)
   sheet.js              planilha Radar: "data do post" (nativa ou .xlsx), só leitura nesta etapa
   model.js              listagens do Drive → projetos (puro)
@@ -67,6 +67,17 @@ Rotas: `#/inicio #/pautas #/roteiros #/roteiros/<id> #/videos #/videos/<id> #/en
   do Google Drive com o nome `<id>.<extensão>`.
 - **Prontos**: um cartão por pacote de 5-Prontos; copiar a legenda, baixar cada arquivo ou todos.
 - **Pautas** e **Resultados**: "em breve", sem dado falso.
+- **Sair da conta**: botão redondo na ilha, ao lado do tema, a partir de 720px de largura
+  (tablet e computador); no celular, link "Sair" junto da data do Início (a ilha não comporta mais
+  um botão de 360 a 430px). Também na busca rápida. Sempre com a confirmação "Sair da conta?".
+  Ao sair: o token é revogado e a seleção automática do Google é desligada (sem esperar resposta;
+  sem GIS ou sem rede, sai do mesmo jeito); a renovação agendada ou pendente é cancelada (sem o
+  aviso de sessão expirada) e nada relê o Drive nem renova sozinho; saem do sessionStorage e do
+  localStorage todas as chaves `motor.*`/`motor-*`, **menos** `motor-tema` (o tema) e
+  `motor.upload.*` (envios retomáveis); dados em memória, vídeos (URLs de Blob revogadas),
+  downloads em andamento, estado das telas, rascunhos e a lista de ajustes são esquecidos; a tela
+  volta para a entrada sem rota no endereço. O app não usa IndexedDB. O próximo "Entrar com
+  Google" abre a escolha de conta (`prompt: 'select_account'`, sem `login_hint`).
 
 **Etapa 2**: gravar no Drive. Aprovar/pedir mudança no roteiro; aprovar (`<id> aprovado.md`) ou
 pedir ajustes (`<id> ajustes vN.md`) nas prévias; envio da gravação pelo app (`js/upload.js`);
@@ -96,7 +107,8 @@ Node 22+ (com um diretório, o `--test` carrega `tests/index.js`, que importa to
 Cobrem o leitor de roteiro (paridade com o `roteiro.py`), as regras de etapa, o mapeamento puro
 projeto + roteiro → objeto das telas (`montarRoteiro`), as funções puras de `js/parse.js` e
 `js/model.js` (nomes de arquivo, YAML, datas, pedido de ajustes, horários do pacote), as partes
-puras do `js/upload.js` e o PWA (`tests/sw.test.mjs`: todo arquivo da lista do `sw.js` existe,
+puras do `js/upload.js`, o "Sair" (`tests/sair.test.mjs`: chaves apagadas e mantidas, GIS ausente
+ou com erro, renovação cancelada, escolha de conta no login seguinte) e o PWA (`tests/sw.test.mjs`: todo arquivo da lista do `sw.js` existe,
 todo módulo do app está nela, versão do cache igual à do `js/main.js`, manifest, nenhum caminho
 para fora da raiz).
 
@@ -106,7 +118,7 @@ O GitHub Pages publica a raiz da branch `main` em `https://motor.rocambrea.com/`
 nas configurações do Pages, não num arquivo CNAME). O `.nojekyll` impede o processamento pelo Jekyll.
 
 1. Rode `node --test tests/`.
-2. **Aumente a versão do cache** em `sw.js` (`VERSAO`, `motor-app-v3` → `motor-app-v4`…) e, igual,
+2. **Aumente a versão do cache** em `sw.js` (`VERSAO`, hoje `motor-app-v4` → `motor-app-v5`…) e, igual,
    em `js/main.js` (`VERSAO_APP`); o teste confere que as duas batem. É a mudança no `sw.js` que
    faz o navegador instalar o SW novo e o app aberto mostrar "Nova versão do app. Toque para
    atualizar.". Se criar um arquivo novo do app, inclua-o na lista `ARQUIVOS` do `sw.js` (o teste

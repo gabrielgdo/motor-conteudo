@@ -4,7 +4,7 @@
 //              tela é redesenhada
 //   estado.erros = mensagens de validação por campo
 
-export const estado = {
+const inicial = () => ({
   logada: false,
   rota: { nome: 'inicio', id: null },
   filtroPautas: 'todas',
@@ -16,6 +16,15 @@ export const estado = {
   arquivo: null, // { nome, total, file } do vídeo escolhido (etapa 2)
   envio: null, // { id, nome, nomeFinal, total, enviado, fase } (etapa 2)
   erros: {},
-};
+});
+
+export const estado = inicial();
 
 export const rascunho = {};
+
+/** Ao sair da conta: estado da tela como no começo e rascunhos dos campos apagados (os mesmos objetos). */
+export function reiniciarEstado() {
+  for (const k of Object.keys(estado)) delete estado[k];
+  Object.assign(estado, inicial());
+  for (const k of Object.keys(rascunho)) delete rascunho[k];
+}

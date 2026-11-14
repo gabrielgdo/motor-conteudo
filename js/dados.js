@@ -238,12 +238,13 @@ const st = {
   promessa: null,
 };
 const cacheLido = new Map(); // `${fileId}:${modifiedTime}` → roteiro lido
+let geracao = 0; // sobe a cada limparDados (saída da conta): leituras em andamento são descartadas
 
 function emitir() {
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('motor:dados'));
 }
 
-async function buscar(forcar) {
+async function buscar(forcar, ger = geracao) {
   const agora = new Date();
   const [listagens, post] = await Promise.all([
     Integra.listagens(forcar),
@@ -262,7 +263,11 @@ async function buscar(forcar) {
     const f = arquivoDoRoteiro(p);
     const chave = `${f.id}:${f.modifiedTime || ''}`;
     try {
-      if (!cacheLido.has(chave)) cacheLido.set(chave, lerRoteiro(await Integra.baixarTexto(f), f.name));
+      if (!cacheLido.has(chave)) {
+        const lido = lerRoteiro(await Integra.baixarTexto(f), f.name);
+        if (ger !== geracao) return; // saiu da conta enquanto baixava
+        cacheLido.set(chave, lido);
+      }
       lidos.set(p.id, cacheLido.get(chave));
     } catch {
       lidos.set(p.id, null);
@@ -282,19 +287,24 @@ async function buscar(forcar) {
 export function carregar({ forcar = false } = {}) {
   if (st.promessa) return st.promessa;
   if (forcar) Integra.invalidar();
+  const ger = geracao;
   st.fase = st.roteiros.length ? 'atualizando' : 'carregando';
   st.erro = null;
   emitir();
-  st.promessa = buscar(forcar).then((res) => {
-    Object.assign(st, res, { fase: 'pronto', erro: null, carregadoEm: Date.now() });
+  // Se ela sair da conta no meio da leitura (limparDados), o resultado é descartado.
+  const promessa = buscar(forcar, ger).then((res) => {
+    if (ger === geracao) Object.assign(st, res, { fase: 'pronto', erro: null, carregadoEm: Date.now() });
   }, (erro) => {
+    if (ger !== geracao) return;
     st.erro = erro;
     st.fase = st.roteiros.length ? 'pronto' : 'erro';
   }).finally(() => {
+    if (ger !== geracao) return;
     st.promessa = null;
     emitir();
   });
-  return st.promessa;
+  st.promessa = promessa;
+  return promessa;
 }
 
 /** Liga a releitura automática: ao voltar para a aba depois de CACHE_MS e quando a internet volta. */
@@ -308,17 +318,18 @@ export function iniciarDados() {
   window.addEventListener('online', () => {
     st.offline = false;
     emitir();
-    if (st.ligado) carregar({ forcar: true });
+    if (st.ligado && Integra.temSessao()) carregar({ forcar: true });
   });
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && st.ligado && st.fase !== 'carregando'
+    if (document.visibilityState === 'visible' && st.ligado && Integra.temSessao() && st.fase !== 'carregando'
       && Date.now() - st.carregadoEm > CACHE_MS) carregar({ forcar: true });
   });
 }
 
 /** Ao sair: esquece tudo o que foi lido. */
 export function limparDados() {
-  Object.assign(st, { fase: 'vazio', roteiros: [], postadosLidos: false, erro: null, carregadoEm: 0, ligado: false });
+  geracao++;
+  Object.assign(st, { fase: 'vazio', roteiros: [], postadosLidos: false, erro: null, carregadoEm: 0, ligado: false, promessa: null });
   cacheLido.clear();
   anexos.clear();
   filaAnexos.length = 0;

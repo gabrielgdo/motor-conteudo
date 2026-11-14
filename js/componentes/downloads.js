@@ -13,6 +13,7 @@ const ehIphone = () => /iPhone|iPad|iPod/.test(navigator.userAgent)
 
 export const Downloads = {
   andando: new Map(), // id do arquivo → % (ou null se o tamanho não é conhecido)
+  geracao: 0, // sobe ao sair da conta: o que estava baixando não é mais salvo
   tudo: null, // {id do roteiro, i, n} enquanto "Baixar tudo" roda
 
   /** Botão redondo de baixar um arquivo do pacote. `a` = item de r.pacote.arquivos. */
@@ -51,20 +52,25 @@ export const Downloads = {
   async baixar(a) {
     const id = a.file.id;
     if (this.andando.has(id)) return false;
+    const ger = this.geracao;
     this.andando.set(id, null);
     this.pintar(id);
     try {
       const blob = await Integra.baixarBlob(a.file, {
         aoProgresso: (recebido, total) => {
+          if (ger !== this.geracao) return;
           const pct = total ? Math.min(99, Math.floor((recebido / total) * 100)) : null;
           if (pct !== this.andando.get(id)) { this.andando.set(id, pct); this.pintar(id); }
         },
       });
+      if (ger !== this.geracao) return false; // saiu da conta no meio do download
       salvarBlob(blob, nomeDownload(a.file.name, a.file.sub));
       return true;
     } finally {
-      this.andando.delete(id);
-      this.pintar(id);
+      if (ger === this.geracao) {
+        this.andando.delete(id);
+        this.pintar(id);
+      }
     }
   },
 
@@ -74,22 +80,35 @@ export const Downloads = {
     const lista = r.pacote?.arquivos || [];
     if (!lista.length) return;
     let falhas = 0;
+    const ger = this.geracao;
     this.tudo = { id: r.id, i: 0, n: lista.length };
     try {
       for (const a of lista) {
+        if (ger !== this.geracao) return; // saiu da conta: para sem avisar
         this.tudo.i += 1;
         this.pintarTudo(r);
         avisoFixo('baixar-tudo', `Baixando ${this.tudo.i} de ${lista.length}…`, { calmo: true, icone: 'prontos' });
         try { await this.baixar(a); } catch { falhas += 1; }
       }
     } finally {
-      this.tudo = null;
-      removerAviso('baixar-tudo');
-      this.pintarTudo(r);
+      if (ger === this.geracao) {
+        this.tudo = null;
+        removerAviso('baixar-tudo');
+        this.pintarTudo(r);
+      }
     }
+    if (ger !== this.geracao) return;
     const n = lista.length;
     if (!falhas) avisar(n === 1 ? 'O arquivo foi baixado.' : `Os ${n} arquivos foram baixados.`);
     else if (ehIphone()) avisar(`Baixei ${n - falhas} de ${n}. No iPhone, vários downloads seguidos podem ser bloqueados: baixe os que faltaram um por um.`);
     else avisar(`Baixei ${n - falhas} de ${n}. ${falhas === 1 ? 'Um arquivo falhou' : `${falhas} arquivos falharam`}: tente de novo pelo botão de cada um.`);
+  },
+
+  /** Ao sair da conta: esquece os downloads em andamento (nada mais é salvo nem avisado). */
+  liberar() {
+    this.geracao++;
+    this.andando.clear();
+    this.tudo = null;
+    removerAviso('baixar-tudo');
   },
 };

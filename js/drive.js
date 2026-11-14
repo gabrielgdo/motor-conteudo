@@ -79,6 +79,7 @@ export async function listar(pastaId) {
 }
 
 let pastasCache = null;
+let geracao = 0; // sobe em esquecerTudo (saída da conta): uma leitura de pastas em andamento não volta a guardar nada
 let pastasArquivos = {}; // chave (PASTAS) → arquivo da pasta (com webViewLink), depois de pastas()
 
 /** A pasta (como veio da listagem) já resolvida por pastas(), ou null. Síncrono, para as telas. */
@@ -89,7 +90,9 @@ export function pastaConhecida(chave) {
 /** Ids das subpastas de "Motor de Conteúdo", resolvidas pelo nome (cache na sessão). */
 export async function pastas() {
   if (pastasCache) return pastasCache;
+  const ger = geracao;
   const filhos = (await listar(ROOT_FOLDER)).filter(ehPasta);
+  if (ger !== geracao) throw new ErroDrive('Você saiu da conta.', 0);
   const porNome = new Map(filhos.map((f) => [f.name.trim(), f.id]));
   const arquivoPorNome = new Map(filhos.map((f) => [f.name.trim(), f]));
   pastasArquivos = Object.fromEntries(Object.entries(PASTAS).map(([chave, nome]) => [chave, arquivoPorNome.get(nome) || null]));
@@ -119,6 +122,7 @@ export function invalidarCache() {
 
 /** Ao sair da conta: esquece também as pastas resolvidas e os textos baixados. */
 export function esquecerTudo() {
+  geracao++;
   listagensCache = null;
   pastasCache = null;
   pastasArquivos = {};
