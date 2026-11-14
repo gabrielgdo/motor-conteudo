@@ -11,6 +11,7 @@ export const estado = {
   filtroRoteiros: 'aprovar',
   abaRoteiro: 'ig',
   versaoVista: {}, // id do roteiro -> número da versão do vídeo que está na tela
+  pendentes: {}, // "<id> v<N>" -> ajustes que ela juntou na lista nesta sessão (só em memória)
   metrica: 'views',
   arquivo: null, // { nome, total, file } do vídeo escolhido (etapa 2)
   envio: null, // { id, nome, nomeFinal, total, enviado, fase } (etapa 2)

@@ -32,7 +32,7 @@ export const Integra = {
   /** Revoga o token, limpa a sessão e os caches de dados. */
   sair() {
     auth.sair();
-    drive.invalidarCache();
+    drive.esquecerTudo();
     sheet.invalidarPostados();
   },
 
@@ -55,11 +55,18 @@ export const Integra = {
   /** Texto de um arquivo do Drive (cache por id + modifiedTime). */
   baixarTexto: (arquivo) => drive.baixarTexto(arquivo),
 
-  /** Conteúdo binário (vídeo, imagem) de um arquivo do Drive, como Blob. */
-  baixarBlob: (arquivo) => drive.baixarBlob(typeof arquivo === 'string' ? arquivo : arquivo.id),
+  /** Conteúdo binário (vídeo, imagem) de um arquivo do Drive, como Blob (o arquivo original).
+      Drive API: GET files/{id}?alt=media com o token Bearer. `opcoes.aoProgresso(recebido, total)`
+      lê o corpo em stream (total = Content-Length, ou o size da listagem, ou 0). */
+  baixarBlob: (arquivo, { aoProgresso = null } = {}) => (typeof arquivo === 'string'
+    ? drive.baixarBlob(arquivo, { aoProgresso })
+    : drive.baixarBlob(arquivo.id, { aoProgresso, tamanho: arquivo.size })),
 
   /** Endereço https do arquivo ou da pasta no Drive (webViewLink ou o link montado pelo id). */
   linkDrive: (arquivo) => drive.linkDrive(arquivo),
+
+  /** Pasta do motor já lida nesta sessão ('brutos', 'prontos'…) como arquivo do Drive, ou null. */
+  pasta: (chave) => drive.pastaConhecida(chave),
 
   /* ----------------------------------------------------- escrita (etapa 2) */
 

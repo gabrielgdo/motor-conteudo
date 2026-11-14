@@ -76,22 +76,8 @@ export function linkDoDrive(arquivo, texto = 'Abrir no Drive') {
   return href ? `<a href="${esc(href)}" target="_blank" rel="noopener noreferrer">${esc(texto)}</a>` : '';
 }
 
-/* ---- Peças das telas provisórias (Roteiros, Vídeos, Enviar e Prontos ganham a versão completa na parte 2) ---- */
-
-/** Aviso honesto das telas que ganham a versão completa na próxima atualização. */
-export const emPreparo = (texto) => `<p class="nota calma" style="margin-bottom:1.25rem;max-width:58.75rem">${ic('info')}<span>${texto}</span></p>`;
+/** Link "voltar" do topo dos detalhes. */
 export const voltar = (rota, rotulo) => `<a class="voltar" href="#/${rota}">${ic('voltar', 18)} ${esc(rotulo)}</a>`;
-/** Grade simples de roteiros: id, selo da etapa, título com link e `extra(r)` (HTML já escapado). */
-export function gradeSimples(lista, extra = () => '') {
-  return `<ul class="folhas">${lista.map((r) => {
-    const [texto, tom] = passoDe(r);
-    return `<li class="painel pilha" style="gap:.625rem">
-      <span class="meta"><span class="id">${esc(r.id)}</span>${selo(texto, tom)}${r.teste ? selo('Teste') : ''}</span>
-      <h3 ${vt(r.id)}><a class="esteira-titulo" href="${destinoDe(r)}">${esc(r.titulo)}</a></h3>
-      ${extra(r)}
-    </li>`;
-  }).join('')}</ul>`;
-}
 
 /** Rodapé discreto: quando os dados foram lidos, com o botão de atualizar. */
 export function rodapeAtualizado() {

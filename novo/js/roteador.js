@@ -8,7 +8,7 @@ import { porEtapa, semPostar, estadoDados } from './dados.js';
 import { vInicio } from './telas/inicio.js';
 import { vPautas } from './telas/pautas.js';
 import { vRoteiros, vRoteiro } from './telas/roteiros.js';
-import { vVideos, vVideo } from './telas/videos.js';
+import { vVideos, vVideo, linhaDoTempoAtual } from './telas/videos.js';
 import { vEnviar } from './telas/enviar.js';
 import { vProntos } from './telas/prontos.js';
 import { vResultados } from './telas/resultados.js';
@@ -64,7 +64,9 @@ export function desenhar(novaRota = false) {
   desenharNav();
   if (!novaRota && html === ultimoHTML) return; // nada mudou: não refaz a tela (nem as animações)
   ultimoHTML = html;
+  const videos = Players.guardar(conteudo); // os <video> já baixados passam para a tela nova
   conteudo.innerHTML = html;
+  Players.montar(conteudo, videos);
   document.title = `${ROTAS[nome].titulo} · Motor de Conteúdo`;
   if (novaRota) { window.scrollTo(0, 0); conteudo.focus({ preventScroll: true }); return; }
   window.scrollTo(0, rolagem); // dados novos não fazem a tela pular
@@ -89,6 +91,14 @@ export function rotear() {
   if (!animar) return desenhar(true);
   const troca = document.startViewTransition(() => desenhar(true));
   [troca.ready, troca.finished, troca.updateCallbackDone].forEach((p) => p.catch(() => { /* troca interrompida por outra: normal */ }));
+}
+
+/** Um vídeo descobriu a duração real: refaz só a linha do tempo dos ajustes (sem mexer no formulário). */
+export function aoMudarDuracao() {
+  if (!estado.logada || estado.rota.nome !== 'videos' || !estado.rota.id) return;
+  const atual = $('#linha-tempo');
+  const nova = linhaDoTempoAtual(estado.rota.id);
+  if (atual && nova && atual.outerHTML !== nova) atual.outerHTML = nova;
 }
 
 /** Dados novos (ou mudança de fase): redesenha a tela atual sem tirar o foco nem a rolagem. */

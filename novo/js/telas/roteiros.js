@@ -1,31 +1,158 @@
-// ROTEIROS (lista e detalhe). Provisória nesta parte: a tela completa do desenho aprovado (abas
-// Instagram/TikTok/Extras/Fontes, decisão e teleprompter) chega na parte 2. Os dados que ela vai
-// usar já estão prontos em dados.js (falas, ganchos, legendas, carrossel, stories, fontes, checklist).
+// ROTEIROS (#/roteiros e #/roteiros/<id>): a lista com os filtros e o detalhe com as abas
+// Instagram, TikTok, Extras e Fontes, como no desenho aprovado. Aprovar, pedir mudança e recusar
+// pelo app chegam na etapa 2: por enquanto, o aside só mostra a decisão e o teleprompter.
 
-import { esc } from '../util.js';
-import { ativos, rot } from '../dados.js';
-import { cab, selo, passoDe, naoAchei, comDados, linkDoDrive, emPreparo, vazio, rodapeAtualizado, voltar, gradeSimples } from './pecas.js';
+import { esc, ic, NOME_REDE, validade } from '../util.js';
+import { estado } from '../estado.js';
+import { ativos, rot, falasDe } from '../dados.js';
+import { cab, selo, vt, chipFiltro, passoDe, destinoDe, naoAchei, comDados, linkDoDrive, vazio, rodapeAtualizado, voltar } from './pecas.js';
+
+const enc = encodeURIComponent;
+const plural = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
+
+/** Resumo das fontes no tom do desenho aprovado, sem afirmar checagem que não aconteceu. */
+export function resumoFontes(r) {
+  const n = r.fontes.length;
+  if (!r.lido) return '';
+  if (!n) return 'Sem fontes listadas';
+  // Rascunho cujo relatório de fontes da última versão ainda não chegou: nada de "conferida".
+  if (r.etapa === 'rascunho' && !r.fontesConferidas) return `${plural(n, 'fonte', 'fontes')}, em checagem`;
+  const conta = (c) => r.fontes.filter((f) => f.checagem === c).length;
+  const conf = conta('confirmada'); const div = conta('divergente'); const nao = conta('nao-encontrada');
+  const checadas = conf + div + nao;
+  if (!checadas) return plural(n, 'fonte', 'fontes');
+  const partes = [checadas === n ? plural(n, 'fonte conferida', 'fontes conferidas') : `${plural(n, 'fonte', 'fontes')}, ${plural(conf, 'confirmada', 'confirmadas')}`];
+  if (div) partes.push(plural(div, 'divergente', 'divergentes'));
+  if (nao) partes.push(plural(nao, 'não encontrada', 'não encontradas'));
+  return partes.join(', ');
+}
 
 export function vRoteiros() {
   return `${cab('Roteiros', 'Cada roteiro traz a versão do Instagram, a do TikTok e os textos extras.')}
   ${comDados(() => {
-    const lista = ativos().filter((r) => ['rascunho', 'aprovado'].includes(r.etapa));
-    return `${emPreparo('A leitura completa de cada roteiro, com o teleprompter, chega na próxima atualização do app. Por enquanto, abra o texto no Drive.')}
-    ${lista.length ? gradeSimples(lista, (r) => `<p class="pequeno">${linkDoDrive(r.arquivoRoteiro, 'Abrir o roteiro no Drive')}</p>`)
-      : `<div class="painel">${vazio('Nenhum roteiro para aprovar ou gravar', 'Os rascunhos novos do Roteirista aparecem aqui, já com as fontes conferidas.')}</div>`}
-    ${rodapeAtualizado()}`;
+    const f = estado.filtroRoteiros; const todos = ativos();
+    const lista = f === 'aprovar' ? todos.filter((r) => r.etapa === 'rascunho') : f === 'gravar' ? todos.filter((r) => r.etapa === 'aprovado') : todos;
+    const nAprovar = todos.filter((r) => r.etapa === 'rascunho').length; const nGravar = todos.filter((r) => r.etapa === 'aprovado').length;
+    return `
+  <div class="filtros" role="group" aria-label="Filtrar roteiros">
+    ${chipFiltro('filtroRoteiros', 'aprovar', `Para aprovar (${nAprovar})`, f)}${chipFiltro('filtroRoteiros', 'gravar', `Para gravar (${nGravar})`, f)}${chipFiltro('filtroRoteiros', 'todos', 'Todos', f)}
+  </div>
+  ${lista.length ? `<ul class="folhas">${lista.map((r) => { const [texto, tom] = passoDe(r); const v = validade(r); const abertura = r.ganchos.ig[0]; const fontes = resumoFontes(r); return `
+    <li><a class="painel folha luz" href="#/roteiros/${enc(r.id)}">
+      <span class="meta"><span class="id">${esc(r.id)}</span>${selo(texto, tom)}${r.teste ? selo('Teste') : ''}</span>
+      <h3 ${vt(r.id)}>${esc(r.titulo)}</h3>
+      ${abertura ? `<blockquote>${esc(abertura)}</blockquote>` : r.erroTexto ? '<p class="apagado pequeno">Não consegui ler o texto deste roteiro agora.</p>' : ''}
+      <span class="meta">${v.perto && r.lido ? selo(v.texto, 'alerta') : ''}${fontes ? `<span class="apagado pequeno">${esc(fontes)}</span>` : ''}</span>
+    </a></li>`; }).join('')}</ul>`
+    : `<div class="painel">${f === 'todos'
+      ? vazio('Nenhum roteiro ainda', 'Os rascunhos novos do Roteirista aparecem aqui, já com as fontes conferidas.')
+      : vazio(f === 'aprovar' ? 'Nenhum roteiro para aprovar' : 'Nenhum roteiro esperando gravação', f === 'aprovar' ? 'Os rascunhos novos do Roteirista aparecem aqui, já com as fontes conferidas.' : 'Aprove um roteiro para ele entrar na fila de gravação.')}</div>`}
+  ${rodapeAtualizado()}`;
   })}`;
+}
+
+/* ---- Abas do detalhe ---- */
+
+function linhaPalavras(r, falas) {
+  const palavras = falas.reduce((n, f) => n + f.texto.split(/\s+/).filter(Boolean).length, 0);
+  const tamanho = r.duracaoEstimada ? `Duração estimada: ${r.duracaoEstimada} · ${palavras} palavras.` : `${palavras} palavras, perto de ${Math.round(palavras / 2.5)} s de fala.`;
+  const daRede = falas.filter((f) => f.rede).length;
+  const destaque = !daRede ? 'As falas são iguais nas duas redes.'
+    : daRede === falas.length ? 'O TikTok tem texto próprio: as falas destacadas só existem nesta rede.'
+      : 'As falas destacadas só existem nesta rede; o resto é igual nas duas.';
+  return `<p class="apagado pequeno" style="margin-bottom:1.375rem">${esc(tamanho)} ${destaque}</p>`;
+}
+
+function painelFalas(r, rede) {
+  const falas = falasDe(r, rede);
+  const outros = r.ganchos[rede].slice(1);
+  const legenda = r.legendas[rede];
+  if (!falas.length) return vazio('Sem falas para esta rede', 'O texto deste roteiro não traz falas que eu consiga ler.');
+  return `
+  ${linhaPalavras(r, falas)}
+  <div class="falas">${falas.map((f) => `<div class="fala ${f.rede ? 'da-rede' : ''}"><p class="fala-parte">${esc(f.parte)}${f.rede ? ` do ${NOME_REDE[f.rede]}` : ''}</p><p class="fala-texto">${esc(f.texto)}</p></div>`).join('')}</div>
+  ${outros.length ? `<div class="bloco"><h3>Outras aberturas possíveis</h3><ul class="mudancas">${outros.map((g) => `<li>${esc(g)}</li>`).join('')}</ul></div>` : ''}
+  ${r.entrega ? `<div class="bloco"><h3>Entrega</h3><p class="texto-pronto">${esc(r.entrega)}</p></div>` : ''}
+  ${legenda ? `<div class="bloco"><div class="bloco-cab"><h3>Legenda do ${NOME_REDE[rede]}</h3><button type="button" class="botao calmo menor" data-acao="copiar" data-id="${esc(r.id)}" data-valor="${rede}">${ic('copiar', 18)} Copiar</button></div>
+    <p class="texto-pronto post">${esc(legenda)}</p></div>` : ''}`;
+}
+
+function painelExtras(r) {
+  const partes = [];
+  if (r.carrossel.length) partes.push(['Carrossel', `<ol class="slides">${r.carrossel.map((s) => `<li>${esc(s)}</li>`).join('')}</ol>`]);
+  if (r.threads) partes.push(['Threads', `<p class="texto-pronto post">${esc(r.threads)}</p>`]);
+  if (r.stories.length) {
+    partes.push(['Stories', `<ul class="mudancas">${r.stories.map(([tipo, texto]) => `<li><strong>${esc(tipo)}:</strong> ${esc(texto)}</li>`).join('')}</ul>
+    <p class="dica" style="margin-top:.5rem">A enquete e a caixinha você coloca no próprio Instagram.</p>`]);
+  }
+  if (!partes.length) return vazio('Sem textos extras', 'Este roteiro não traz carrossel, Threads nem Stories.');
+  // A primeira parte fica solta, como o Carrossel no desenho aprovado; as outras, em blocos.
+  return partes.map(([titulo, corpo], i) => (i === 0
+    ? `<h3 style="margin-bottom:.625rem">${titulo}</h3>${corpo}`
+    : `<div class="bloco"><h3>${titulo}</h3>${corpo}</div>`)).join('');
+}
+
+const SELO_CHECAGEM = { confirmada: ['Confirmada', 'ok'], divergente: ['Divergente', 'alerta'], 'nao-encontrada': ['Não encontrada', 'alerta'] };
+
+function painelFontes(r) {
+  return `
+  <p class="apagado pequeno">O motor confere cada referência na Crossref e no PubMed antes de o roteiro chegar a você.</p>
+  ${r.fontes.length ? `<ul class="fontes">${r.fontes.map((f) => { const s = SELO_CHECAGEM[f.checagem]; return `<li><p>${esc(f.ref)}</p>${s ? `<div class="meta">${selo(s[0], s[1])}</div>` : ''}</li>`; }).join('')}</ul>`
+    : '<p style="margin-top:.875rem">Este roteiro não lista fontes.</p>'}
+  ${r.checklist.length ? `<div class="bloco"><h3>Cuidados do Conselho de Psicologia</h3><ul class="conferido">${r.checklist.map((c) => (c.marcado
+    ? `<li>${ic('check', 18)}<span>${esc(c.texto)}<span class="vh"> (conferido)</span></span></li>`
+    : `<li class="nao"><span class="sem-check" aria-hidden="true"></span><span>${esc(c.texto)}<span class="vh"> (não marcado)</span></span></li>`)).join('')}</ul></div>` : ''}
+  ${r.notas.length ? `<div class="bloco"><h3>Notas para a edição</h3><ul class="mudancas">${r.notas.map((n) => `<li>${esc(n)}</li>`).join('')}</ul></div>` : ''}`;
+}
+
+/* ---- Detalhe ---- */
+
+function acoesDe(r) {
+  if (r.etapa === 'rascunho') {
+    const fontes = resumoFontes(r);
+    return `
+    <h2>Sua decisão</h2>
+    <p class="apagado pequeno">Rascunho v${r.versaoRoteiro}.${fontes ? ` ${esc(fontes)}.` : ''}</p>
+    ${r.fontesConferidas ? '' : `<p class="meta">${selo('Em checagem de fontes', 'espera')}</p>`}
+    <p class="nota calma">${ic('info')}<span>Aprovar, pedir mudança ou recusar pelo app chega na próxima etapa. Por enquanto, responda ao Roteirista no chat.</span></p>`;
+  }
+  const aprovado = r.etapa === 'aprovado';
+  const tele = r.falas.length || r.teleprompter
+    ? `<button type="button" class="botao ${aprovado ? 'primario' : 'contorno'} cheio" data-acao="tele-abrir" data-id="${esc(r.id)}">${ic('tele')} Abrir o teleprompter</button>`
+    : '';
+  return `
+    <h2>${aprovado ? 'Pronto para gravar' : 'Roteiro gravado'}</h2>
+    <p class="apagado pequeno">${aprovado ? 'Grave as duas aberturas em sequência e depois o resto. O motor separa as versões.' : 'O vídeo deste roteiro está em Vídeos.'}</p>
+    <div class="pilha" style="gap:.625rem">
+      ${tele}
+      ${aprovado ? `<a class="botao contorno cheio" href="#/enviar/${enc(r.id)}">${ic('enviar')} Enviar a gravação</a>` : `<a class="botao calmo cheio" href="${destinoDe(r)}">Ver o vídeo</a>`}
+    </div>`;
 }
 
 export function vRoteiro(id) {
   return comDados(() => {
     const r = rot(id);
     if (!r || r.arquivado) return `${voltar('roteiros', 'Roteiros')}${naoAchei('roteiros')}`;
-    const [texto, tom] = passoDe(r);
-    return `${voltar('roteiros', 'Roteiros')}
-    ${cab(r.titulo, '', r.id)}
-    <div class="meta" style="margin:-.875rem 0 1.625rem">${selo(texto, tom)}${r.formato ? selo(r.formato) : ''}</div>
-    ${emPreparo('A leitura completa deste roteiro, com o teleprompter, chega na próxima atualização do app.')}
-    <div class="painel pilha">${r.erroTexto ? `<p class="apagado pequeno">Não consegui ler o texto deste roteiro agora.</p>` : ''}<p>${linkDoDrive(r.arquivoRoteiro, 'Abrir o roteiro no Drive') || esc('O arquivo do roteiro não está no Drive.')}</p></div>`;
+    const abas = [['ig', 'Instagram'], ['tt', 'TikTok'], ['extras', 'Extras'], ['fontes', 'Fontes']];
+    const aba = abas.some(([valor]) => valor === estado.abaRoteiro) ? estado.abaRoteiro : 'ig';
+    const v = validade(r); const [texto, tom] = passoDe(r);
+    let painel;
+    if (!r.lido) {
+      painel = r.erroTexto
+        ? vazio('Não consegui ler o texto deste roteiro', `O Google Drive não entregou o arquivo agora.${linkDoDrive(r.arquivoRoteiro) ? ` Você pode ${linkDoDrive(r.arquivoRoteiro, 'abrir o roteiro no Drive')}.` : ''}`, `<button type="button" class="botao contorno" data-acao="atualizar">${ic('atualizar', 18)} Tentar de novo</button>`)
+        : vazio('O texto deste roteiro não está no Drive', 'O arquivo do roteiro não apareceu em 2-Roteiros.');
+    } else painel = aba === 'extras' ? painelExtras(r) : aba === 'fontes' ? painelFontes(r) : painelFalas(r, aba);
+    return `
+  ${voltar('roteiros', 'Roteiros')}
+  ${cab(r.titulo, '', r.id)}
+  <div class="meta" style="margin:-.875rem 0 1.625rem">${selo(texto, tom)}${r.lido ? selo(v.texto, v.tom) : ''}${r.formato ? selo(r.formato) : ''}${r.teste ? selo('Teste') : ''}</div>
+  <div class="roteiro-grade">
+    <section class="painel" aria-label="Conteúdo do roteiro">
+      <div class="abas" role="tablist" aria-label="Partes do roteiro">${abas.map(([valor, nome]) => `<button type="button" class="aba" role="tab" id="aba-${valor}" aria-selected="${aba === valor}" aria-controls="painel-roteiro" tabindex="${aba === valor ? 0 : -1}" data-acao="aba" data-valor="${valor}">${nome}</button>`).join('')}</div>
+      <div role="tabpanel" id="painel-roteiro" aria-labelledby="aba-${aba}">${painel}</div>
+    </section>
+    <aside class="painel pilha fixo" aria-label="Ações do roteiro">${acoesDe(r)}</aside>
+  </div>
+  ${rodapeAtualizado()}`;
   });
 }

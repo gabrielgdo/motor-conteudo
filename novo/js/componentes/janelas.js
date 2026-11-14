@@ -61,7 +61,19 @@ export const moldura = (titulo, corpo, rodape = '') => `<div class="dlg"><header
 
 /* ---- Área de transferência e downloads ---- */
 
+/** Copia um texto. Aceita também uma Promise de texto (ex.: arquivo ainda baixando): no Safari, o
+    ClipboardItem com Promise mantém a permissão do toque enquanto o texto chega. */
 export async function copiarTexto(texto) {
+  if (texto && typeof texto.then === 'function') {
+    if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
+      try {
+        const blob = Promise.resolve(texto).then((t) => new Blob([String(t)], { type: 'text/plain' }));
+        await navigator.clipboard.write([new ClipboardItem({ 'text/plain': blob })]);
+        return true;
+      } catch { /* cai no jeito comum abaixo */ }
+    }
+    texto = await texto;
+  }
   try {
     await navigator.clipboard.writeText(texto);
     return true;
@@ -90,7 +102,7 @@ export function salvarBlob(blob, nome) {
   document.body.appendChild(a);
   a.click();
   a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 30000);
+  setTimeout(() => URL.revokeObjectURL(url), 60000); // tempo para o navegador (ou a pergunta do iPhone) pegar o arquivo
 }
 
 /* ---- Sobre o app ---- */

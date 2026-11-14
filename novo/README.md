@@ -29,7 +29,7 @@ js/
   drive.js              Drive API v3 (listagens com cache, textos, blobs)
   sheet.js              planilha Radar: "data do post" (nativa ou .xlsx), só leitura nesta etapa
   model.js              listagens do Drive → projetos (puro)
-  parse.js              nomes de arquivo, YAML, datas no fuso de São Paulo (puro)
+  parse.js              nomes de arquivo, YAML, datas no fuso de São Paulo, pedido de ajustes (puro)
   roteiro.js            leitor de roteiro (porta do roteiro.py do motor, puro)
   etapas.js             etapa de cada projeto no vocabulário das telas (puro)
   dados.js              monta os roteiros no formato das telas; estados carregando/erro/offline
@@ -39,9 +39,26 @@ js/
   roteador.js           rotas por hash, navegação, View Transitions, foco
   visual.js             véu WebGL, tema Noite/Dia, luz dos cartões
   telas/                uma por tela (inicio, pautas, roteiros, videos, enviar, prontos, resultados) + pecas
-  componentes/          janelas (avisos, Sobre), paleta (Ctrl K), tele (teleprompter), players, grafico
-tests/                  node --test (roteiro, etapas, dados) com fixtures/roteiros
+  componentes/          janelas (avisos, Sobre), paleta (Ctrl K), tele (teleprompter), players,
+                        downloads (arquivos dos pacotes), grafico
+tests/                  node --test (roteiro, etapas, dados, parte2) com fixtures/roteiros
 ```
+
+### O que cada tela faz nesta etapa (só leitura: nada é gravado no Drive)
+
+- **Roteiros**: lista com os filtros e o detalhe com as abas Instagram, TikTok, Extras e Fontes,
+  nos dois formatos de roteiro (o novo, de parágrafos, e o antigo, com etiquetas). Teleprompter de
+  verdade para os aprovados e gravados. Aprovar/pedir mudança/recusar: etapa 2 (nota no lugar).
+- **Vídeos**: os players tocam os arquivos reais das prévias de 4-Revisao. Cada vídeo é baixado
+  inteiro pela Drive API (`files/{id}?alt=media` com o token) e tocado por uma URL de Blob, com
+  progresso em %. No máximo 4 vídeos ficam guardados na sessão (os mais antigos são revogados; ao
+  sair da conta, todos). A linha do tempo usa a duração real; os pinos são os ajustes da lista da
+  sessão e, nas versões anteriores, os pedidos de `<id> ajustes vN.md`. "Copiar a lista" no lugar de
+  enviar ao motor (etapa 2).
+- **Enviar gravação**: escolha do roteiro e o passo a passo para pôr o vídeo em 3-Brutos pelo app
+  do Google Drive com o nome `<id>.<extensão>` (o envio pelo app é etapa 2).
+- **Prontos**: um cartão por pacote de 5-Prontos; copiar a legenda (do `legenda-*.txt` do pacote),
+  baixar cada arquivo original ou todos, um por um. "Postei" é etapa 2.
 
 Rotas: `#/inicio #/pautas #/roteiros #/roteiros/<id> #/videos #/videos/<id> #/enviar #/enviar/<id>
 #/prontos #/resultados` (são os links que o Diretor manda nos avisos).
@@ -66,8 +83,10 @@ Na raiz do repositório:
 node --test tests/ novo/tests/
 ```
 
-`novo/tests/` cobre o leitor de roteiro (paridade com o `roteiro.py`), as regras de etapa e o
-mapeamento puro projeto + roteiro → objeto das telas (`montarRoteiro` em `js/dados.js`).
+`novo/tests/` cobre o leitor de roteiro (paridade com o `roteiro.py`), as regras de etapa, o
+mapeamento puro projeto + roteiro → objeto das telas (`montarRoteiro` em `js/dados.js`) e as
+funções puras da parte 2 em `js/parse.js` (pedido de ajustes, tempos da linha do tempo, texto de
+"Copiar a lista", nome de download, horários do pacote).
 
 ## Publicar
 

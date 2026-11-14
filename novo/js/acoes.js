@@ -1,15 +1,19 @@
 // AÇÕES: todo elemento com data-acao="nome" chama ACOES.nome(elemento) ao ser clicado.
 // Aqui também ficam as passagens login ⇄ app (entrarNoApp, mostrarLogin, sairDaConta).
 
-import { $, NOME_REDE } from './util.js';
+import { $, NOME_REDE, relogio } from './util.js';
 import { estado, rascunho } from './estado.js';
 import { Integra } from './integra.js';
-import { carregar, iniciarDados, limparDados, estadoDados, rot } from './dados.js';
+import { carregar, iniciarDados, limparDados, estadoDados, rot, ultima, anexo, textoDoAnexo, tentarAnexosDeNovo } from './dados.js';
+import { textoDosAjustes } from './parse.js';
+import { pendentesDe } from './telas/videos.js';
+import { arquivoDeLegenda } from './telas/prontos.js';
 import { desenhar, rotear } from './roteador.js';
 import { abrirJanela, fecharJanela, avisar, removerAviso, copiarTexto, janelaSobre } from './componentes/janelas.js';
 import { Paleta } from './componentes/paleta.js';
 import { Tele } from './componentes/tele.js';
 import { Players } from './componentes/players.js';
+import { Downloads } from './componentes/downloads.js';
 import { Tema } from './visual.js';
 
 /* ---- Login ⇄ app ---- */
@@ -64,6 +68,8 @@ export function sairDaConta(mensagem = '') {
   Players.liberar();
   Integra.sair();
   limparDados();
+  estado.pendentes = {};
+  estado.versaoVista = {};
   removerAviso('sessao');
   mostrarLogin(mensagem);
 }
@@ -132,20 +138,111 @@ export const ACOES = {
     avisar(ok ? `Legenda do ${NOME_REDE[rede]} copiada.` : 'Não consegui copiar. Selecione o texto e copie à mão.');
   },
 
-  /* -- teleprompter (tela Roteiros, parte 2) -- */
-  'tele-abrir'(el) { Tele.abrir(rot(el.dataset.id)); },
+  'anexo-tentar'() { tentarAnexosDeNovo(); desenhar(); },
+
+  /* -- roteiros: teleprompter -- */
+  'tele-abrir'(el) {
+    const r = rot(el.dataset.id);
+    if (!r || (!r.falas.length && !r.teleprompter)) { avisar('O texto deste roteiro ainda não chegou.'); return; }
+    Tele.abrir(r);
+  },
   'tele-fechar'() { Tele.fechar(); },
   'tele-alternar'() { Tele.alternar(); },
   'tele-reiniciar'() { Tele.reiniciar(); },
   'tele-tamanho'(el) { Tele.tamanho(+el.dataset.valor); },
 
-  /* -- players (tela Vídeos, parte 2) -- */
+  /* -- vídeos -- */
   async 'player-alternar'(el) {
     try { await Players.alternar(el.closest('[data-player]')); } catch (e) {
       if (e?.name !== 'AbortError') avisar(e?.message || 'Não consegui tocar este vídeo agora.');
     }
   },
+  'player-tentar'(el) { Players.tentar(el.closest('[data-player]')); },
+  'video-versao'(el) { Players.parar(); estado.versaoVista[el.dataset.id] = +el.dataset.valor; desenhar(); },
+  'marcar-momento'(el) {
+    const fig = el.closest('[data-player]');
+    Players.parar();
+    rascunho['aj-versao'] = el.dataset.valor;
+    rascunho['aj-tempo'] = relogio(Players.tempo(fig));
+    desenhar();
+    const alvo = $('#c-aj-pedido');
+    if (alvo) { alvo.scrollIntoView({ block: 'center' }); alvo.focus({ preventScroll: true }); }
+  },
+  'ajuste-adicionar'(el) {
+    const r = rot(el.dataset.id);
+    if (r && lerAjuste(r)) avisar('Ajuste na lista. Adicione outros ou copie a lista.');
+    desenhar();
+  },
+  'ajuste-remover'(el) {
+    const r = rot(el.dataset.id);
+    if (r) pendentesDe(r, ultima(r)).splice(+el.dataset.valor, 1);
+    desenhar();
+  },
+  /* Etapa 2: "Enviar N ajustes ao motor" grava "<id> ajustes vN.md" (parse.gerarAjustes). Por
+     enquanto, a lista vira texto simples para ela colar no chat do Diretor. */
+  async 'ajustes-copiar'(el) {
+    const r = rot(el.dataset.id);
+    if (!r) return;
+    if ((rascunho['aj-pedido'] || '').trim() && !lerAjuste(r)) { desenhar(); return; } // inclui o que ficou digitado
+    const lista = pendentesDe(r, ultima(r));
+    if (!lista.length) return;
+    const texto = textoDosAjustes(lista);
+    desenhar();
+    const ok = await copiarTexto(texto);
+    avisar(ok ? `${lista.length === 1 ? 'Ajuste copiado' : `${lista.length} ajustes copiados`}. Cole no chat do Diretor.` : 'Não consegui copiar. Selecione o texto e copie à mão.');
+  },
+
+  /* -- enviar gravação -- */
+  async 'copiar-nome'(el) {
+    const ok = await copiarTexto(el.dataset.id);
+    avisar(ok ? `Nome copiado: ${el.dataset.id}. A extensão do vídeo continua a mesma.` : 'Não consegui copiar. Selecione o texto e copie à mão.');
+  },
+
+  /* -- prontos -- */
+  async 'copiar-legenda'(el) {
+    const r = rot(el.dataset.id);
+    const rede = el.dataset.valor;
+    if (!r) return;
+    const arq = arquivoDeLegenda(r, rede);
+    let texto = r.legendas?.[rede] || '';
+    if (arq) {
+      const a = anexo(arq.file);
+      texto = a.fase === 'pronto' ? a.texto.trim() : textoDoAnexo(arq.file).then((t) => t.trim());
+    }
+    if (!texto) { avisar('Esta legenda ainda não chegou.'); return; }
+    try {
+      const ok = await copiarTexto(texto);
+      avisar(ok ? `Legenda do ${NOME_REDE[rede]} copiada.` : 'Não consegui copiar. Toque de novo em "Copiar a legenda".');
+    } catch (e) {
+      avisar(`Não consegui baixar a legenda: ${e?.message || 'o Drive não respondeu.'}`);
+    }
+  },
+  async 'baixar-arquivo'(el) {
+    const r = rot(el.dataset.id);
+    const a = r?.pacote?.arquivos.find((x) => x.file.id === el.dataset.valor);
+    if (!a) return;
+    try { await Downloads.baixar(a); } catch (e) {
+      avisar(`Não consegui baixar ${a.nome}: ${e?.message || 'o Drive não respondeu.'}`);
+    }
+  },
+  'baixar-tudo'(el) {
+    const r = rot(el.dataset.id);
+    return r?.pacote ? Downloads.baixarTudo(r) : undefined;
+  },
 };
+
+/* Lê o formulário de ajuste, confere e põe na lista da prévia atual. Devolve false se houver erro. */
+function lerAjuste(r) {
+  const tempo = (rascunho['aj-tempo'] || '').trim();
+  const pedido = (rascunho['aj-pedido'] || '').trim();
+  estado.erros = {};
+  if (!pedido) estado.erros['aj-pedido'] = 'Escreva o que mudar.';
+  if (tempo && !/^\d{1,2}:\d{2}(-\d{1,2}:\d{2})?$/.test(tempo)) estado.erros['aj-tempo'] = 'Use o formato 0:12 ou 0:12-0:15.';
+  if (Object.keys(estado.erros).length) return false;
+  pendentesDe(r, ultima(r)).push({ versao: rascunho['aj-versao'] || 'ambas', tempo, pedido, como: (rascunho['aj-como'] || '').trim() });
+  rascunho['aj-tempo'] = rascunho['aj-pedido'] = rascunho['aj-como'] = '';
+  return true;
+}
 
 /** Executa uma ação pelo nome (a paleta usa). */
 export function executar(nome, el = document.body, ev = null) {

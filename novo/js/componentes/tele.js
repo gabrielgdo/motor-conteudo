@@ -1,4 +1,4 @@
-// Teleprompter (sempre escuro). Usado pela tela Roteiros (parte 2): Tele.abrir(roteiro).
+// Teleprompter (sempre escuro). Usado pela tela Roteiros: Tele.abrir(roteiro).
 // Os tamanhos da letra estão em "px de referência" (30/46, de 22 a 72, passo 4) e são aplicados
 // em rem, para que no computador (html a 80%) fique igual ao desenho aprovado a 80% de zoom.
 
@@ -18,10 +18,16 @@ export const Tele = {
     const d = $('#tele');
     if (!r || !d) return;
     const frases = (texto) => texto.replace(/([.!?:])\s+/g, '$1\n').split('\n').filter(Boolean);
+    // Formato novo: as falas são os parágrafos de "Roteiro para gravar" (e os do TikTok, se próprio).
+    // Formato com etiquetas: a "Versão teleprompter", se houver; senão, as falas.
+    const falas = r.teleprompter
+      ? r.teleprompter.split(/\n\s*\n/).map((t) => t.replace(/\s+/g, ' ').trim()).filter(Boolean).map((texto) => ({ texto }))
+      : r.falas;
+    if (!falas.length) return;
     this.tam = window.innerWidth < 720 ? 30 : 46;
     this.pos = 0;
     this.tocando = false;
-    this.palavras = Math.max(1, r.falas.reduce((n, f) => n + f.texto.split(/\s+/).length, 0));
+    this.palavras = Math.max(1, falas.reduce((n, f) => n + f.texto.split(/\s+/).length, 0));
     // Rótulo de cada trecho que só existe numa rede. No formato novo com TikTok próprio, um
     // rótulo no começo de cada versão; no formato com etiquetas, como no desenho aprovado.
     let redeAnterior = null;
@@ -38,7 +44,7 @@ export const Tele = {
     d.innerHTML = `<div class="tele-caixa">
       <div class="tele-topo"><span>${esc(r.id)}, ${esc(r.curto)}</span><button type="button" class="redondo" data-acao="tele-fechar" aria-label="Fechar o teleprompter">${ic('fechar')}</button></div>
       <div class="tele-meio"><div class="tele-rolo" id="tele-rolo" tabindex="0" aria-label="Texto do roteiro" style="font-size:${rem(this.tam)}">
-        ${r.falas.map((f) => rotulo(f) + frases(f.texto).map((s) => `<p>${esc(s)}</p>`).join('')).join('')}
+        ${falas.map((f) => rotulo(f) + frases(f.texto).map((s) => `<p>${esc(s)}</p>`).join('')).join('')}
       </div><span class="tele-guia" aria-hidden="true"></span></div>
       <div class="tele-pe">
         <button type="button" class="botao" data-acao="tele-alternar" id="tele-botao">${ic('play', 18)} Rolar</button>

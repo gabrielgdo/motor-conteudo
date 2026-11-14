@@ -6,7 +6,7 @@ import { ic } from './util.js';
 import { estado } from './estado.js';
 import { Integra } from './integra.js';
 import { estadoDados } from './dados.js';
-import { aoMudarDados } from './roteador.js';
+import { aoMudarDados, aoMudarDuracao } from './roteador.js';
 import { ligarAcoes, entrarNoApp, mostrarLogin } from './acoes.js';
 import { avisoFixo, removerAviso } from './componentes/janelas.js';
 import { Paleta } from './componentes/paleta.js';
@@ -28,6 +28,11 @@ window.addEventListener('motor:dados', () => {
   else removerAviso('offline');
   aoMudarDados();
 });
+
+// Textos baixados sob demanda (notas da prévia, pedidos de ajuste, legendas do pacote) chegaram.
+window.addEventListener('motor:anexo', () => aoMudarDados());
+// Um vídeo da prévia descobriu a duração real: a linha do tempo dos ajustes ganha as marcas.
+window.addEventListener('motor:duracao', () => aoMudarDuracao());
 
 // Erros do login e da renovação já viram mensagem na tela: não precisam sujar o console.
 window.addEventListener('unhandledrejection', (e) => {

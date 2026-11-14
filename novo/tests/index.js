@@ -4,3 +4,4 @@
 import('./roteiro.test.mjs');
 import('./etapas.test.mjs');
 import('./dados.test.mjs');
+import('./parte2.test.mjs');

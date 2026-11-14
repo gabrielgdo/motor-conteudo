@@ -163,6 +163,8 @@ export function montarRoteiro(p, lido, agora = new Date(), { postadosLidos = tru
     falas: lido ? falasDoRoteiro(lido) : [],
     notas: lido ? (lido.apoio_visual?.length ? [...lido.apoio_visual] : linhas(lido.notas_intencao)) : [],
     entrega: lido?.entrega || '',
+    // Formato com etiquetas: a "Versão teleprompter" (se houver). No novo, o teleprompter são as falas.
+    teleprompter: lido && lido.formato_roteiro !== 'novo' ? String(lido.teleprompter || '').trim() : '',
     duracaoEstimada: lido?.duracao_estimada || '',
     legendas: { ig: lido?.legendas?.instagram || '', tt: lido?.legendas?.tiktok || '' },
     carrossel: lido?.carrossel ? [...lido.carrossel] : [],
@@ -252,7 +254,10 @@ async function buscar(forcar) {
   const lista = [...projetos.values()].filter((p) => !p.limpar && etapaDe(p));
 
   const lidos = new Map();
-  const comTexto = lista.filter((p) => precisaDoTexto(etapaDe(p)) && arquivoDoRoteiro(p));
+  // Pacotes da semana atual também: o roteiro ainda abre em Roteiros (teleprompter, legendas).
+  const daSemanaAtual = new RegExp(`^${semanaDe(agora).codigo}-\\d{2}$`);
+  const comTexto = lista.filter((p) => arquivoDoRoteiro(p)
+    && (precisaDoTexto(etapaDe(p)) || (etapaDe(p) === 'pronto' && daSemanaAtual.test(p.id))));
   await emParalelo(comTexto, CONFIG.concorrencia, async (p) => {
     const f = arquivoDoRoteiro(p);
     const chave = `${f.id}:${f.modifiedTime || ''}`;
@@ -315,6 +320,59 @@ export function iniciarDados() {
 export function limparDados() {
   Object.assign(st, { fase: 'vazio', roteiros: [], postadosLidos: false, erro: null, carregadoEm: 0, ligado: false });
   cacheLido.clear();
+  anexos.clear();
+  filaAnexos.length = 0;
+}
+
+/* ------------------------------------------- anexos (textos lidos sob demanda) */
+
+// Notas da prévia, pedidos de ajuste, legendas e horários do pacote: baixados só quando uma tela
+// precisa. `anexo(arquivo)` devolve na hora {fase: 'carregando'|'pronto'|'erro', texto, erro} e,
+// quando o texto chega (ou falha), emite 'motor:anexo' para a tela se redesenhar.
+const anexos = new Map(); // `${fileId}:${modifiedTime}` → {fase, texto, erro}
+const filaAnexos = []; // downloads esperando a vez (no máximo CONFIG.concorrencia ao mesmo tempo)
+let anexosBaixando = 0;
+
+function proximoAnexo() {
+  while (anexosBaixando < CONFIG.concorrencia && filaAnexos.length) {
+    const { chave, a, arquivo } = filaAnexos.shift();
+    if (anexos.get(chave) !== a) continue; // esquecido (saiu da conta) antes da vez
+    anexosBaixando++;
+    Integra.baixarTexto(arquivo).then((texto) => { a.fase = 'pronto'; a.texto = String(texto || ''); }, (erro) => {
+      a.fase = 'erro';
+      a.erro = erro;
+    }).finally(() => {
+      anexosBaixando--;
+      if (anexos.get(chave) === a && typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('motor:anexo'));
+      proximoAnexo();
+    });
+  }
+}
+
+export function anexo(arquivo) {
+  if (!arquivo?.id) return null;
+  const chave = `${arquivo.id}:${arquivo.modifiedTime || ''}`;
+  let a = anexos.get(chave);
+  if (!a) {
+    a = { fase: 'carregando', texto: '', erro: null };
+    anexos.set(chave, a);
+    filaAnexos.push({ chave, a, arquivo });
+    proximoAnexo();
+  }
+  return a;
+}
+
+/** Texto de um anexo quando ele já chegou; senão espera o download. */
+export async function textoDoAnexo(arquivo) {
+  const a = anexo(arquivo);
+  if (!a) return '';
+  if (a.fase === 'pronto') return a.texto;
+  return String(await Integra.baixarTexto(arquivo) || '');
+}
+
+/** Esquece os anexos que falharam (o próximo desenho tenta de novo). */
+export function tentarAnexosDeNovo() {
+  for (const [k, a] of anexos) if (a.fase === 'erro') anexos.delete(k);
 }
 
 /* ================================================================= atalhos */

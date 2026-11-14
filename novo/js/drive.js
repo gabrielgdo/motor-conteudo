@@ -79,12 +79,20 @@ export async function listar(pastaId) {
 }
 
 let pastasCache = null;
+let pastasArquivos = {}; // chave (PASTAS) → arquivo da pasta (com webViewLink), depois de pastas()
+
+/** A pasta (como veio da listagem) já resolvida por pastas(), ou null. Síncrono, para as telas. */
+export function pastaConhecida(chave) {
+  return pastasArquivos[chave] || null;
+}
 
 /** Ids das subpastas de "Motor de Conteúdo", resolvidas pelo nome (cache na sessão). */
 export async function pastas() {
   if (pastasCache) return pastasCache;
   const filhos = (await listar(ROOT_FOLDER)).filter(ehPasta);
   const porNome = new Map(filhos.map((f) => [f.name.trim(), f.id]));
+  const arquivoPorNome = new Map(filhos.map((f) => [f.name.trim(), f]));
+  pastasArquivos = Object.fromEntries(Object.entries(PASTAS).map(([chave, nome]) => [chave, arquivoPorNome.get(nome) || null]));
   const out = { revisao: REVISAO_FOLDER };
   for (const [chave, nome] of Object.entries(PASTAS)) out[chave] = porNome.get(nome) || null;
   for (const chave of ['roteiros', 'brutos', 'prontos']) {
@@ -107,6 +115,14 @@ export function carregarListagens(forcar = false) {
 
 export function invalidarCache() {
   listagensCache = null;
+}
+
+/** Ao sair da conta: esquece também as pastas resolvidas e os textos baixados. */
+export function esquecerTudo() {
+  listagensCache = null;
+  pastasCache = null;
+  pastasArquivos = {};
+  textoCache.clear();
 }
 
 async function buscarListagens() {
@@ -155,8 +171,32 @@ export function baixarTexto(arquivo) {
   return textoCache.get(chave);
 }
 
-export async function baixarBlob(id) {
-  return (await api(`${API}/files/${encodeURIComponent(id)}?alt=media&supportsAllDrives=true`)).blob();
+/**
+ * Conteúdo binário como Blob. Com `aoProgresso(recebido, total)`, lê o corpo em stream e avisa a
+ * cada pedaço; `total` vem do Content-Length (ou de `tamanho`, o size da listagem; 0 se nenhum).
+ * O arquivo inteiro fica na memória (é o jeito de um <video> tocar um arquivo privado sem iframe).
+ */
+export async function baixarBlob(id, { aoProgresso = null, tamanho = 0, sinal = undefined } = {}) {
+  const r = await api(`${API}/files/${encodeURIComponent(id)}?alt=media&supportsAllDrives=true`, { signal: sinal });
+  if (!aoProgresso || !r.body?.getReader) return r.blob();
+  const total = Number(r.headers.get('Content-Length')) || Number(tamanho) || 0;
+  const tipo = r.headers.get('Content-Type') || '';
+  const leitor = r.body.getReader();
+  const partes = [];
+  let recebido = 0;
+  aoProgresso(0, total);
+  try {
+    for (;;) {
+      const { done, value } = await leitor.read();
+      if (done) break;
+      partes.push(value);
+      recebido += value.byteLength;
+      aoProgresso(recebido, total);
+    }
+  } catch {
+    throw new ErroDrive('A conexão caiu no meio do download. Tente de novo.', 0);
+  }
+  return new Blob(partes, { type: tipo });
 }
 
 export async function baixarArrayBuffer(id) {

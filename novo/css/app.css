@@ -598,3 +598,20 @@ button.aviso.fixo:hover{filter:brightness(1.06)}
 .sobre details{font-size:.90625rem;color:var(--tinta-2)}
 .sobre summary{cursor:pointer;font-weight:600;padding:.375rem 0}
 .sobre details ol{list-style:decimal;padding-left:1.25rem;margin-top:.375rem;display:grid;gap:.3125rem}
+/* Players: o arquivo real da prévia preenche a tela 9:16; o rótulo da rede fica por cima */
+.tela video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.tela-rede{z-index:2}
+.tela-carga{position:absolute;inset:0;z-index:1;display:grid;place-content:center;justify-items:center;gap:.5rem;padding:1rem .75rem;text-align:center;font-size:.8125rem;font-weight:600;line-height:1.35;background:rgba(11,6,7,.5)}
+.tela-carga[hidden]{display:none}
+.tela-carga [data-player-pct]{font-variant-numeric:tabular-nums}
+.tela-carga-msg{font-weight:400;font-size:.75rem;opacity:.85}
+.tela-carga .botao{width:auto}
+.player-linha input:disabled{opacity:.45}
+/* Resumo do motor (texto de "<id> notas vN.md"): quebras de linha preservadas, rolagem se for longo */
+.resumo-motor{white-space:pre-line;max-height:20rem;overflow:auto;overflow-wrap:anywhere}
+/* Cuidados do CFP não marcados no roteiro: sem o check, com o texto apagado */
+.conferido li.nao{color:var(--tinta-3)}
+.conferido .sem-check{width:1.125rem;flex-shrink:0}
+/* Prontos: andamento do download dentro do botão redondo */
+.arquivos .redondo .baixando{font-size:.6875rem;font-weight:700;font-variant-numeric:tabular-nums}
+.redondo[aria-busy="true"]{cursor:progress}

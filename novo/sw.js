@@ -6,7 +6,7 @@
 // como reserva offline. Ao publicar mudanças, aumente a versão abaixo para avisar "Nova versão".
 
 const PREFIXO = 'motor-novo-';
-const CACHE = `${PREFIXO}v1`;
+const CACHE = `${PREFIXO}v2`;
 
 const ARQUIVOS = [
   './',
@@ -41,6 +41,7 @@ const ARQUIVOS = [
   './js/componentes/paleta.js',
   './js/componentes/tele.js',
   './js/componentes/players.js',
+  './js/componentes/downloads.js',
   './js/componentes/grafico.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
