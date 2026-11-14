@@ -242,6 +242,7 @@ html[data-tema="dia"] .nav-conta{background:var(--vinho)}
   .login{grid-template-columns:minmax(0,1fr) 25rem;align-items:end;gap:1.75rem 4rem;
     padding:calc(3.5rem + env(safe-area-inset-top)) calc(2.5rem + env(safe-area-inset-right)) calc(3.5rem + env(safe-area-inset-bottom)) calc(2.5rem + env(safe-area-inset-left))}
   .caminho{grid-column:1/-1;padding-top:1.375rem;border-top:1px solid var(--fio)}
+  .login-porta{align-self:center}
 }
 
 /* ===== 7. Início ===== */
