@@ -127,6 +127,10 @@ export const Integra = {
   /** Toque no aviso "Sua sessão expirou": renova com popup (gesto do usuário). */
   renovarInterativo: () => auth.renovarInterativo(),
 
+  /** Teleprompter aberto (true) / fechado (false): a renovação automática do token espera até fechar
+      (o teleprompter não usa rede). Não muda o fluxo normal nem o Sair (que nunca revoga). */
+  segurarRenovacao: (sim) => auth.segurarRenovacao(!!sim),
+
   /** Não revoga nada no Google (ver auth.js). Cancela renovações, apaga a sessão e as chaves do app no
       armazenamento (menos o tema e os envios retomáveis) e esquece os caches do Drive e da planilha. */
   sair() {

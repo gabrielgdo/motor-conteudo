@@ -23,6 +23,9 @@ const inicial = () => ({
   decisaoRoteiro: {}, // id do roteiro -> 'aprovar' | 'mudar' | 'recusar' (ainda não enviada)
   candidatosVisiveis: 30, // chip Candidatos: quantos cartões aparecem antes do "Mostrar mais"
   janela: null, // janela de confirmação aberta: {tipo, ...} (js/acoes.js)
+  // Envio ao Roteirista aceito pela ponte e ainda não visto em Execuções (registro otimista, só em
+  // memória): id_pauta -> {desde: ms}. Some quando a releitura mostra a linha (js/envios.js).
+  enviosLocais: {},
 });
 
 export const estado = inicial();

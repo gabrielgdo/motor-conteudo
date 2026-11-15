@@ -356,11 +356,53 @@ export async function continuar(email = lerSessao()?.email || emailLembrado()) {
 
 /* ------------------------------------------------------- renovação */
 
+/* Renovação SEGURADA (teleprompter aberto). O token model do GIS sempre usa popup: fora de um toque
+   o navegador bloqueia e, logo depois de um toque (ex.: "Do começo"), o popup abre e fecha sozinho.
+   Enquanto segurada, nada chama o Google sozinho: o timer e quem pedir um token recebem a mesma
+   renovação pendente; se o token vencer, sai 'motor:sessao-expirada' (a faixa pede um toque de
+   verdade, que chama renovarInterativo). Ao soltar, a renovação adiada roda (normalmente no toque
+   de fechar). */
+let segurada = false;
+let adiada = false; // o timer (ou um pedido de token) quis renovar enquanto segurada
+let timerVencer = null; // avisa quando o token vence com a renovação segurada
+
 function agendarRenovacao(s) {
   clearTimeout(timerRenovacao);
   const espera = Math.max(0, s.expires_at - Date.now() - MARGEM_RENOVACAO);
   timerRenovacao = setTimeout(() => { renovar().catch(() => {}); }, espera);
 }
+
+/** Avisa 'motor:sessao-expirada' quando o token vencer, se a renovação ainda estiver segurada. */
+function vigiarVencimento() {
+  clearTimeout(timerVencer);
+  const s = lerSessao();
+  const espera = s ? Math.max(0, Number(s.expires_at) - Date.now() - 10_000) : 0;
+  timerVencer = setTimeout(() => {
+    timerVencer = null;
+    if (segurada && renovacao && !getToken()) emitir('motor:sessao-expirada');
+  }, espera);
+}
+
+/**
+ * Segura (true) ou solta (false) a renovação automática. Segurada: renovar() não chama o Google;
+ * deixa a renovação pendente (e avisa sessão expirada se o token já venceu). Ao soltar, uma
+ * renovação adiada começa na hora. Nunca lança.
+ */
+export function segurarRenovacao(sim) {
+  if (sim) { segurada = true; return; }
+  if (!segurada) return;
+  segurada = false;
+  clearTimeout(timerVencer);
+  timerVencer = null;
+  if (!adiada) return;
+  adiada = false;
+  if (!lerSessao()) return;
+  if (renovacao) iniciarTentativa();
+  else renovar().catch(() => {});
+}
+
+/** A renovação está segurada agora? (testes e a tela) */
+export const renovacaoSegurada = () => segurada;
 
 /**
  * Ao abrir o app: com o token guardado ainda válido (além da margem de renovação), reagenda a
@@ -388,10 +430,25 @@ async function tentarRenovar(ger = geracao) {
  * Sem sessão (depois de sair), rejeita na hora com o código 'saiu': nada renova sozinho.
  */
 export function renovar() {
-  if (renovacao) return renovacao;
+  if (renovacao) {
+    if (segurada && !getToken()) emitir('motor:sessao-expirada');
+    return renovacao;
+  }
   if (!lerSessao()) return Promise.reject(erroSaiu());
-  const ger = geracao;
   novaRenovacao();
+  if (segurada) {
+    adiada = true;
+    if (!getToken()) emitir('motor:sessao-expirada');
+    else vigiarVencimento();
+    return renovacao;
+  }
+  iniciarTentativa();
+  return renovacao;
+}
+
+/** Uma tentativa silenciosa (popup do GIS) para a renovação pendente. */
+function iniciarTentativa() {
+  const ger = geracao;
   tentarRenovar(ger).then(
     (s) => { if (ger === geracao) finalizarRenovacao(s); },
     (e) => {
@@ -412,6 +469,9 @@ function finalizarRenovacao(s) {
   const ctl = renovacaoCtl;
   renovacao = null;
   renovacaoCtl = null;
+  adiada = false; // renovou (ex.: toque na faixa): soltar não abre outro popup
+  clearTimeout(timerVencer);
+  timerVencer = null;
   emitir('motor:sessao-renovada', s);
   ctl?.resolve(s.access_token);
 }
@@ -458,6 +518,9 @@ export function encerrarSessao() {
     try { p.reject(erroSaiu()); } catch { /* ignorar */ }
   }
   if (renovacao || renovacaoCtl) { try { falharRenovacao(erroSaiu()); } catch { /* ignorar */ } }
+  adiada = false;
+  clearTimeout(timerVencer);
+  timerVencer = null;
   limparArmazenamento(armazenamento('sessionStorage'));
   limparArmazenamento(armazenamento('localStorage'));
   return token;

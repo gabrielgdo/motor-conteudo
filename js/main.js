@@ -11,7 +11,7 @@ import { ligarAcoes, entrarNoApp, mostrarLogin, pintarBotaoSair, pintarEntrada, 
 import { Downloads } from './componentes/downloads.js';
 import { aplicarAtualizacao } from './versao.js';
 import { tirarSaida, sessaoSegura } from './saida.js';
-import { avisoFixo, removerAviso } from './componentes/janelas.js';
+import { avisoFixo, removerAviso, subirAvisos } from './componentes/janelas.js';
 import { Paleta } from './componentes/paleta.js';
 import { Tele } from './componentes/tele.js';
 import { Players } from './componentes/players.js';
@@ -20,10 +20,12 @@ import { Veu, Tema, ligarLuz } from './visual.js';
 
 /* ---- Sessão (eventos do auth.js) ---- */
 window.addEventListener('motor:sessao-expirada', () => {
-  if (estado.logada) avisoFixo('sessao', 'Sua sessão expirou. Toque aqui para continuar.', { acao: 'renovar-sessao', icone: 'alerta' });
+  if (!estado.logada) return;
+  avisoFixo('sessao', 'Sua sessão expirou. Toque aqui para continuar.', { acao: 'renovar-sessao', icone: 'alerta' });
+  Tele.sessaoExpirada(); // com o teleprompter aberto, a faixa no topo dele (um toque de verdade)
 });
 // Depois de renovar (a sessão nova já está gravada): o rótulo do "Sair" mostra a conta atual.
-window.addEventListener('motor:sessao-renovada', () => { removerAviso('sessao'); pintarBotaoSair(); });
+window.addEventListener('motor:sessao-renovada', () => { removerAviso('sessao'); Tele.sessaoRenovada(); pintarBotaoSair(); });
 window.addEventListener('motor:conta-trocada', () => aoMudarDados()); // a saudação usa o nome da conta
 
 /* ---- Dados: redesenha a tela e mostra/tira o aviso de sem internet ---- */
@@ -51,7 +53,7 @@ window.addEventListener('unhandledrejection', (e) => {
    procura atualização ao abrir, ao voltar a ficar visível e no pageshow (bfcache), e pergunta a
    versão do SW que a controla. Versão diferente: recarrega sozinha uma vez se não houver trabalho em
    andamento; senão mostra "Nova versão" (tocar recarrega). Regras e anti-laço em js/versao.js. */
-const VERSAO_APP = 'motor-app-v12'; // igual a VERSAO em sw.js (tests/sw.test.mjs confere)
+const VERSAO_APP = 'motor-app-v13'; // igual a VERSAO em sw.js (tests/sw.test.mjs confere)
 
 function avisarNovaVersao() {
   avisoFixo('versao', 'Nova versão do app. Toque para atualizar.', { acao: 'nova-versao', icone: 'atualizar' });
@@ -146,7 +148,8 @@ Veu.iniciar();
 Tema.aplicar(Tema.lembrado());
 ligarAcoes();
 Paleta.ligar();
-Tele.ligar();
+Tele.ligar({ segurar: Integra.segurarRenovacao });
+subirAvisos(); // #avisos como popover (acima das janelas), quando o navegador tiver
 Players.ligar();
 ligarGrafico();
 ligarLuz();

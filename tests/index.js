@@ -17,3 +17,5 @@ import('./candidatos.test.mjs');
 import('./sessao.test.mjs');
 import('./versao.test.mjs');
 import('./ponte.test.mjs');
+import('./envios.test.mjs');
+import('./tele.test.mjs');

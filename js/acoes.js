@@ -21,8 +21,9 @@ import { pendentesDe, janelaPrevia } from './telas/videos.js';
 import {
   janelaDecisoes, pedidosDaTela, resultadosDaGravacao, aprovadasParaEnviar, loteDaProximaSelecao, bloqueioDeDecisao,
   bloqueioDeCandidato, bloqueioDeRoteirista, campoQuantidade, campoMotivoCandidato, extrasDoCandidato, textoDoPedidoCandidato,
-  LIMITE_CANDIDATOS,
+  LIMITE_CANDIDATOS, enviosDaTela,
 } from './telas/pautas.js';
+import { chaveIdemEnvio, mapaDeEnvios } from './envios.js';
 import { arquivoDeLegenda } from './telas/prontos.js';
 import { desenhar, rotear } from './roteador.js';
 import { abrirJanela, fecharJanela, avisar, removerAviso, copiarTexto, janelaSobre, janelaSair } from './componentes/janelas.js';
@@ -473,6 +474,13 @@ export const ACOES = {
       } else if (j.acao === 'candidato') {
         limparCampos('rc-motivo');
         avisar(textoDoPedidoCandidato(j.destino, res));
+      } else if (j.rotina === 'radar-enviar') {
+        // Registro otimista até a releitura de Execuções mostrar a linha; depois, a tela Roteiros.
+        const desde = Date.now();
+        for (const id of String(j.dados?.ids || '').split(',').map((s) => s.trim()).filter(Boolean)) {
+          estado.enviosLocais[id] = { desde, chave: j.chaveIdem };
+        }
+        avisar('Pedido enviado ao Roteirista. O andamento aparece em Roteiros.');
       } else {
         const q = j.rotina === 'radar-diario' && j.dados?.quantidade ? ` (${j.dados.quantidade} ${j.dados.quantidade === 1 ? 'candidato' : 'candidatos'})` : '';
         avisar(`${ROTINAS[j.rotina].rotulo}${q}: pedido enviado. O andamento aparece na faixa.`);
@@ -480,7 +488,9 @@ export const ACOES = {
       relerManual('execucoes');
       if (j.rotina === 'radar-enviar' || j.rotina === 'radar-selecao' || j.acao === 'candidato') relerManual('pautas');
       if (j.rotina === 'radar-diario' || j.acao === 'candidato') relerManual('candidatos');
-      desenhar();
+      // Envio aceito: vai para Roteiros (seção "Com o Roteirista"); o hashchange redesenha.
+      if (j.rotina === 'radar-enviar' && j.acao === 'disparar' && location.hash !== '#/roteiros') location.hash = '#/roteiros';
+      else desenhar();
     } catch (e) {
       if (estado.janela !== j || !estado.logada) return;
       j.enviando = false;
@@ -573,16 +583,30 @@ export const ACOES = {
       pintarJanela();
     }
   },
-  'pautas-enviar'() {
+  /* "Enviar ao Roteirista" (bandeja) ou "Tentar de novo" (Roteiros, data-id de uma pauta cujo envio
+     falhou ou parece travado). Só aprovadas sem envio ativo ou concluído; chave_idem estável. */
+  'pautas-enviar'(el) {
     const dados = pautasLidas();
     if (!dados.selecao || !podeDecidir(Integra.email())) return;
-    const aprovadas = aprovadasParaEnviar(dados.selecao, dados.decisoes);
-    if (!aprovadas.length) return;
+    const execucoes = execucoesLidas().execucoes || [];
+    const envios = enviosDaTela({ dados });
+    const so = String(el?.dataset?.id || '');
+    let aprovadas;
+    if (so) {
+      const env = mapaDeEnvios(envios).get(so);
+      aprovadas = env && !['falhou', 'parece-travada'].includes(env.estado) ? []
+        : aprovadasParaEnviar(dados.selecao, dados.decisoes).filter((p) => p.id_pauta === so);
+    } else {
+      aprovadas = aprovadasParaEnviar(dados.selecao, dados.decisoes, { envios });
+    }
+    if (!aprovadas.length) { avisar('Nenhuma pauta aprovada espera o Roteirista agora.'); desenhar(); return; }
+    const ids = aprovadas.map((p) => p.id_pauta);
     const lotes = [...new Set(aprovadas.map((p) => p.id_lote).filter(Boolean))];
     abrirRodar({
       rotina: 'radar-enviar',
       idLote: lotes.length === 1 ? lotes[0] : '',
-      dados: { ids: aprovadas.map((p) => p.id_pauta).join(',') },
+      chaveIdem: chaveIdemEnvio(ids, execucoes, { selecao: dados.selecao, decisoes: dados.decisoes }),
+      dados: { ids: ids.join(',') },
       extras: [{ chave: 'pautas', rotulo: aprovadas.length === 1 ? 'A pauta que vai' : `As ${aprovadas.length} pautas que vão`, lista: aprovadas.map((p) => `${p.id_pauta} · ${p.titulo || ''}`) }],
     });
   },

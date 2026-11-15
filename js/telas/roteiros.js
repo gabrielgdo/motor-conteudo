@@ -7,7 +7,8 @@
 import { esc, ic, NOME_REDE, validade } from '../util.js';
 import { estado } from '../estado.js';
 import { Integra } from '../integra.js';
-import { ativos, rot, falasDe, execucoesLidas } from '../dados.js';
+import { ativos, rot, falasDe, execucoesLidas, pautasLidas, roteiros } from '../dados.js';
+import { enviosAoRoteirista, textoDoEnvio } from '../envios.js';
 import { podeDecidir, DECISOES_ROTEIRO, MOTIVOS_ROTEIRO } from '../controle.js';
 import { faixaExecucao, historicoComExecucoes, blocoHistorico } from '../componentes/execucao.js';
 import { cab, selo, vt, chipFiltro, passoDe, destinoDe, naoAchei, comDados, linkDoDrive, vazio, rodapeAtualizado, voltar, campo, segmento } from './pecas.js';
@@ -32,8 +33,37 @@ export function resumoFontes(r) {
   return partes.join(', ');
 }
 
+const TOM_ENVIO = { 'na-fila': 'neutro', processando: 'acao', 'parece-travada': 'alerta', enviada: 'ok', falhou: 'alerta' };
+
+/**
+ * Seção "Com o Roteirista" (puro): as pautas enviadas (ou indo) que ainda não têm rascunho no
+ * Drive, com o estado real de Execuções (js/envios.js). Na falha (ou se parecer travada), "Tentar
+ * de novo" é um <button> de verdade (só para a conta que decide). Todo texto vem da planilha: esc().
+ */
+export function htmlComRoteirista(envios = [], { decide = false } = {}) {
+  const lista = (envios || []).filter((e) => e.estado !== 'rascunho-chegou' && !/^T/i.test(String(e.id_pauta || '')));
+  if (!lista.length) return '';
+  return `<section class="painel" aria-labelledby="t-com-roteirista" style="margin:1rem 0 1.25rem">
+    <h2 id="t-com-roteirista" style="margin-bottom:.75rem">Com o Roteirista</h2>
+    <ul class="com-roteirista" style="list-style:none;margin:0;padding:0;display:grid;gap:.75rem">${lista.map((e) => {
+      const repetir = decide && (e.estado === 'falhou' || e.estado === 'parece-travada');
+      return `
+      <li style="display:flex;flex-wrap:wrap;align-items:center;gap:.5rem .75rem">
+        <span class="meta"><span class="id">${esc(e.id_pauta)}</span>${selo(textoDoEnvio(e), TOM_ENVIO[e.estado] || 'neutro')}</span>
+        ${e.titulo ? `<span>${esc(e.titulo)}</span>` : ''}
+        ${repetir ? `<button type="button" class="botao contorno menor" data-acao="pautas-enviar" data-id="${esc(e.id_pauta)}">${ic('atualizar', 16)} Tentar de novo</button>` : ''}
+      </li>`; }).join('')}</ul>
+    <p class="apagado pequeno" style="margin-top:.75rem">O rascunho aparece na lista abaixo quando o Roteirista gravar no Drive.</p>
+  </section>`;
+}
+
 export function vRoteiros() {
+  const envios = enviosAoRoteirista({
+    selecao: pautasLidas().selecao || null, decisoes: pautasLidas().decisoes || null,
+    execucoes: execucoesLidas().execucoes || [], projetos: roteiros(), agora: new Date(), locais: estado.enviosLocais || {},
+  });
   return `${cab('Roteiros', 'Cada roteiro traz a versão do Instagram, a do TikTok e os textos extras.')}
+  ${htmlComRoteirista(envios, { decide: podeDecidir(Integra.email()) })}
   ${comDados(() => {
     const f = estado.filtroRoteiros; const todos = ativos();
     const lista = f === 'aprovar' ? todos.filter((r) => r.etapa === 'rascunho') : f === 'gravar' ? todos.filter((r) => r.etapa === 'aprovado') : todos;

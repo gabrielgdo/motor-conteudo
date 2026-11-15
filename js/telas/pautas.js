@@ -19,7 +19,8 @@ import { esc, ic, NOME_REDE, hrefWeb, quando } from '../util.js';
 import { FLAGS } from '../config.js';
 import { estado } from '../estado.js';
 import { Integra } from '../integra.js';
-import { pautasLidas, execucoesLidas, candidatosLidas } from '../dados.js';
+import { pautasLidas, execucoesLidas, candidatosLidas, roteiros } from '../dados.js';
+import { enviosAoRoteirista, mapaDeEnvios, podeEnviar, aCaminho } from '../envios.js';
 import {
   podeDecidir, idLote, DESTINOS_CANDIDATO, MAX_MOTIVO_CANDIDATO, QUANTIDADE_PADRAO, QUANTIDADE_MIN, QUANTIDADE_MAX,
 } from '../controle.js';
@@ -52,10 +53,20 @@ export function contarParaDecidir(dados = pautasLidas()) {
   return pautasParaDecidir(dados.selecao, dados.decisoes).length;
 }
 
-/** Aprovadas que ainda não foram ao Roteirista (sem testes). */
-export function aprovadasParaEnviar(selecao, decisoes) {
+/**
+ * Aprovadas que podem ir ao Roteirista (sem testes): sem envio ativo ou concluído em `envios`
+ * (enviosAoRoteirista, js/envios.js). Um envio que falhou devolve a pauta ("Tentar de novo"); um
+ * `ok` nunca devolve.
+ */
+export function aprovadasParaEnviar(selecao, decisoes, { envios = [] } = {}) {
   const est = estadoDasPautas(selecao, decisoes);
-  return (selecao?.pautas || []).filter((p) => !ehIdTeste(p.id_pauta) && est.get(p.id_pauta)?.status === STATUS_PAUTA.aprovada);
+  const env = mapaDeEnvios(envios);
+  return (selecao?.pautas || []).filter((p) => !ehIdTeste(p.id_pauta) && est.get(p.id_pauta)?.status === STATUS_PAUTA.aprovada && podeEnviar(env.get(p.id_pauta)));
+}
+
+/** Os envios ao Roteirista como a tela vê (Execuções lidas + projetos do Drive + registro otimista). */
+export function enviosDaTela({ dados = pautasLidas(), exec = execucoesLidas(), projetos = roteiros(), locais = estado.enviosLocais, agora = new Date() } = {}) {
+  return enviosAoRoteirista({ selecao: dados?.selecao || null, decisoes: dados?.decisoes || null, execucoes: exec?.execucoes || [], projetos, agora, locais: locais || {} });
 }
 
 /** Lote da próxima seleção manual (S47-manual-1…), olhando Execuções e Seleção. */
@@ -208,7 +219,7 @@ function faixas(exec, dados, agora) {
  */
 export function htmlPautas({
   dados = {}, exec = {}, candidatos = {}, email = '', filtro = 'decidir', pendentes = {}, mudando = {}, resultados = {}, erros = {},
-  visiveis = LIMITE_CANDIDATOS, agora = new Date(),
+  visiveis = LIMITE_CANDIDATOS, agora = new Date(), projetos = [], enviosLocais = {},
 } = {}) {
   const topo = `${cab('Pautas', 'As sugestões do Radar para a semana, da maior nota para a menor.')}${faixas(exec, dados, agora)}`;
   const largura = 'style="max-width:58.75rem;margin-top:1rem"';
@@ -257,7 +268,8 @@ export function htmlPautas({
       : vazio('Nenhuma pauta na aba Seleção', 'O Radar grava as pautas aqui na seleção de domingo, ou quando você pedir uma seleção agora.');
   const corpo = lista.length ? `<div class="pautas">${lista.map((p) => cartao(p, ctx)).join('')}</div>` : `<div class="painel" ${largura}>${vazioLista}</div>`;
 
-  return `${topo}${estrutural}${filtros}${corpo}${bandeja({ selecao, decisoes, pendentes, bloqueio, est })}`;
+  const envios = enviosAoRoteirista({ selecao, decisoes, execucoes: exec?.execucoes || [], projetos, agora, locais: enviosLocais || {} });
+  return `${topo}${estrutural}${filtros}${corpo}${bandeja({ selecao, decisoes, pendentes, bloqueio, est, envios })}`;
 }
 
 /** Contagens dos chips de pautas (as mesmas de sempre: o teste aparece em Para decidir, mas não se decide). */
@@ -277,7 +289,7 @@ function filtrosPautas(filtro, n = {}) {
 }
 
 /** Barra fixa acima da doca: "Confirmar decisões (n)" ou, sem decisão pendente, "Enviar ao Roteirista". */
-function bandeja({ selecao, decisoes, pendentes, bloqueio, est }) {
+function bandeja({ selecao, decisoes, pendentes, bloqueio, est, envios = [] }) {
   const ids = Object.keys(pendentes).filter((id) => pendentes[id] && est.has(id) && !ehIdTeste(id));
   if (ids.length) {
     const n = ids.length;
@@ -288,13 +300,18 @@ function bandeja({ selecao, decisoes, pendentes, bloqueio, est }) {
       <button type="button" class="botao primario menor" data-acao="pautas-confirmar"${bloqueio ? ' disabled' : ''}>Confirmar decisões (${n})</button>
     </div>`;
   }
-  const aprovadas = aprovadasParaEnviar(selecao, decisoes);
-  if (!aprovadas.length) return '';
+  const aprovadas = aprovadasParaEnviar(selecao, decisoes, { envios });
+  const m = aCaminho(envios).filter((e) => !ehIdTeste(e.id_pauta)).length;
   const n = aprovadas.length;
+  if (!n && !m) return '';
   const so = bloqueio === NOTA_SO_ROBERTTA;
+  const caminho = m ? `<span>${m} a caminho do Roteirista · <a href="#/roteiros">ver em Roteiros</a></span>` : '';
+  const espera = n ? `<span>${n} ${n === 1 ? 'aprovada espera' : 'aprovadas esperam'} o Roteirista${so ? ' (só a conta da Robertta envia)' : ''}</span>` : '';
+  // Sem pauta que possa ir agora, não há botão (só o "a caminho").
+  const botao = n ? `<button type="button" class="botao primario menor" data-acao="pautas-enviar"${so ? ' disabled' : ''}>Enviar ao Roteirista (${n} ${n === 1 ? 'aprovada' : 'aprovadas'})</button>` : '';
   return `<div class="bandeja" role="region" aria-label="Enviar ao Roteirista">
-    <span class="bandeja-texto">${n} ${n === 1 ? 'aprovada espera' : 'aprovadas esperam'} o Roteirista${so ? ' (só a conta da Robertta envia)' : ''}</span>
-    <button type="button" class="botao primario menor" data-acao="pautas-enviar"${so ? ' disabled' : ''}>Enviar ao Roteirista (${n} ${n === 1 ? 'aprovada' : 'aprovadas'})</button>
+    <span class="bandeja-texto">${[espera, caminho].filter(Boolean).join(' ')}</span>
+    ${botao}
   </div>`;
 }
 
@@ -583,6 +600,8 @@ export function vPautas() {
     erros: estado.erros,
     visiveis: estado.candidatosVisiveis,
     agora: new Date(),
+    projetos: roteiros(),
+    enviosLocais: estado.enviosLocais,
   });
 }
 

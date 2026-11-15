@@ -6,6 +6,22 @@ import { estado } from '../estado.js';
 
 /* ---- Avisos ---- */
 
+/* #avisos acima das janelas modais (dialog showModal ficam na camada de cima). Com popover
+   (iOS ≥ 17, navegadores atuais) a pilha vira popover="manual" e é reapresentada depois de cada
+   showModal, para entrar na camada de cima por último. Sem popover (reserva), fica como antes
+   (z-index 200). Nunca lança. */
+export const temPopover = (el) => !!el && typeof el.showPopover === 'function' && typeof el.hidePopover === 'function';
+
+export function subirAvisos(pilha = $('#avisos')) {
+  if (!temPopover(pilha)) return false;
+  try {
+    if (pilha.getAttribute('popover') !== 'manual') pilha.setAttribute('popover', 'manual');
+    if (pilha.matches?.(':popover-open')) pilha.hidePopover();
+    pilha.showPopover();
+    return true;
+  } catch { return false; }
+}
+
 /** Aviso rápido (some sozinho). No máximo dois na tela, sem contar os fixos. */
 export function avisar(texto) {
   const pilha = $('#avisos');
@@ -56,7 +72,7 @@ export function abrirJanela(html, classe = 'janela') {
   d.innerHTML = html;
   if (aberta(d)) return;
   if (typeof d.showModal === 'function') {
-    try { d.showModal(); return; } catch { /* cai na reserva */ }
+    try { d.showModal(); subirAvisos(); return; } catch { /* cai na reserva */ }
   }
   d.classList.add('sem-modal');
   d.setAttribute('open', '');

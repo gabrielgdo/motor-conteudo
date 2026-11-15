@@ -329,3 +329,80 @@ test('gravar a sessão com o localStorage bloqueado: fica no sessionStorage (val
   auth.encerrarSessao();
   assert.equal(sessionStorage.getItem('motor.sessao'), null);
 });
+
+/* ---------------------------- renovação segurada (teleprompter aberto, Ponto 6) */
+
+const ouvirEventos = () => {
+  const eventos = [];
+  globalThis.window.dispatchEvent = (ev) => { eventos.push(ev.type); return true; };
+  return eventos;
+};
+const vazar = () => new Promise((r) => setImmediate(r));
+
+test('renovação segurada: o timer não chama o Google com o teleprompter aberto; ao soltar, renova uma vez', async (t) => {
+  const ctx = ambiente(t, { local: new StorageFalso({ 'motor.sessao': sessao(10) }) });
+  const auth = await abrirApp();
+  const eventos = ouvirEventos();
+  assert.ok(auth.retomarSessao());
+  auth.segurarRenovacao(true);
+  assert.equal(auth.renovacaoSegurada(), true);
+  t.mock.timers.tick(8.5 * MIN); // passou da hora de renovar
+  await vazar();
+  assert.equal(ctx.pedidos.length, 0, 'nada de popup do Google enquanto segurada');
+  assert.ok(!eventos.includes('motor:sessao-expirada'), 'o token ainda vale: sem aviso');
+  ctx.responder('token-novo');
+  auth.segurarRenovacao(false); // fechou o teleprompter
+  await vazar(); await vazar();
+  assert.deepEqual(ctx.pedidos, [{ prompt: '', login_hint: EMAIL }]);
+  assert.equal(auth.getToken(), 'token-novo');
+  auth.segurarRenovacao(false); // soltar de novo não faz nada
+  await vazar();
+  assert.equal(ctx.pedidos.length, 1);
+  auth.encerrarSessao();
+});
+
+test('renovação segurada com o token vencido: avisa sessão expirada sem popup; o toque (renovarInterativo) resolve quem esperava', async (t) => {
+  const ctx = ambiente(t, { local: new StorageFalso({ 'motor.sessao': sessao(-1) }) });
+  const auth = await abrirApp();
+  const eventos = ouvirEventos();
+  auth.segurarRenovacao(true);
+  const esperando = auth.renovar(); // ex.: um tokenAtual() pedindo token
+  await vazar();
+  assert.equal(ctx.pedidos.length, 0);
+  assert.ok(eventos.includes('motor:sessao-expirada'));
+  ctx.responder('token-do-toque');
+  await auth.renovarInterativo(); // toque de verdade na faixa
+  assert.equal(await esperando, 'token-do-toque');
+  assert.equal(ctx.pedidos.length, 1);
+  auth.segurarRenovacao(false); // já renovou: soltar não abre outro popup
+  await vazar();
+  assert.equal(ctx.pedidos.length, 1);
+  auth.encerrarSessao();
+});
+
+test('renovação segurada e Sair: rejeita com "saiu", nada é revogado e soltar depois não chama o Google', async (t) => {
+  const ctx = ambiente(t, { local: new StorageFalso({ 'motor.sessao': sessao(-1) }) });
+  const auth = await abrirApp();
+  ouvirEventos();
+  auth.segurarRenovacao(true);
+  const esperando = auth.renovar();
+  auth.sair();
+  await assert.rejects(esperando, (e) => e.codigo === 'saiu');
+  auth.segurarRenovacao(false);
+  await vazar();
+  assert.equal(ctx.pedidos.length, 0);
+  assert.deepEqual(ctx.revogados, []);
+  assert.ok(ctx.chamadas.every((u) => !/revoke/.test(u)));
+});
+
+test('sem segurar, o fluxo normal não muda: o timer renova sozinho', async (t) => {
+  const ctx = ambiente(t, { local: new StorageFalso({ 'motor.sessao': sessao(10) }) });
+  const auth = await abrirApp();
+  ouvirEventos();
+  auth.retomarSessao();
+  assert.equal(auth.renovacaoSegurada(), false);
+  t.mock.timers.tick(8.5 * MIN);
+  await vazar();
+  assert.equal(ctx.pedidos.length, 1);
+  auth.encerrarSessao();
+});

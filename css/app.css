@@ -380,6 +380,10 @@ dialog.tele{width:100vw;max-width:100vw;height:100vh;height:100dvh;max-height:10
 .tele-caixa{height:100%;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) auto}
 .tele-topo{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.75rem 1rem;font-size:.90625rem;color:#CDBDB4}
 .tele-topo .redondo{border-color:rgba(239,214,206,.25);color:#fff}
+.tele-topo{flex-wrap:wrap}
+.tele-anuncio{flex:1;text-align:center;color:#EFD6CE;font-weight:600}
+.tele-anuncio:empty{visibility:hidden}
+.tele-sessao{order:3;flex-basis:100%;display:flex;align-items:center;justify-content:center;gap:.5rem;padding:.625rem 1rem;border:1px solid rgba(239,214,206,.3);border-radius:999px;background:#EFD6CE;color:#3A0F18;font:inherit;font-weight:600;cursor:pointer}
 .tele-meio{position:relative;min-height:0;overflow:hidden}
 .tele-meio::before,.tele-meio::after{content:"";position:absolute;left:0;right:0;height:22%;z-index:1;pointer-events:none}
 .tele-meio::before{top:0;background:linear-gradient(#0B0607,transparent)}
@@ -573,6 +577,8 @@ dialog[open]{animation:abre .22s cubic-bezier(.2,.7,.2,1)}
 .avisos{position:fixed;left:1rem;right:1rem;bottom:calc(var(--doca) + 1.375rem + env(safe-area-inset-bottom));z-index:200;display:flex;flex-direction:column;align-items:center;gap:.5rem;pointer-events:none}
 .aviso{max-width:32.5rem;padding:.75rem 1.25rem;border-radius:999px;background:var(--tinta);color:var(--fundo);font-size:.90625rem;font-weight:500;line-height:1.4;box-shadow:var(--sombra);animation:abre .25s cubic-bezier(.2,.7,.2,1)}
 @media (min-width:1080px){.avisos{bottom:1.75rem}}
+/* #avisos como popover="manual" (js/componentes/janelas.js, acima das janelas modais): desfaz o estilo padrão do popover */
+.avisos[popover]{top:auto;width:auto;height:auto;margin:0;padding:0;border:0;background:transparent;color:inherit;overflow:visible}
 
 /* ===== 15. Transições entre telas (View Transitions API, quando o navegador tem) ===== */
 ::view-transition-old(root){animation:.18s ease-in both vt-sai}
