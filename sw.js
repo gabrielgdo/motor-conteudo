@@ -48,6 +48,7 @@ const ARQUIVOS = [
   './js/versao.js',
   './js/saida.js',
   './js/telas/pecas.js',
+  './js/telas/ficha.js',
   './js/telas/inicio.js',
   './js/telas/pautas.js',
   './js/telas/roteiros.js',
