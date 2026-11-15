@@ -1,8 +1,14 @@
 # Motor de Conteúdo — app (PWA)
 
-PWA estática para a Robertta acompanhar o fluxo semanal de vídeos (Reels/TikTok): o que espera
-por ela, os roteiros, as prévias e os pacotes prontos. É outra porta para o mesmo fluxo dos bots;
-os dados ficam no Google Drive (pasta "Motor de Conteúdo") e na planilha Radar.
+PWA estática para a Robertta acompanhar e conduzir o fluxo semanal de vídeos (Reels/TikTok): pautas
+e candidatos, roteiros, envio da gravação, prévias, andamento do motor de edição e pacotes prontos.
+É outra porta para o mesmo fluxo dos bots; os dados ficam no Google Drive (pasta "Motor de
+Conteúdo") e na planilha Radar.
+
+> **Este repositório é público** e o GitHub Pages serve **todos** os arquivos dele em
+> `https://motor.rocambrea.com/<arquivo>` (inclusive `README.md`, `AGENTS.md` e `CLAUDE.md`).
+> Nada de chave, token, segredo, dado de paciente, id de bot, endereço de webhook ou detalhe
+> operacional sensível aqui, nem em código, nem em teste, nem em documentação.
 
 - HTML/CSS/JS puro com ES modules: **sem build, sem npm, sem framework**.
 - Publicado em `https://motor.rocambrea.com/` (GitHub Pages, branch `main`, raiz do repositório).
@@ -11,34 +17,64 @@ os dados ficam no Google Drive (pasta "Motor de Conteúdo") e na planilha Radar.
 - Nenhum segredo no repositório (o client_id OAuth é público). O app nunca publica nas redes.
 - Referência visual e de textos: o protótipo aprovado (ver [`SPEC.md`](SPEC.md)).
 - Contrato de nomes de arquivo com o motor: [`formatos-referencia.md`](formatos-referencia.md).
+- A ponte com os bots (Google Apps Script): [`ponte/README.md`](ponte/README.md).
+- **Agentes (Claude Code, Codex, Grok Bot):** leiam [`AGENTS.md`](AGENTS.md) antes de mexer em
+  qualquer coisa. O [`CLAUDE.md`](CLAUDE.md) aponta para ele.
+
+## Como o app se encaixa no sistema
+
+```
+Robertta (app no navegador ou PWA no iPhone)
+   │  lê e grava arquivos no Drive "Motor de Conteúdo" e abas da planilha Radar (com o token dela)
+   │  pede rodadas e decisões aos bots ──► ponte (Apps Script) ──► rotinas por webhook dos bots
+   ▼
+Drive: 1-Radar · 2-Roteiros · 3-Brutos · 4-Revisao · 5-Prontos · _motor
+   ▲
+   │  Motor Reels (editor de vídeo, outro repositório, roda no computador do Grok) lê e grava aqui
+   │  e publica o andamento em _motor/andamento/<id>.json, que o app mostra
+```
+
+- **Radar** pesquisa os temas candidatos e grava na planilha. **Roteirista** escreve os roteiros.
+  **Diretor** coordena e recebe os avisos do motor. **Programador** mantém o app, a ponte e o motor.
+  Cada bot é um assistente separado da Robertta, com o seu chat e as suas rotinas.
+- O app **nunca dispara o motor** e nunca publica nada nas redes. Ele só grava arquivos no Drive
+  (a gravação em 3-Brutos, a decisão da prévia em 4-Revisao, o estado do candidato em
+  `_motor/app/candidatos/`), linhas nas abas da planilha e pedidos pela ponte.
+- Detalhes, regras e cuidados: [`AGENTS.md`](AGENTS.md).
 
 ## Estrutura
 
 ```
 index.html              casca única: véu, login, ilha/conteúdo/doca, janelas, avisos
 manifest.webmanifest    PWA (id, start_url e scope "./", standalone, tema Noite #0F0809)
-sw.js                   service worker: cache "motor-app-vN" só dos arquivos do app
+sw.js                   service worker: cache "motor-app-vN" só dos arquivos do app (lista ARQUIVOS)
 css/app.css             visual do protótipo em rem (densidade: ver o comentário do topo)
 icons/                  ícones gerados por tools/make_icons.py
 vendor/xlsx.full.min.js SheetJS 0.20.3, carregado só ao ler a planilha .xlsx (fora do cache do SW)
+privacidade.html        política de privacidade
 js/
-  main.js               início: escutas, tema, sessão retomada ou login, service worker
-  config.js             client_id, escopos, contas, pastas, planilha, regras (CONFIG, nomeDe)
-  integra.js            o ÚNICO módulo que fala com o mundo externo (usa auth/drive/sheet)
-  auth.js               GIS, sessão em localStorage, estado da abertura, renovação silenciosa, limpeza ao sair
-  drive.js              Drive API v3 (listagens com cache, textos, blobs)
-  sheet.js              planilha Radar: "data do post" (nativa ou .xlsx); abas Seleção, Decisões e
-                        Execuções (só nativa): lerAba, acrescentarLinhas, atualizarCelula
-  controle.js           controle manual (puro): aba Execuções, catálogo fechado de rotinas, trava,
+  main.js               início: escutas, tema, sessão retomada ou login, service worker, VERSAO_APP
+  config.js             client_id, escopos, contas, pastas, planilha, flags, endereço da ponte
+  integra.js            o ÚNICO módulo que fala com o mundo externo (usa auth/drive/sheet/ponte)
+  auth.js               GIS, sessão em localStorage, renovação silenciosa, limpeza ao sair (nunca revoga)
+  drive.js              Drive API v3 (listagens com cache, textos, blobs, pastas do app em _motor)
+  sheet.js              planilha Radar: "data do post"; abas Seleção, Decisões, Execuções, Candidatos
+  controle.js           controle manual (puro): Execuções, catálogo fechado de rotinas, trava,
                         janela de proteção, tempos, ids de execução e de lote, permissões
-  selecao.js            pautas (puro): abas Seleção e Decisões, motivos, planejarDecisoes
+  selecao.js            pautas (puro): Seleção e Decisões, motivos, primeira decisão vale
+  candidatos.js         candidatos do Radar (puro) e o estado no app (_motor/app/candidatos/<id>.json)
+  envios.js             envios ao Roteirista (puro): estado real de cada pauta mandada
+  decisoes-roteiro.js   decisão de roteiro (puro): estados, bloqueios ja-pedida / ja-decidido
   revisao.js            decisão da prévia em 4-Revisao (puro): planejarArquivoRevisao
+  andamento.js          andamento do Motor Reels (puro): lê _motor/andamento/<id>.json
+  envio-video.js        envio do bruto pelo app para 3-Brutos como <id>.<ext> (regras e passo a passo)
+  upload.js             envio retomável em pedaços de 8 MiB para o Drive
   model.js              listagens do Drive → projetos (puro)
   parse.js              nomes de arquivo, YAML, datas no fuso de São Paulo, pedido de ajustes (puro)
   roteiro.js            leitor de roteiro (porta do roteiro.py do motor, puro)
   etapas.js             etapa de cada projeto no vocabulário das telas (puro)
-  dados.js              monta os roteiros no formato das telas; estados carregando/erro/offline
-  estado.js             estado da tela (rota, filtros) e rascunho dos campos
+  dados.js              monta os dados das telas; estados carregando/erro/offline
+  estado.js             estado da tela (rota, filtros), rascunhos e registros otimistas
   util.js               esc, datas, formatos, ícones
   acoes.js              o que cada data-acao faz; passagem login ⇄ app
   saida.js              a ordem segura do "Sair" (puro) e a marca de saída
@@ -46,11 +82,9 @@ js/
   roteador.js           rotas por hash, navegação, View Transitions, foco
   visual.js             véu WebGL, tema Noite/Dia, luz dos cartões
   telas/                uma por tela (inicio, pautas, roteiros, videos, enviar, prontos, resultados) + pecas
-  componentes/          janelas (avisos, Sobre), paleta (Ctrl K), tele (teleprompter), players,
-                        downloads (arquivos dos pacotes), grafico, execucao (faixa de execução e
-                        janelas "Rodar agora?"/"Detalhes" do controle manual)
-  upload.js             envio retomável em pedaços (já testado), guardado para a etapa 2:
-                        ainda não é importado pelo app nem está no cache do SW
+  componentes/          janelas, paleta (Ctrl K), tele (teleprompter), players, telacheia (prévia em
+                        tela cheia), downloads, grafico, execucao (faixa e janelas do controle manual)
+ponte/                  a ponte no Google Apps Script (Code.gs, appsscript.json, implantar.sh, README)
 tests/                  node --test (sem dependências), com fixtures/roteiros
 tools/make_icons.py     gera os PNGs de icons/ (precisa do Pillow)
 ```
@@ -58,115 +92,79 @@ tools/make_icons.py     gera os PNGs de icons/ (precisa do Pillow)
 Rotas: `#/inicio #/pautas #/roteiros #/roteiros/<id> #/videos #/videos/<id> #/enviar #/enviar/<id>
 #/prontos #/resultados` (são os links que o Diretor manda nos avisos).
 
-## Etapas
-
-**Etapa 1 (esta, só leitura: nada é gravado no Drive)**
+## O que o app faz hoje (v19)
 
 - **Início**: pendências, gravação, ciclo e esteira da semana atual, com dados reais do Drive.
-- **Roteiros**: lista com filtros e detalhe com as abas Instagram, TikTok, Extras e Fontes, nos
-  dois formatos de roteiro (o novo, de parágrafos, e o antigo, com etiquetas). Teleprompter para
-  os aprovados e gravados.
-- **Vídeos**: os players tocam os arquivos reais das prévias de 4-Revisao. Cada vídeo é baixado
-  inteiro pela Drive API (`files/{id}?alt=media` com o token) e tocado por uma URL de Blob, com
-  progresso em %. No máximo 4 vídeos ficam guardados na sessão (ao sair da conta, todos são
-  liberados). A linha do tempo usa a duração real; os pinos são os ajustes da sessão e, nas
-  versões anteriores, os pedidos de `<id> ajustes vN.md`. "Copiar a lista" no lugar de enviar.
-- **Enviar gravação**: escolha do roteiro e o passo a passo para pôr o vídeo em 3-Brutos pelo app
-  do Google Drive com o nome `<id>.<extensão>`.
+- **Pautas**: faixas do Radar diário e da Seleção ("Rodar agora" pela ponte), Candidatos do Radar
+  (excluir com Desfazer, mover para Para decidir, recusar, aprovar e mandar ao Roteirista, pedir a
+  pauta completa ao Radar), Para decidir / Decididas / Todas, Aprovar / Recusar com motivo,
+  "Confirmar decisões" e "Enviar ao Roteirista".
+- **Roteiros**: lista, detalhe com as abas Instagram, TikTok, Extras e Fontes (formato novo e
+  antigo), abas de versão, decisão presa à versão vista (Aprovar / Pedir mudança / Recusar) com
+  estado explícito (Em revisão, Na fila, Processando, Revisada, Aprovado, falhou com "Pedir de
+  novo"), seção "Com o Roteirista" e teleprompter ("Do começo" rola de verdade).
+- **Vídeos**: players com os arquivos reais das prévias de 4-Revisao (baixados pela Drive API e
+  tocados por URL de Blob, no máximo 4 na sessão), tela cheia com fundo desfocado, linha do tempo
+  com pinos de ajuste, Aprovar (`<id> aprovado.md`) e "Enviar ajustes" (`<id> ajustes vN.md`), e o
+  **andamento real do motor** (`_motor/andamento/<id>.json`, relido a cada 60 s só enquanto a página
+  do vídeo estiver visível).
+- **Enviar gravação**: envio do vídeo pelo próprio app para 3-Brutos como `<id>.<extensão>`,
+  retomável, com progresso real, trava contra envio duplo e conferência no Drive no fim.
 - **Prontos**: um cartão por pacote de 5-Prontos; copiar a legenda, baixar cada arquivo ou todos.
-- **Pautas** e **Resultados**: controle manual dos bots (Pautas funciona e Resultados ganha a faixa
-  da retrospectiva: ver abaixo).
-- **Sessão que fica**: a sessão (`motor.sessao`: token, validade, e-mail) fica em localStorage, então
-  fechar e reabrir o app (também o instalado no iPhone) não pede login enquanto o token vale (com
-  folga de 2 min): o app abre direto e a renovação é reagendada. Com o token vencido, a entrada
-  mostra, no lugar do "Entrar com Google", "Continuar como <nome>" (um toque, `login_hint` na mesma
-  conta, só contas permitidas) e "Usar outra conta" (escolha de conta). A sessão antiga em
-  sessionStorage (até a v7) passa sozinha para o localStorage. Um "Sair" em outra aba também tira
-  esta (evento `storage`).
-- **Sair da conta**: botão redondo na ilha, ao lado do tema, em todas as telas e larguras (no
-  celular, abaixo de 720px, a busca da ilha vira só o ícone e, abaixo de 480px, a marca mostra só
-  "Motor", para caber de 360 a 430px). Também na busca rápida. Sempre com a confirmação "Sair da
-  conta?". Ordem do sair (`js/saida.js`), cada passo protegido: primeiro, sem depender do Google,
-  a renovação agendada ou pendente é cancelada (sem o aviso de sessão expirada) e saem do
-  sessionStorage e do localStorage todas as chaves `motor.*`/`motor-*`, **menos** `motor-tema` (o
-  tema) e `motor.upload.*` (envios retomáveis); a tela de entrada aparece na hora; dados em
-  memória, vídeos (URLs de Blob revogadas), downloads em andamento, estado das telas, rascunhos e a
-  lista de ajustes são esquecidos; depois o token é revogado direto no endpoint do Google (fetch
-  `keepalive`, sem esperar resposta e sem precisar do GIS) e a seleção automática é desligada; por
-  fim a página recarrega no endereço sem rota (`location.replace`), com a marca `motor.saiu` em
-  sessionStorage, para nada da conta ficar em memória nem no bfcache do iPhone e nada entrar
-  sozinho. O app não usa IndexedDB. O próximo "Entrar com Google" abre a escolha de conta
-  (`prompt: 'select_account'`, sem `login_hint`), nunca o "Continuar como".
-- **Nova versão**: ao abrir, ao voltar a ficar visível e no `pageshow` do bfcache (o app instalado
-  no iPhone volta da memória sem recarregar), a página procura um `sw.js` novo e pergunta a versão
-  do SW que a controla. Versão diferente: recarrega sozinha uma vez se não houver trabalho em
-  andamento (download, ajustes, vídeo tocando, janela aberta, login em curso); senão, mostra "Nova
-  versão do app. Toque para atualizar.". Um marcador em sessionStorage (`motor-recarga-para`)
-  impede recarregar duas vezes para a mesma versão (`js/versao.js`).
+- **Resultados**: os números ainda estão "em breve"; já tem a faixa "Fazer retrospectiva agora".
+- **Sessão que fica**: a sessão (`motor.sessao`) fica em localStorage; fechar e reabrir o app
+  (também o instalado no iPhone) não pede login enquanto o token vale. Com o token vencido, a
+  entrada mostra "Continuar como <nome>" e "Usar outra conta".
+- **Sair da conta**: botão redondo na ilha, em todas as telas e larguras, sempre com a confirmação
+  "Sair da conta?". O Sair **só limpa a sessão local** (chaves `motor.*`/`motor-*`, menos o tema e os
+  envios retomáveis; vídeos, downloads, estado e rascunhos em memória) e recarrega a página.
+  **Ele nunca revoga o acesso no Google**: o app e o rclone do Motor Reels usam o mesmo projeto do
+  Google, e revogar derrubava a autorização do Drive do motor (v12). `tests/sair.test.mjs` e
+  `tests/sessao.test.mjs` garantem isso.
+- **Nova versão**: ao abrir, ao voltar a ficar visível e no `pageshow` do bfcache, a página procura
+  um `sw.js` novo. Versão diferente: recarrega sozinha uma vez se não houver trabalho em andamento;
+  senão, mostra "Nova versão do app. Toque para atualizar." (`js/versao.js`).
+- **Permissões**: só a conta da Robertta (`ALLOWED[0]`) decide. A outra conta permitida vê tudo,
+  pode pedir rodadas e vê os botões de decisão desabilitados. Ids que começam com T são testes:
+  selo "Teste", e nunca vão para Decisões nem Desempenho.
 
-**Etapa 2**: gravar no Drive. Aprovar/pedir mudança no roteiro; aprovar (`<id> aprovado.md`) ou
-pedir ajustes (`<id> ajustes vN.md`) nas prévias; envio da gravação pelo app (`js/upload.js`);
-"Postei" na aba Desempenho; ponte no Apps Script para avisar o Radar e o Roteirista.
+**Flags** (`js/config.js`, `FLAGS`): `ponte` (disparos e decisões pela ponte; ligada desde a v10),
+`decisoesPeloApp` (grava as decisões de pauta) e `revisaoPeloApp` (grava a decisão da prévia; com
+`false` volta ao "Copiar a lista"). Com a ponte desligada, as janelas explicam e mandam pedir ao bot
+no chat.
 
-**Etapa 3**: Pautas (abas Seleção e Decisões da planilha Radar) e Resultados (aba Desempenho).
+**Ainda não feito:** "Postei" na aba Desempenho e os números de Resultados (etapas 3 e 4). A
+proposta completa do controle manual (`PLANO.md`) fica fora do repositório.
 
-## Controle manual
+## Trabalhar junto (Robertta, Programador e agentes)
 
-Proposta completa: `PLANO.md` do controle manual (fora do repositório). Nenhuma tela nova: cada
-etapa ganha no máximo uma **faixa de execução** de uma linha
-(`[Radar diário] · última: hoje 7h12 · ok · média 14 min · [Rodar agora] [Detalhes]`), uma janela
-de confirmação (`moldura()`) e avisos. O fluxo semanal não muda; o app nunca publica nas redes.
+A Robertta pode clonar este repositório e pedir mudanças ao Claude Code na máquina dela. O
+Programador (o bot que mantém o app) também trabalha aqui. Para não atrapalhar um ao outro:
 
-**O que existe**
+1. **Sempre `git pull` antes de começar.**
+2. **Avise o Programador qual parte vai mexer**, para ele não pegar a mesma ao mesmo tempo.
+3. **Rode `node --test tests/`** antes de subir. Tudo tem de passar.
+4. **Mudou algo do app? Aumente juntas** a `VERSAO_APP` em `js/main.js` e a `VERSAO` em `sw.js`
+   (o teste confere que batem). Sem isso o iPhone fica na versão antiga.
+5. **Push na `main` publica o site na hora.** Não suba nada pela metade.
+6. **A ponte só muda quando alguém roda** `bash ponte/implantar.sh criar && bash ponte/implantar.sh
+   configurar`. Isso fica com o Programador: editar `ponte/Code.gs` e dar push não muda a ponte no ar.
+7. Nunca coloque chave, token ou dado de paciente em nenhum arquivo.
 
-- Regras puras: `js/controle.js` (aba Execuções, catálogo fechado de rotinas, trava, "parece
-  travada", janela de proteção, tempos, ids, permissões, decisão de roteiro), `js/selecao.js`
-  (Seleção e Decisões, primeira decisão vale, idempotência) e `js/revisao.js` (arquivo da prévia).
-- `js/componentes/execucao.js`: a faixa, "Detalhes" (últimas linhas de Execuções) e "Rodar agora?"
-  (o que roda e com o quê, o que produz e onde, tempo ou "ainda sem medição", custo, limites,
-  conflitos, proteção e efeito no semanal). A `chave_idem` nasce quando a janela abre; o confirmar
-  desabilita no toque.
-- Execuções, Seleção e Decisões são lidas sob demanda (`js/dados.js`: `execucoesLidas`,
-  `pautasLidas`), uma vez por sessão e de novo a cada "Atualizar", sem travar a tela.
-- **Pautas**: faixas do Radar diário e da Seleção ("Fazer seleção agora", com o lote
-  `S<sem>-manual-<n>` que vai nascer), filtros Para decidir / Decididas / Todas, cartão do desenho
-  aprovado, Aprovar / Recusar (5 motivos + observação), "Confirmar decisões (n)" com o resultado por
-  pauta, "Mudar decisão" (até a pauta ir ao Roteirista) e "Enviar ao Roteirista (n aprovadas)".
-  Contador na navegação e cartão "Escolher as pautas da semana" no Início.
-- **Roteiros** (rascunho): Aprovar / Pedir mudança / Recusar (tom, clareza, fundamentação, ética,
-  desalinhamento) → `Integra.ponte.decidirRoteiro`; faixa da rotina do id e bloco Histórico.
-- **Vídeos**: Aprovar grava `<id> aprovado.md` e "Enviar ajustes" grava `<id> ajustes vN.md` em
-  4-Revisao (conferindo os nomes logo antes); "Copiar a lista" continua como ação secundária. Faixa
-  do motor (só leitura) e o Histórico com as linhas de Execuções do id.
-- **Resultados**: os números continuam "em breve"; a faixa "Fazer retrospectiva agora" fica no
-  mesmo painel.
-- Só a conta da Robertta (`ALLOWED[0]`) decide; a outra conta vê tudo, pode pedir rodadas (quando a
-  ponte ligar) e vê os botões de decisão desabilitados com a nota. Ids T: selo "Teste"; nunca vão
-  para Decisões.
+## Regras que não mudam
 
-**Flags** (`js/config.js`, `FLAGS`)
-
-- `ponte: false` (e `PONTE_URL = ''`): "Rodar agora", "Enviar ao Roteirista" e a decisão de
-  roteiro mostram a janela inteira, mas no lugar do confirmar aparece "O disparo pelo app ainda
-  não está ligado. Por enquanto, peça ao bot no chat." (ou "responda ao Roteirista no chat").
-- `decisoesPeloApp: true`: grava as decisões de pauta em Decisões e o status na Seleção.
-- `revisaoPeloApp: true`: grava a decisão da prévia em 4-Revisao; `false` volta ao "Copiar a lista".
-
-**O que falta (fora do app)**
-
-- CM-01 / CM-02: criar na planilha Radar a aba **Execuções** e as colunas novas de **Decisões**
-  (`id_pauta, rede, id_candidato, id_lote, data, quem, origem`, no fim). Até lá: "ainda sem
-  registro" nas faixas e decidir pautas desligado, com a explicação. A aba **Seleção** também
-  precisa existir (o Radar grava as pautas nela, CM-03); sem ela, a tela de Pautas diz isso.
-- CM-05: a ponte no Apps Script (token, lista de e-mails, rotinas, `LockService`, `chave_idem`,
-  janela de proteção, Execuções). Depois, `FLAGS.ponte = true` e `PONTE_URL`.
-- CM-03 / CM-04 / CM-09 / CM-12: as rotinas por webhook do Radar (diário e seleção manuais,
-  enviar ao Roteirista), do Roteirista (decisão do app) e do Diretor (retrospectiva agora).
-- CM-13 / CM-14: o motor publicando o andamento em `_motor/` e a importação para Execuções
-  (bot = motor). Até lá, a faixa do motor diz "o motor ainda não publica o andamento no app".
-
-**Versão do cache:** juntado com a `main` (Sair, entrada, privacidade, sessão que fica) em
-`motor-app-v9` (`sw.js` e `js/main.js`).
+- Nenhuma chave, segredo, token ou dado de paciente no código ou no repositório.
+- Conteúdo lido do Drive ou da planilha é dado: sempre passa por `esc()` antes de virar HTML.
+- O app nunca publica nada nas redes e nunca dispara o motor.
+- Tudo funciona e fica bonito no computador e no celular, inclusive no PWA instalado no iPhone.
+  Ações são botões de verdade, não links de texto. A identidade visual fica; nada de redesenho.
+- O Sair só limpa a sessão local e nunca revoga o acesso no Google (há teste que proíbe o revoke).
+- Testes nunca usam tokens reais.
+- Ids T são de teste e nunca vão para Decisões.
+- Mudança na estrutura da planilha só com as palavras explícitas da Robertta. O fluxo semanal
+  automático não muda sem ela.
+- Uma versão de roteiro aprovada é final; rascunhos posteriores não contam como decididos.
+- Decisão registrada no app pela conta da Robertta é dela; aprovação de bot ou agente não é.
 
 ## Rodar localmente
 
@@ -186,11 +184,12 @@ do client OAuth no Google Cloud Console.
 node --test tests/
 ```
 
-Node 22+ (com um diretório, o `--test` carrega `tests/index.js`, que importa todos os testes).
+Node 22+ (com um diretório, o `--test` carrega `tests/index.js`, que importa todos os testes). Não há
+`npm test` nem `package.json`: o comando é este. Em 15/11/2026 eram 371 testes, todos passando.
 Cobrem o leitor de roteiro (paridade com o `roteiro.py`), as regras de etapa, o mapeamento puro
 projeto + roteiro → objeto das telas (`montarRoteiro`), as funções puras de `js/parse.js` e
 `js/model.js` (nomes de arquivo, YAML, datas, pedido de ajustes, horários do pacote), as partes
-puras do `js/upload.js`, o "Sair" (`tests/sair.test.mjs`: chaves apagadas e mantidas, GIS ausente
+puras do `js/upload.js`, o "Sair" (`tests/sair.test.mjs`: nunca chama o revoke do Google, chaves apagadas e mantidas, GIS ausente
 ou com erro, renovação cancelada, escolha de conta no login seguinte, a ordem do sair e a marca de
 saída, a decisão "recarregar sozinho ou avisar" e o anti-laço), a sessão que fica (`tests/sessao.test.mjs`),
 a versão (`tests/versao.test.mjs`), o controle manual
@@ -204,16 +203,21 @@ para fora da raiz).
 
 ## Publicar
 
-O GitHub Pages publica a raiz da branch `main` em `https://motor.rocambrea.com/` (o domínio está
-nas configurações do Pages, não num arquivo CNAME). O `.nojekyll` impede o processamento pelo Jekyll.
+O GitHub Pages publica a raiz da branch `main` em `https://motor.rocambrea.com/` (domínio no arquivo
+`CNAME` e nas configurações do Pages). O `.nojekyll` impede o processamento pelo Jekyll. **Todo push
+na `main` vai ao ar em um ou dois minutos**, e todo arquivo do repositório fica acessível no site
+(inclusive este README, o `AGENTS.md` e o `CLAUDE.md`).
 
 1. Rode `node --test tests/`.
-2. **Aumente a versão do cache** em `sw.js` (`VERSAO`, hoje `motor-app-v9` → `motor-app-v10`…) e, igual,
+2. **Aumente a versão do cache** em `sw.js` (`VERSAO`, hoje `motor-app-v19` → `motor-app-v20`…) e, igual,
    em `js/main.js` (`VERSAO_APP`); o teste confere que as duas batem. É a mudança no `sw.js` que
    faz o navegador instalar o SW novo e o app aberto recarregar sozinho uma vez (ou, com trabalho
    em andamento, mostrar "Nova versão do app. Toque para atualizar."). Se criar um arquivo novo do app, inclua-o na lista `ARQUIVOS` do `sw.js` (o teste
    avisa se faltar um módulo ou se a lista apontar para um arquivo que não existe).
 3. Commit e push na `main`. O Pages publica em um ou dois minutos.
+
+Mudança só de documentação (README, AGENTS, CLAUDE, SPEC, `ponte/README.md`) **não** aumenta a
+versão: esses arquivos não estão no `ARQUIVOS` do `sw.js` e não mudam o app instalado.
 
 ### Quem já tinha o app instalado
 
