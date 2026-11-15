@@ -180,6 +180,9 @@ const MENSAGENS = {
   'webhook-nao-configurado': 'O pedido foi registrado, mas este bot ainda não tem webhook na ponte. Nada rodou.',
   'webhook-falhou': 'O pedido foi registrado, mas o bot não respondeu. Nada rodou; tente de novo mais tarde.',
   'repetido-com-erro': 'Este mesmo pedido já falhou antes. Feche a janela e peça de novo.',
+  'ja-enviada': 'Esta pauta já foi enviada ao Roteirista (ou está indo). Acompanhe em Roteiros.',
+  'ja-pedida': 'Esta mudança já foi pedida ao Roteirista. Espere a versão nova chegar (ou 2 h) antes de pedir de novo.',
+  'ja-decidido': 'Este roteiro já foi decidido (aprovado ou recusado). Uma nova decisão não vai ao Roteirista.',
   'configuracao-recusada': 'Código de configuração inválido.',
   'erro-interno': 'A ponte teve um erro. Tente de novo.',
 };
@@ -591,6 +594,99 @@ function validarDecisaoRoteiro(pedido) {
   };
 }
 
+/* ------------------------------------------------------------------ repetições (lote 2) */
+// Mesma regra de js/envios.js (idsNoTexto, idsEnviadosNoTexto) e js/decisoes-roteiro.js
+// (lerDecisaoDoResumo, bloqueioDaDecisao); tests/ponte.test.mjs confere a paridade.
+
+const ID_PAUTA_GLOBAL_RE = /\bS\d{2}-\d{2}\b/g;
+const ABERTOS_ENVIO = ['pedido', 'rodando', 'aguardando'];
+const DUAS_HORAS_MS = 2 * 60 * 60 * 1000;
+
+/** Ids de pauta (S46-01…) num texto, sem repetir, na ordem em que aparecem. */
+function idsNoTexto(t) {
+  const achados = String(t === null || t === undefined ? '' : t).toUpperCase().match(ID_PAUTA_GLOBAL_RE) || [];
+  return achados.filter(function (id, i) { return achados.indexOf(id) === i; });
+}
+
+/** Ids que um resumo dá como enviados (trecho com "enviada(s)" sem "não"/"falhou"/"erro"). */
+function idsEnviadosNoTexto(t) {
+  const ids = [];
+  String(t === null || t === undefined ? '' : t).split(/[;\n]|\.(?:\s|$)/).forEach(function (trecho) {
+    if (!/enviad[ao]s?\b/i.test(trecho) || /\bn[aã]o\b|falh|erro/i.test(trecho)) return;
+    idsNoTexto(trecho).forEach(function (id) { if (ids.indexOf(id) < 0) ids.push(id); });
+  });
+  return ids;
+}
+
+/**
+ * radar-enviar: algum id pedido já está numa linha radar-enviar (sem teste) `pedido`/`rodando`/
+ * `aguardando`/`ok`, ou numa `parcial` que o dá como enviado? → falha 'ja-enviada' (com `ids`) | null.
+ * `erro`, `travada` e `recusado-pela-trava` liberam. Ids da linha: resumo + id_alvo.
+ * Linha sem nenhum id no texto: não dá para saber quais foram (a Seleção não é lida aqui): libera.
+ */
+function envioRepetido(execucoes, idsPedidos) {
+  const pedidos = String(idsPedidos || '').split(',').map(function (s) { return s.trim().toUpperCase(); }).filter(Boolean);
+  if (!pedidos.length) return null;
+  const ja = [];
+  (execucoes || []).forEach(function (e) {
+    if (!e || e.rotina !== 'radar-enviar' || e.teste) return;
+    let daLinha = [];
+    if (ABERTOS_ENVIO.indexOf(e.status) >= 0 || e.status === 'ok') daLinha = idsNoTexto(String(e.resumo || '') + ' ' + String(e.id_alvo || ''));
+    else if (e.status === 'parcial') daLinha = idsEnviadosNoTexto(e.resumo);
+    daLinha.forEach(function (id) { if (pedidos.indexOf(id) >= 0 && ja.indexOf(id) < 0) ja.push(id); });
+  });
+  if (!ja.length) return null;
+  ja.sort();
+  const msg = (ja.length === 1 ? 'Já foi enviada ao Roteirista (ou está indo): ' : 'Já foram enviadas ao Roteirista (ou estão indo): ')
+    + ja.join(', ') + '. Nada foi pedido de novo; acompanhe em Roteiros.';
+  return falha('ja-enviada', msg, { ids: ja });
+}
+
+/** Resumo de roteirista-decisao → {decisao, versao, nova?} | null (igual a js/decisoes-roteiro.js). */
+function lerDecisaoDoResumo(resumo) {
+  const s = String(resumo === null || resumo === undefined ? '' : resumo).trim().toLowerCase();
+  if (!s) return null;
+  let m = s.match(/\baprovar v(\d+)\b/) || s.match(/\bv(\d+) aprovad[ao]s?\b/);
+  if (m) return { decisao: 'aprovar', versao: Number(m[1]) };
+  m = s.match(/\brecusar v(\d+)\b/) || s.match(/\bv(\d+) recusad[ao]s?\b/);
+  if (m) return { decisao: 'recusar', versao: Number(m[1]) };
+  m = s.match(/\bmudar v(\d+)\b/);
+  if (m) return { decisao: 'mudar', versao: Number(m[1]) };
+  m = s.match(/\bv(\d+) gravad[ao]s?\b/);
+  if (m && Number(m[1]) > 1) return { decisao: 'mudar', versao: Number(m[1]) - 1, nova: Number(m[1]) };
+  return null;
+}
+
+/**
+ * roteirista-decisao: qualquer decisão depois de um aprovar/recusar `ok` do id → 'ja-decidido';
+ * "mudar vN" com um "mudar vN" do mesmo N aberto ou `ok` há menos de 2 h → 'ja-pedida'. | null.
+ * (Linha aberta de outra decisão do id já cai na trava por id, antes daqui.)
+ */
+function decisaoRepetida(execucoes, idAlvo, dados, agora) {
+  const id = String(idAlvo || '').trim().toUpperCase();
+  const t = agora instanceof Date ? agora.getTime() : new Date(agora).getTime();
+  const linhas = (execucoes || []).filter(function (e) { return e && e.rotina === 'roteirista-decisao' && String(e.id_alvo || '').trim().toUpperCase() === id && id; });
+  for (let i = 0; i < linhas.length; i++) {
+    const d = lerDecisaoDoResumo(linhas[i].resumo);
+    if (d && linhas[i].status === 'ok' && (d.decisao === 'aprovar' || d.decisao === 'recusar')) {
+      return falha('ja-decidido', 'O roteiro ' + idAlvo + ' já foi ' + (d.decisao === 'aprovar' ? 'aprovado' : 'recusado') + ' (v' + d.versao + '). Uma nova decisão não vai ao Roteirista.', { versao: d.versao });
+    }
+  }
+  if (!dados || dados.decisao !== 'mudar') return null;
+  const v = Number(dados.versao);
+  for (let j = 0; j < linhas.length; j++) {
+    const l = linhas[j];
+    const d2 = lerDecisaoDoResumo(l.resumo);
+    if (!d2 || d2.decisao !== 'mudar' || d2.versao !== v) continue;
+    const fim = l.fimData ? l.fimData.getTime() : (l.inicioData ? l.inicioData.getTime() : NaN);
+    const okRecente = l.status === 'ok' && isFinite(fim) && t - fim < DUAS_HORAS_MS;
+    if (ABERTOS_ENVIO.indexOf(l.status) >= 0 || okRecente) {
+      return falha('ja-pedida', 'A mudança na v' + v + ' do ' + idAlvo + ' já foi pedida. Espere a v' + (v + 1) + ' chegar (ou 2 h) antes de pedir de novo.', { versao: v });
+    }
+  }
+  return null;
+}
+
 /**
  * radar-diario: dados.quantidade opcional; se vier, inteiro de 1 a 15 (número, ou texto só com
  * dígitos). → {ok:true, valor} | falha 'quantidade-invalida'.
@@ -745,6 +841,7 @@ function lerExecucoes(linhas) {
       e.status = comHifen(e.status);
       e.teste = SIM.indexOf(normalizarCabecalho(e.teste)) >= 0 || ehTeste(e.id_alvo);
       e.inicioData = 'inicio' in indices ? lerDataHora(linha[indices.inicio]) : null;
+      e.fimData = 'fim' in indices ? lerDataHora(linha[indices.fim]) : null;
       execucoes.push(e);
     }
     return { ok: true, linhaCabecalho: r, cabecalho: (ls[r] || []).slice(), indices: indices, execucoes: execucoes };
@@ -1065,6 +1162,12 @@ function planejarExecucao(o) {
   if (n >= o.limite) {
     return { tipo: 'recusa', resposta: falha('limite', 'Já foram ' + n + ' pedidos de "' + c.def.rotulo + '" na última hora (o limite é ' + o.limite + '). Espere um pouco.') };
   }
+
+  // Repetição (com as linhas marcadas como travada já liberadas): envio de pauta que já foi ou está
+  // indo ao Roteirista (ja-enviada); mudança já pedida ou roteiro já decidido (ja-pedida / ja-decidido).
+  const repetido = c.rotina === 'radar-enviar' ? envioRepetido(depois, c.dadosBot && c.dadosBot.ids)
+    : c.rotina === 'roteirista-decisao' ? decisaoRepetida(depois, p.id_alvo, c.dadosBot, o.agora) : null;
+  if (repetido) return { tipo: 'recusa', resposta: repetido };
 
   let resumo = c.resumo;
   if (travadas.length) resumo = ('rodar de novo; ' + (travadas[0].id_execucao || 'a anterior') + ' marcada como travada' + (resumo ? '; ' + resumo : '')).slice(0, 200);
