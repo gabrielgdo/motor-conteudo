@@ -1,0 +1,6 @@
+# Fim de linha LF em tudo que é texto (os testes comparam bytes; no Windows o Git trocaria por CRLF)
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff2 binary

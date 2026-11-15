@@ -165,6 +165,9 @@ export const Integra = {
   encerrar() {
     const token = auth.encerrarSessao();
     try { drive.esquecerTudo(); } catch { /* segue */ }
+    // caches em memória lidos do Drive (andamento, sinal de vida, estado dos candidatos): a próxima conta lê de novo
+    try { Integra.motor.esquecer(); } catch { /* segue */ }
+    try { Integra.app.candidatos.esquecer(); } catch { /* segue */ }
     try { sheet.invalidarPostados(); } catch { /* segue */ }
     try { sheet.invalidarAbas(); } catch { /* segue */ }
     return token;

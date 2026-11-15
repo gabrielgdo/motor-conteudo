@@ -44,19 +44,26 @@ Aqui eles são descritos só pela função:
 
 | Bot | Função | Como o app chega nele |
 |---|---|---|
-| **Radar** | pesquisa temas candidatos e grava na planilha (Candidatos, Seleção) | rotina por webhook para os pedidos do app: `radar-diario`, `radar-selecao`, `radar-enviar`, `radar-candidato` |
-| **Roteirista** | escreve os roteiros em 2-Roteiros (rascunhos e versões) | rotina por webhook para a decisão de roteiro: `roteirista-decisao` |
-| **Diretor** | coordena o fluxo, conversa com a Robertta e recebe os avisos do Motor Reels | rotina por webhook para a retrospectiva: `diretor-retrospectiva` |
+| **Radar** e **Roteirista** | **pausados desde 15/11/2026**: o trabalho deles passou para o Motor Reels (`/radar`, `/roteirizar`, `/revisar-roteiro`, `/decisao-roteiro`) | não chega mais: as rotinas `radar-*` e `roteirista-decisao` gravam um arquivo no Drive (`rotinaViaArquivo` em `js/controle.js`) e o vigia do motor atende |
+| **Diretor** | coordena o fluxo, conversa com a Robertta, recebe os avisos do Motor Reels e faz as coletas do X, do Instagram e do TikTok | rotina por webhook para a retrospectiva: `diretor-retrospectiva` (único uso da ponte hoje) |
 | **Programador** | mantenedor técnico: este app, a ponte, o Motor Reels e a integração com o WhatsApp; roda tudo no "computador do Grok" (uma máquina Linux) e implanta a ponte | não recebe pedidos do app |
 
-**O caminho de um pedido:**
+Os nomes "Radar" e "Roteirista" continuam em rótulos e textos da tela e nos status gravados na
+planilha (ex.: `enviada ao Roteirista`, em `js/selecao.js`). Os status são dados: não mude. Os
+textos de tela têm paridade testada com `ponte/Code.gs` (`tests/ponte.test.mjs`): mudar um exige
+mudar o outro e reimplantar a ponte.
+
+**O caminho de um pedido hoje:**
 
 ```
-app (js/integra.js, chamarPonte)
-  └─► ponte no Apps Script (ponte/Code.gs)
-        confere o token do Google e a conta, a rotina (lista fechada), a trava, a janela de
-        proteção, a idempotência (chave_idem) e o limite por hora; registra em Execuções
-        └─► webhook da rotina do bot (Authorization: Bearer <chave>)
+radar-* e roteirista-decisao:  app ─► arquivo no Drive (1-Radar/pedido-busca.md,
+                                      1-Radar/decisoes <semana>.md, 2-Roteiros/rascunhos/<id> decisao vN.md)
+                                      ─► o vigia do motor lê na passada seguinte
+diretor-retrospectiva:         app (js/integra.js, chamarPonte)
+                                 └─► ponte no Apps Script (ponte/Code.gs): token do Google e conta,
+                                     rotina (lista fechada), trava, janela de proteção, idempotência
+                                     (chave_idem), limite por hora; registra em Execuções
+                                     └─► webhook do Diretor (Authorization: Bearer <chave>)
 ```
 
 - As URLs e chaves dos webhooks ficam **só** nas propriedades do script do Apps Script. Nunca no
@@ -71,8 +78,9 @@ app (js/integra.js, chamarPonte)
 - O contrato completo (campos, códigos, ordem das conferências, payload): [`ponte/README.md`](ponte/README.md).
 
 **Motor Reels** (o editor de vídeo, em outro repositório privado) não recebe chamadas do app. Ele
-conversa com o resto só por arquivos no Drive (lê 2-Roteiros, 3-Brutos e 4-Revisao; grava
-4-Revisao, 5-Prontos e `_motor/andamento/`) e por avisos ao Diretor. Do lado do app, isso
+conversa com o resto só por arquivos no Drive (lê 1-Radar, 2-Roteiros, 3-Brutos e 4-Revisao; grava
+1-Radar/pautas, 2-Roteiros, 4-Revisao, 5-Prontos, `_motor/andamento/` e o sinal de vida
+`_motor/saude.json`, que o Início mostra) e por avisos ao Diretor. Do lado do app, isso
 significa: a gravação enviada em 3-Brutos, o `aprovado.md` ou o `ajustes vN.md` em 4-Revisao são o
 que faz o motor andar.
 

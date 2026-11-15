@@ -106,7 +106,7 @@ function ciclo(lista) {
     : 'nenhum roteiro ainda';
   const listaHTML = total
     ? `<ol class="ciclo-lista" aria-hidden="true">${passos.map(([nome, n]) => `<li class="${n !== null && n >= total ? 'cheio' : n > 0 ? 'andando' : ''}"><i></i>${nome}<span>${n === null ? 'sem a planilha' : `${n} de ${total}`}</span></li>`).join('')}</ol>`
-    : `<p class="apagado pequeno">Nada começou na semana ${numero} ainda. Quando o Radar e o Roteirista começarem, cada etapa vai se preenchendo aqui.</p>`;
+    : `<p class="apagado pequeno">Nada começou na semana ${numero} ainda. Quando o motor começar, cada etapa vai se preenchendo aqui.</p>`;
   return `<div class="ciclo">
     <svg viewBox="0 0 200 200" role="img" aria-label="Andamento da semana ${numero}: ${esc(rotulo)}">
       ${arcos}<text x="100" y="92" text-anchor="middle" class="ciclo-sub">semana</text><text x="100" y="126" text-anchor="middle" class="ciclo-meio">${numero}</text>
@@ -126,7 +126,7 @@ function nosDe(r) {
     ['Vídeos', e === 'pronto' ? 'feito' : e === 'previa' ? 'vez' : ['recebido', 'ajustes', 'video-aprovado'].includes(e) ? 'espera' : ''],
     ['Postagem', postagem],
   ];
-  const fala = { feito: 'feito', vez: 'sua vez', espera: 'com os bots', '': 'ainda não', 'sem-dados': 'a planilha não respondeu' };
+  const fala = { feito: 'feito', vez: 'sua vez', espera: 'com o motor', '': 'ainda não', 'sem-dados': 'a planilha não respondeu' };
   return `<div class="nos">${lista.map(([nome, st]) => `<span class="no ${st === 'sem-dados' ? '' : st}"><i>${st === 'feito' ? ic('check', 14) : ''}</i>${nome}<span class="vh">: ${fala[st]}</span></span>`).join('')}</div>`;
 }
 
@@ -158,7 +158,7 @@ export function vInicio() {
 
   const fila = pendencias(); const gravar = porEtapa('aprovado');
   const extenso = ['', 'Uma coisa espera', 'Duas coisas esperam', 'Três coisas esperam', 'Quatro coisas esperam', 'Cinco coisas esperam', 'Seis coisas esperam', 'Sete coisas esperam'];
-  const frase = !fila.length ? 'Tudo em dia. Os bots avisam quando precisarem de você.' : `${extenso[fila.length] || fila.length + ' coisas esperam'} você.`;
+  const frase = !fila.length ? 'Tudo em dia. O motor avisa quando precisar de você.' : `${extenso[fila.length] || fila.length + ' coisas esperam'} você.`;
   const urgente = gravar.find((r) => validade(r).perto);
   const lista = daSemana();
   const { numero } = semana();
@@ -190,7 +190,7 @@ export function vInicio() {
         <li><div><span class="id">${esc(r.id)}</span><a class="esteira-titulo" href="${destinoDe(r)}" ${vt(r.id)}>${esc(r.titulo)}</a></div>
           ${nosDe(r)}
           <div class="meta fim">${selo(texto, tom)}${v.perto && r.etapa === 'aprovado' ? selo(v.texto, 'alerta') : ''}</div></li>`; }).join('')}</ol>`
-        : vazio(`Nenhum roteiro da semana ${numero} ainda`, 'Quando o Radar e o Roteirista começarem a semana, cada roteiro aparece aqui, etapa por etapa.')}
+        : vazio(`Nenhum roteiro da semana ${numero} ainda`, 'Quando o motor começar a semana, cada roteiro aparece aqui, etapa por etapa.')}
     </section>
   </div>
   ${motorAlerta ? '' : motor}

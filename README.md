@@ -92,7 +92,9 @@ tools/make_icons.py     gera os PNGs de icons/ (precisa do Pillow)
 Rotas: `#/inicio #/pautas #/roteiros #/roteiros/<id> #/videos #/videos/<id> #/enviar #/enviar/<id>
 #/prontos #/resultados` (são os links que o Diretor manda nos avisos).
 
-## O que o app faz hoje (v19)
+## O que o app faz hoje (v24)
+
+- **Faixa “Motor” no Início** (v24): sinal de vida do motor (`_motor/saude.json`): funcionando, trabalhando, em pausa ou sem sinal, com a idade das coletas e o último erro.
 
 - **Início**: pendências, gravação, ciclo e esteira da semana atual, com dados reais do Drive.
 - **Pautas**: faixas do Radar diário e da Seleção ("Rodar agora" pela ponte), Candidatos do Radar
