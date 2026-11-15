@@ -7,7 +7,8 @@
  *      e descarta o token (nunca vai para log, planilha, resposta nem webhook);
  *   3. confere a permissão (EMAILS_DISPARAR / EMAILS_DECIDIR) e a rotina (lista FECHADA);
  *   4. sob LockService: idempotência (chave_idem), trava por grupo, janela de proteção, limite por
- *      hora, e grava a linha 'pedido' na aba Execuções;
+ *      hora, e grava a linha 'pedido' na aba Execuções (e, SÓ em radar-candidato com destino
+ *      'roteirista', a aprovação na aba Decisões, uma vez por candidato);
  *   5. fora do lock: repassa ao webhook da rotina (Bearer da propriedade). Falhou → linha 'erro'.
  *
  * Organização deste arquivo (um só, funções globais, sem import/export):
@@ -42,6 +43,7 @@ const CAMPOS_PEDIDO = ['acao', 'rotina', 'id_alvo', 'id_lote', 'chave_idem', 'da
 const ACOES_PONTE = ['disparar', 'decidir-roteiro'];
 
 const ID_RE = /^(S\d{2}-\d{2}|T\d{2}(-\d{2})?|R\d{3})$/; // igual a js/parse.js (idValido)
+const ID_CANDIDATO_RE = /^T?\d{4}-\d{2}-\d{2}-\d{1,3}$/; // igual a js/parse.js (idCandidatoValido): 2026-11-14-01
 const CHAVE_DADOS_RE = /^[a-z][a-z0-9_]{0,39}$/; // igual a dadosLimpos em js/integra.js
 const CHAVE_IDEM_RE = /^[A-Za-z0-9_-]{8,80}$/; // o app manda um UUID
 const ID_LOTE_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/; // S47-semanal, S47-manual-2
@@ -83,38 +85,57 @@ const TODO_DIA = [0, 1, 2, 3, 4, 5, 6];
 
 /**
  * Catálogo FECHADO, espelhando js/controle.js (ROTINAS). Só as `disparavel` passam.
- *   grupo      grupo de trava ('roteirista' vira 'roteirista|<id>')
- *   acao       a única acao do pedido que aceita a rotina
- *   soDecide   só quem está em EMAILS_DECIDIR (decisões e "enviar adiante", PLANO 13)
- *   agenda     {dias (0 = domingo), hora, minuto} no fuso de São Paulo, ou null
+ *   grupo         grupo de trava; com `travaPorId`, vira '<grupo>|<id>' (roteirista por roteiro,
+ *                 radar-candidato por candidato: um não trava o outro, o mesmo não vai duas vezes)
+ *   acao          a única acao do pedido que aceita a rotina
+ *   soDecide      só quem está em EMAILS_DECIDIR (decisões e "enviar adiante", PLANO 13)
+ *   agenda        {dias (0 = domingo), hora, minuto} no fuso de São Paulo, ou null
+ *   limitePorHora padrão da rotina (LIMITE_POR_HORA_<ROTINA> ainda vale por cima); sem ele, o geral
  */
 const ROTINAS = Object.freeze({
   'radar-diario': {
-    bot: 'radar', rotulo: 'Radar diário', grupo: 'radar', disparavel: true, precisaId: false, acao: 'disparar', soDecide: false,
+    bot: 'radar', rotulo: 'Radar diário', grupo: 'radar', disparavel: true, precisaId: false, acao: 'disparar', soDecide: false, travaPorId: false,
     agenda: { dias: TODO_DIA, hora: 7, minuto: 0 },
   },
   'radar-selecao': {
-    bot: 'radar', rotulo: 'Seleção de pautas', grupo: 'radar', disparavel: true, precisaId: false, acao: 'disparar', soDecide: false,
+    bot: 'radar', rotulo: 'Seleção de pautas', grupo: 'radar', disparavel: true, precisaId: false, acao: 'disparar', soDecide: false, travaPorId: false,
     agenda: { dias: [0], hora: 9, minuto: 0 },
   },
   'radar-enviar': {
-    bot: 'radar', rotulo: 'Enviar ao Roteirista', grupo: 'radar', disparavel: true, precisaId: false, acao: 'disparar', soDecide: true,
+    bot: 'radar', rotulo: 'Enviar ao Roteirista', grupo: 'radar', disparavel: true, precisaId: false, acao: 'disparar', soDecide: true, travaPorId: false,
     agenda: null,
   },
+  // Um candidato da aba Candidatos vira pauta (Para decidir) ou vai ao Roteirista. Sem agenda.
+  'radar-candidato': {
+    bot: 'radar', rotulo: 'Candidato do Radar', grupo: 'radar-candidato', disparavel: true, precisaId: true, acao: 'disparar', soDecide: true, travaPorId: true,
+    agenda: null, limitePorHora: 15,
+  },
   'roteirista-decisao': {
-    bot: 'roteirista', rotulo: 'Decisão de roteiro', grupo: 'roteirista', disparavel: true, precisaId: true, acao: 'decidir-roteiro', soDecide: true,
+    bot: 'roteirista', rotulo: 'Decisão de roteiro', grupo: 'roteirista', disparavel: true, precisaId: true, acao: 'decidir-roteiro', soDecide: true, travaPorId: true,
     agenda: null,
   },
   'diretor-retrospectiva': {
-    bot: 'diretor', rotulo: 'Retrospectiva', grupo: 'diretor|retrospectiva', disparavel: true, precisaId: false, acao: 'disparar', soDecide: false,
+    bot: 'diretor', rotulo: 'Retrospectiva', grupo: 'diretor|retrospectiva', disparavel: true, precisaId: false, acao: 'disparar', soDecide: false, travaPorId: false,
     agenda: { dias: [1], hora: 8, minuto: 0 },
   },
   // O app NUNCA dispara o motor: ele grava o arquivo de entrada e o vigia faz o resto.
-  'motor-checar-fontes': { bot: 'motor', rotulo: 'Checar fontes', grupo: 'motor', disparavel: false, precisaId: true, acao: '', soDecide: false, agenda: null },
-  'motor-editar': { bot: 'motor', rotulo: 'Editar a prévia', grupo: 'motor', disparavel: false, precisaId: true, acao: '', soDecide: false, agenda: null },
-  'motor-revisar': { bot: 'motor', rotulo: 'Aplicar os ajustes', grupo: 'motor', disparavel: false, precisaId: true, acao: '', soDecide: false, agenda: null },
-  'motor-finalizar': { bot: 'motor', rotulo: 'Finalizar o pacote', grupo: 'motor', disparavel: false, precisaId: true, acao: '', soDecide: false, agenda: null },
+  'motor-checar-fontes': { bot: 'motor', rotulo: 'Checar fontes', grupo: 'motor', disparavel: false, precisaId: true, acao: '', soDecide: false, travaPorId: false, agenda: null },
+  'motor-editar': { bot: 'motor', rotulo: 'Editar a prévia', grupo: 'motor', disparavel: false, precisaId: true, acao: '', soDecide: false, travaPorId: false, agenda: null },
+  'motor-revisar': { bot: 'motor', rotulo: 'Aplicar os ajustes', grupo: 'motor', disparavel: false, precisaId: true, acao: '', soDecide: false, travaPorId: false, agenda: null },
+  'motor-finalizar': { bot: 'motor', rotulo: 'Finalizar o pacote', grupo: 'motor', disparavel: false, precisaId: true, acao: '', soDecide: false, travaPorId: false, agenda: null },
 });
+
+/* radar-diario: quantos candidatos a rodada manual grava (dados.quantidade, opcional). */
+const QUANTIDADE_MIN = 1;
+const QUANTIDADE_MAX = 15;
+
+/* radar-candidato: em `dados` só valem estes (mais os dois campos de trava). */
+const CAMPOS_PEDIDO_CANDIDATO = ['id_candidato', 'destino', 'motivo'];
+const DESTINOS_CANDIDATO = ['decidir', 'roteirista'];
+const MAX_MOTIVO_CANDIDATO = 300;
+
+/** As 11 colunas da aba Decisões (igual a COLUNAS_DECISOES de js/selecao.js). */
+const COLUNAS_DECISOES = ['semana', 'pauta', 'decisao', 'motivo', 'id_pauta', 'rede', 'id_candidato', 'id_lote', 'data', 'quem', 'origem'];
 
 const DECISOES_ROTEIRO = ['aprovar', 'mudar', 'recusar'];
 const MOTIVOS_ROTEIRO = ['tom', 'clareza', 'fundamentação', 'ética', 'desalinhamento']; // controle.js
@@ -124,9 +145,9 @@ const CAMPOS_DECISAO_ROTEIRO = ['id', 'versao', 'decisao', 'pedido', 'motivo', '
 const CAMPOS_SO_DA_PONTE = ['marcar_travada', 'id_execucao_travada'];
 
 /**
- * A ponte grava SÓ na aba Execuções. Decisões e Desempenho nunca são gravadas por ela hoje (não
- * existe acao para isso). Se um dia existir, a gravação precisa passar por podeGravarNaAba (ids T
- * nunca vão para Decisões nem Desempenho) e a aba entrar nesta lista.
+ * A ponte grava na aba Execuções e, numa única exceção, em Decisões: o pedido radar-candidato com
+ * destino 'roteirista' grava UMA linha de aprovação por candidato (abaGravavelPelaPonte). Desempenho
+ * nunca. Toda gravação passa por conferirGravacao: ids T nunca vão para Decisões nem Desempenho.
  */
 const ABAS_PROIBIDAS_PARA_TESTE = ['decisoes', 'desempenho'];
 
@@ -148,7 +169,10 @@ const MENSAGENS = {
   'protecao': 'Perto da rodada agendada: o disparo manual está fechado agora.',
   'limite': 'Muitos pedidos desta rotina na última hora. Espere um pouco.',
   'teste-recusado': 'Ids de teste (T) não vão para Decisões nem Desempenho.',
-  'aba-nao-permitida': 'A ponte só grava na aba Execuções.',
+  'aba-nao-permitida': 'A ponte só grava na aba Execuções (e em Decisões só para mandar um candidato ao Roteirista).',
+  'quantidade-invalida': 'A quantidade de candidatos precisa ser um número inteiro de 1 a 15.',
+  'destino-invalido': 'O destino do candidato precisa ser "decidir" (Para decidir) ou "roteirista".',
+  'decisoes-sem-colunas': 'A aba Decisões não tem as colunas novas (id_pauta, rede, id_candidato, id_lote, data, quem, origem). Nada foi pedido ao Radar.',
   'ocupado': 'A ponte está atendendo outro pedido. Tente de novo em instantes.',
   'planilha-sem-execucoes': 'A aba Execuções não foi encontrada (ou está sem os cabeçalhos esperados).',
   'ponte-sem-configuracao': 'A ponte ainda não está configurada.',
@@ -174,6 +198,16 @@ function idValido(id) {
 
 function ehTeste(id) {
   return idValido(id) && id.charAt(0) === 'T';
+}
+
+/** Id de candidato da aba Candidatos (AAAA-MM-DD-NN; com T na frente, de teste). */
+function idCandidatoValido(id) {
+  return typeof id === 'string' && ID_CANDIDATO_RE.test(id);
+}
+
+/** Qualquer id que começa com T é de teste (roteiro T01-01, candidato T2026-11-14-01). */
+function ehIdDeTeste(id) {
+  return /^T/i.test(String(id == null ? '' : id).trim());
 }
 
 /** 'sim' para id T, senão 'não' (igual a campoTeste em controle.js). */
@@ -317,6 +351,24 @@ function lerDataHora(valor) {
 function textoDataHora(data) {
   const p = momentoNoFuso(data);
   return p ? p.ano + '-' + dois(p.mes) + '-' + dois(p.dia) + ' ' + dois(p.hora) + ':' + dois(p.minuto) + ':' + dois(p.segundo) : '';
+}
+
+/** Date → "AAAA-MM-DD HH:MM" em São Paulo: o formato da coluna `data` de Decisões que o app grava
+ *  (dataHoraPlanilha de js/parse.js). */
+function dataHoraPlanilha(data) {
+  const p = momentoNoFuso(data);
+  return p ? p.ano + '-' + dois(p.mes) + '-' + dois(p.dia) + ' ' + dois(p.hora) + ':' + dois(p.minuto) : '';
+}
+
+/** Semana ISO 8601 da data em São Paulo como o app escreve: "S47" (prefixoSemana de js/parse.js). */
+function prefixoSemana(data) {
+  const p = momentoNoFuso(data);
+  const d = new Date(Date.UTC(p.ano, p.mes - 1, p.dia));
+  const diaSemana = d.getUTCDay() || 7; // segunda = 1 … domingo = 7
+  d.setUTCDate(d.getUTCDate() + 4 - diaSemana); // quinta-feira da mesma semana
+  const anoIso = d.getUTCFullYear();
+  const semana = Math.ceil(((d.getTime() - Date.UTC(anoIso, 0, 1)) / 86400000 + 1) / 7);
+  return 'S' + dois(semana);
 }
 
 /** "7h03", "9h". */
@@ -488,11 +540,11 @@ function rotinaConhecida(rotina) {
   return Object.prototype.hasOwnProperty.call(ROTINAS, rotina);
 }
 
-/** Grupo de trava (com o id para o Roteirista), ou ''. */
+/** Grupo de trava (com o id nas rotinas `travaPorId`), ou ''. */
 function grupoDeTrava(rotina, idAlvo) {
   if (!rotinaConhecida(rotina)) return '';
   const def = ROTINAS[rotina];
-  return def.grupo === 'roteirista' ? 'roteirista|' + String(idAlvo || '').trim() : def.grupo;
+  return def.travaPorId ? def.grupo + '|' + String(idAlvo || '').trim() : def.grupo;
 }
 
 /** Motivo da lista curta (aceita sem acento e com outra caixa) ou ''. */
@@ -539,8 +591,46 @@ function validarDecisaoRoteiro(pedido) {
 }
 
 /**
+ * radar-diario: dados.quantidade opcional; se vier, inteiro de 1 a 15 (número, ou texto só com
+ * dígitos). → {ok:true, valor} | falha 'quantidade-invalida'.
+ */
+function lerQuantidade(v) {
+  let n = NaN;
+  if (typeof v === 'number') n = v;
+  else if (typeof v === 'string' && /^\s*\d+\s*$/.test(v)) n = Number(v);
+  if (!Number.isInteger(n) || n < QUANTIDADE_MIN || n > QUANTIDADE_MAX) return falha('quantidade-invalida');
+  return { ok: true, valor: n };
+}
+
+/**
+ * radar-candidato (pedido de um candidato da aba Candidatos) → {ok:true, dados, resumo} | falha.
+ * dados.id_candidato no formato de candidato, igual ao id_alvo e não de teste (T); destino
+ * 'decidir' | 'roteirista'; motivo opcional (texto), numa linha só e com até 300 caracteres. Nenhum
+ * outro campo (além dos dois de trava). Ao bot vão exatamente {id_candidato, destino, motivo}.
+ */
+function validarPedidoCandidato(pedido) {
+  const d = pedido.dados || {};
+  const extras = Object.keys(d).filter(function (k) { return CAMPOS_PEDIDO_CANDIDATO.indexOf(k) < 0 && CAMPOS_SO_DA_PONTE.indexOf(k) < 0; });
+  if (extras.length) return falha('pedido-invalido', 'O pedido do candidato tem campos que a ponte não conhece.');
+  const id = typeof d.id_candidato === 'string' ? d.id_candidato.trim() : '';
+  if (!idCandidatoValido(id)) return falha('id-invalido', 'Id de candidato inválido.');
+  if (id !== pedido.id_alvo) return falha('id-invalido', 'O id do candidato não confere com o pedido.');
+  if (ehIdDeTeste(id)) return falha('teste-recusado', 'Candidato de teste (T) não vira pauta pelo app.');
+  const destino = typeof d.destino === 'string' ? d.destino : '';
+  if (DESTINOS_CANDIDATO.indexOf(destino) < 0) return falha('destino-invalido');
+  if (d.motivo !== undefined && typeof d.motivo !== 'string') return falha('pedido-invalido', 'O motivo precisa ser texto.');
+  const motivo = umaLinha(d.motivo).slice(0, MAX_MOTIVO_CANDIDATO).trim();
+  return {
+    ok: true,
+    dados: { id_candidato: id, destino: destino, motivo: motivo },
+    resumo: 'candidato ' + id + (destino === 'roteirista' ? ' → Roteirista' : ' → Para decidir'),
+  };
+}
+
+/**
  * Depois do token e antes do lock: rotina, permissão, ids e dados.
- * → {ok:true, def, rotina, dadosBot, resumo, marcarTravada, idTravada} | falha.
+ * → {ok:true, def, rotina, dadosBot, resumo, marcarTravada, idTravada, gravaDecisao} | falha.
+ * `gravaDecisao`: radar-candidato com destino 'roteirista' (a aprovação vai para Decisões).
  */
 function conferirPedido(pedido, email, listas) {
   let rotina = pedido.rotina;
@@ -554,19 +644,28 @@ function conferirPedido(pedido, email, listas) {
   const def = ROTINAS[rotina];
   if (!def.disparavel) return falha('rotina-desconhecida', 'O app não dispara o motor: ele roda sozinho quando o arquivo de entrada chega.');
   if (def.acao !== pedido.acao) return falha('rotina-desconhecida', 'A decisão de roteiro vai por "decidir-roteiro".');
-  if (pedido.id_alvo && !idValido(pedido.id_alvo)) return falha('id-invalido', 'Id inválido: ' + umaLinha(pedido.id_alvo).slice(0, 20));
-  if (def.precisaId && !pedido.id_alvo) return falha('id-invalido', 'Falta o id do roteiro.');
+  // radar-candidato: o id_alvo é o id do candidato (AAAA-MM-DD-NN), não um id de roteiro.
+  const idOk = rotina === 'radar-candidato' ? idCandidatoValido : idValido;
+  if (pedido.id_alvo && !idOk(pedido.id_alvo)) return falha('id-invalido', 'Id inválido: ' + umaLinha(pedido.id_alvo).slice(0, 20));
+  if (def.precisaId && !pedido.id_alvo) return falha('id-invalido', rotina === 'radar-candidato' ? 'Falta o id do candidato.' : 'Falta o id do roteiro.');
   const d = pedido.dados || {};
   const marcarTravada = d.marcar_travada === true;
   const idTravada = typeof d.id_execucao_travada === 'string' ? d.id_execucao_travada.trim() : '';
   if (!ID_EXECUCAO_RE.test(idTravada)) return falha('pedido-invalido');
   let dadosBot;
   let resumo = '';
+  let gravaDecisao = false;
   if (pedido.acao === 'decidir-roteiro') {
     const dec = validarDecisaoRoteiro(pedido);
     if (!dec.ok) return dec;
     dadosBot = dec.dados;
     resumo = dec.resumo;
+  } else if (rotina === 'radar-candidato') {
+    const cand = validarPedidoCandidato(pedido);
+    if (!cand.ok) return cand;
+    dadosBot = cand.dados;
+    resumo = cand.resumo;
+    gravaDecisao = cand.dados.destino === 'roteirista';
   } else {
     dadosBot = {};
     Object.keys(d).forEach(function (k) { if (CAMPOS_SO_DA_PONTE.indexOf(k) < 0) dadosBot[k] = d[k]; });
@@ -575,21 +674,35 @@ function conferirPedido(pedido, email, listas) {
       if (!ids.length || !ids.every(idValido)) return falha('id-invalido', 'Há id inválido na lista de pautas.');
       resumo = 'enviar ' + ids.join(', ');
     }
+    if (rotina === 'radar-diario' && dadosBot.quantidade !== undefined) {
+      const q = lerQuantidade(dadosBot.quantidade);
+      if (!q.ok) return q;
+      dadosBot.quantidade = q.valor; // sempre inteiro para o bot
+      resumo = q.valor + (q.valor === 1 ? ' candidato' : ' candidatos');
+    }
   }
-  return { ok: true, def: def, rotina: rotina, dadosBot: dadosBot, resumo: resumo.slice(0, 200), marcarTravada: marcarTravada, idTravada: idTravada };
+  return {
+    ok: true, def: def, rotina: rotina, dadosBot: dadosBot, resumo: resumo.slice(0, 200), marcarTravada: marcarTravada, idTravada: idTravada,
+    gravaDecisao: gravaDecisao,
+  };
 }
 
 /* ------------------------------------------------------------------ aba Execuções */
 
-/** Cabeçalho → {coluna canônica: índice}. O nome canônico vence o sinônimo; repetida, vale a primeira. */
-function indicesDoCabecalho(cabecalho) {
+/**
+ * Cabeçalho → {coluna canônica: índice}. O nome canônico vence o sinônimo; repetida, vale a primeira.
+ * Sem `colunas`, as de Execuções (com os sinônimos dos bots).
+ */
+function indicesDoCabecalho(cabecalho, colunas, sinonimos) {
+  const cols = colunas || COLUNAS_EXECUCOES;
+  const sins = colunas ? (sinonimos || {}) : SINONIMOS_EXECUCOES;
   const exatos = {};
   const porSinonimo = {};
   (cabecalho || []).forEach(function (celula, i) {
     const k = chaveDeCabecalho(celula);
-    if (COLUNAS_EXECUCOES.indexOf(k) >= 0) { if (!(k in exatos)) exatos[k] = i; return; }
-    const s = SINONIMOS_EXECUCOES[k];
-    if (s && !(s in porSinonimo)) porSinonimo[s] = i;
+    if (cols.indexOf(k) >= 0) { if (!(k in exatos)) exatos[k] = i; return; }
+    const s = sins[k];
+    if (s && cols.indexOf(s) >= 0 && !(s in porSinonimo)) porSinonimo[s] = i;
   });
   return Object.assign({}, porSinonimo, exatos);
 }
@@ -642,6 +755,96 @@ function linhaNaOrdem(cabecalho, indices, registro) {
     if (registro[c] !== undefined && registro[c] !== null) linha[indices[c]] = textoCelula(registro[c]);
   });
   return linha;
+}
+
+/* ------------------------------------------------------------------ aba Decisões (só radar-candidato) */
+
+/** 'aprovada' | 'recusada' (igual a normalizarDecisao de js/selecao.js) ou o texto normalizado. */
+function normalizarDecisao(v) {
+  const s = normalizarCabecalho(v);
+  if (/^aprov/.test(s) || s === 'sim' || s === 'ok') return 'aprovada';
+  if (/^recus/.test(s) || s === 'nao') return 'recusada';
+  return s;
+}
+
+/**
+ * Matriz da aba Decisões → {ok:true, linhaCabecalho, cabecalho, indices, decisoes} | falha
+ * 'decisoes-sem-colunas'. Cabeçalho: a primeira das 10 primeiras linhas com 3+ colunas conhecidas
+ * (como o app); precisa ter as 11 colunas (as antigas e as novas), em qualquer ordem.
+ */
+function lerDecisoes(linhas) {
+  const ls = Array.isArray(linhas) ? linhas : [];
+  for (let r = 0; r < Math.min(ls.length, 10); r++) {
+    const indices = indicesDoCabecalho(ls[r] || [], COLUNAS_DECISOES, {});
+    if (Object.keys(indices).length < 3) continue;
+    const faltam = COLUNAS_DECISOES.filter(function (c) { return !(c in indices); });
+    if (faltam.length) {
+      return falha('decisoes-sem-colunas', 'A aba Decisões ainda não tem as colunas ' + faltam.join(', ') + '. Nada foi pedido ao Radar; peça ao Programador para criá-las.');
+    }
+    const decisoes = [];
+    for (let i = r + 1; i < ls.length; i++) {
+      const linha = ls[i] || [];
+      if (!linha.some(function (v) { return celulaTexto(v) !== ''; })) continue;
+      const d = { _linha: i + 1 };
+      COLUNAS_DECISOES.forEach(function (c) { d[c] = celulaTexto(linha[indices[c]]); });
+      decisoes.push(d);
+    }
+    return { ok: true, linhaCabecalho: r, cabecalho: (ls[r] || []).slice(), indices: indices, decisoes: decisoes };
+  }
+  return falha('decisoes-sem-colunas', 'A aba Decisões está sem cabeçalho. Ela precisa de: ' + COLUNAS_DECISOES.join(', ') + '. Nada foi pedido ao Radar.');
+}
+
+/**
+ * Título da pauta para Decisões a partir da aba Candidatos: o ângulo do candidato, senão o tema,
+ * senão '' (quem chama usa o id). Lê pelo cabeçalho (id ou id_candidato, ângulo, tema).
+ */
+function tituloDoCandidato(linhas, id) {
+  const ls = Array.isArray(linhas) ? linhas : [];
+  const cols = ['id', 'angulo', 'tema'];
+  for (let r = 0; r < Math.min(ls.length, 10); r++) {
+    const ind = indicesDoCabecalho(ls[r] || [], cols, { id_candidato: 'id' });
+    if (!('id' in ind) || Object.keys(ind).length < 2) continue;
+    for (let i = r + 1; i < ls.length; i++) {
+      const linha = ls[i] || [];
+      if (celulaTexto(linha[ind.id]) !== id) continue;
+      const t = ('angulo' in ind ? celulaTexto(linha[ind.angulo]) : '') || ('tema' in ind ? celulaTexto(linha[ind.tema]) : '');
+      return umaLinha(t).slice(0, 300);
+    }
+    return '';
+  }
+  return '';
+}
+
+/**
+ * A linha de aprovação que radar-candidato (destino 'roteirista') grava em Decisões, ou nada se o
+ * candidato já tem uma aprovação lá (idempotente: por id_candidato + decisão aprovada).
+ *   o = {decisoes (lerDecisoes), idCandidato, motivo, email, agora, idLote, titulo}
+ * → {tipo:'ja-existe', linha} | {tipo:'gravar', registro}. O registro segue o que o app grava:
+ * semana "S47" e data "AAAA-MM-DD HH:MM" em São Paulo, origem 'manual-app', id_pauta vazio (a
+ * pauta ainda não existe; o Radar a cria).
+ */
+function planejarDecisaoCandidato(o) {
+  const id = String(o.idCandidato || '').trim();
+  const existente = (o.decisoes || []).filter(function (d) {
+    return String(d.id_candidato || '').trim() === id && normalizarDecisao(d.decisao) === 'aprovada';
+  })[0];
+  if (existente) return { tipo: 'ja-existe', linha: existente._linha };
+  return {
+    tipo: 'gravar',
+    registro: {
+      semana: prefixoSemana(o.agora),
+      pauta: String(o.titulo || '').trim() || id,
+      decisao: 'aprovada',
+      motivo: umaLinha(o.motivo).slice(0, MAX_MOTIVO_CANDIDATO),
+      id_pauta: '',
+      rede: '',
+      id_candidato: id,
+      id_lote: String(o.idLote || '').trim(),
+      data: dataHoraPlanilha(o.agora),
+      quem: minusc(o.email),
+      origem: 'manual-app',
+    },
+  };
 }
 
 /* ------------------------------------------------------------------ trava e proteção */
@@ -765,7 +968,10 @@ function contarDisparosNaHora(execucoes, rotina, agora) {
   }).length;
 }
 
-/** Limite por hora da rotina: LIMITE_POR_HORA_<ROTINA>, senão LIMITE_POR_HORA, senão 4. */
+/**
+ * Limite por hora da rotina: LIMITE_POR_HORA_<ROTINA>, senão o padrão da rotina no catálogo
+ * (radar-candidato: 15, um por candidato escolhido), senão LIMITE_POR_HORA, senão 4.
+ */
 function limitePorHora(props, rotina) {
   const ler = function (k) {
     const v = props ? props[k] : undefined;
@@ -773,6 +979,8 @@ function limitePorHora(props, rotina) {
   };
   const daRotina = ler('LIMITE_POR_HORA_' + nomeDePropriedade(rotina));
   if (daRotina !== null) return daRotina;
+  const doCatalogo = rotinaConhecida(rotina) ? ROTINAS[rotina].limitePorHora : undefined;
+  if (Number.isInteger(doCatalogo)) return doCatalogo;
   const geral = ler('LIMITE_POR_HORA');
   return geral !== null ? geral : LIMITE_POR_HORA_PADRAO;
 }
@@ -865,26 +1073,33 @@ function planejarExecucao(o) {
 /* ------------------------------------------------------------------ guardas de gravação */
 
 /**
- * Ids T (teste) nunca vão para Decisões nem Desempenho (PLANO 6 e 13). A ponte hoje não grava
- * nessas abas (não existe acao para isso); qualquer gravação futura nelas precisa passar aqui.
+ * Ids T (teste: qualquer id que começa com T, de roteiro ou de candidato) nunca vão para Decisões
+ * nem Desempenho (PLANO 6 e 13). Toda gravação nessas abas passa aqui.
  * → {ok:true} | falha 'teste-recusado'.
  */
 function podeGravarNaAba(aba, id) {
   const a = chaveDeCabecalho(aba);
-  if (ABAS_PROIBIDAS_PARA_TESTE.indexOf(a) >= 0 && ehTeste(String(id || '').trim())) return falha('teste-recusado');
+  if (ABAS_PROIBIDAS_PARA_TESTE.indexOf(a) >= 0 && ehIdDeTeste(id)) return falha('teste-recusado');
   return { ok: true };
 }
 
-/** A ponte só grava na aba Execuções (a configurada em ABA_EXECUCOES). */
-function abaGravavelPelaPonte(aba, nomeExecucoes) {
-  return !!aba && chaveDeCabecalho(aba) === chaveDeCabecalho(nomeExecucoes || 'Execuções');
+/**
+ * Onde a ponte grava: a aba Execuções (ABA_EXECUCOES) sempre; a aba Decisões (ABA_DECISOES) SÓ no
+ * pedido radar-candidato com destino 'roteirista' (`opcoes` = {rotina, destino, nomeDecisoes}).
+ */
+function abaGravavelPelaPonte(aba, nomeExecucoes, opcoes) {
+  if (!aba) return false;
+  const a = chaveDeCabecalho(aba);
+  if (a === chaveDeCabecalho(nomeExecucoes || 'Execuções')) return true;
+  const o = opcoes || {};
+  return o.rotina === 'radar-candidato' && o.destino === 'roteirista' && a === chaveDeCabecalho(o.nomeDecisoes || 'Decisões');
 }
 
 /** As duas guardas juntas (usadas antes de toda escrita na planilha). */
-function conferirGravacao(aba, id, nomeExecucoes) {
+function conferirGravacao(aba, id, nomeExecucoes, opcoes) {
   const t = podeGravarNaAba(aba, id);
   if (!t.ok) return t;
-  return abaGravavelPelaPonte(aba, nomeExecucoes) ? { ok: true } : falha('aba-nao-permitida');
+  return abaGravavelPelaPonte(aba, nomeExecucoes, opcoes) ? { ok: true } : falha('aba-nao-permitida');
 }
 
 /* ------------------------------------------------------------------ webhook */
@@ -955,7 +1170,7 @@ function vaiTentarDeNovo(codigo) {
  */
 const CAMPOS_CONFIGURAR = ['acao', 'codigo', 'propriedades'];
 const PROPRIEDADES_CONFIGURAVEIS = [
-  'PLANILHA_ID', 'CLIENT_ID', 'EMAILS_DISPARAR', 'EMAILS_DECIDIR', 'ABA_EXECUCOES', 'LIMITE_POR_HORA',
+  'PLANILHA_ID', 'CLIENT_ID', 'EMAILS_DISPARAR', 'EMAILS_DECIDIR', 'ABA_EXECUCOES', 'ABA_DECISOES', 'ABA_CANDIDATOS', 'LIMITE_POR_HORA',
   'WEBHOOK_RADAR_URL', 'WEBHOOK_RADAR_KEY', 'WEBHOOK_ROTEIRISTA_URL', 'WEBHOOK_ROTEIRISTA_KEY',
   'WEBHOOK_DIRETOR_URL', 'WEBHOOK_DIRETOR_KEY',
 ];
@@ -997,6 +1212,8 @@ function lerConfiguracao(props) {
     clientId: String(p.CLIENT_ID || '').trim(),
     planilhaId: String(p.PLANILHA_ID || '').trim(),
     abaExecucoes: String(p.ABA_EXECUCOES || '').trim() || 'Execuções',
+    abaDecisoes: String(p.ABA_DECISOES || '').trim() || 'Decisões',
+    abaCandidatos: String(p.ABA_CANDIDATOS || '').trim() || 'Candidatos',
     listas: { disparar: listaDeEmails(p.EMAILS_DISPARAR), decidir: listaDeEmails(p.EMAILS_DECIDIR) },
   };
 }
@@ -1094,6 +1311,7 @@ function processarPedido_(e, guardarTokenParaRedigir) {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(ESPERA_LOCK_MS)) return falha('ocupado');
   let plano;
+  let decisao = null;
   const agora = agora_();
   try {
     const aba = garantirExecucoes_(cfg);
@@ -1106,13 +1324,27 @@ function processarPedido_(e, guardarTokenParaRedigir) {
     if (plano.tipo !== 'gravar') return plano.resposta;
     const guarda = conferirGravacao(aba.getName(), plano.registro.id_alvo, cfg.abaExecucoes);
     if (!guarda.ok) return guarda;
+    // radar-candidato → Roteirista: confere Decisões ANTES de gravar qualquer coisa (sem as colunas,
+    // nada é gravado nem repassado).
+    if (conferido.gravaDecisao) {
+      decisao = prepararDecisaoCandidato_(cfg, conferido, pedido, ident.email, agora);
+      if (!decisao.ok) return decisao;
+    }
     plano.travadas.forEach(function (linha) { marcarTravada_(aba, tabela.indices, linha, plano.registro.id_execucao); });
     aba.getRange(aba.getLastRow() + 1, 1, 1, tabela.cabecalho.length)
       .setValues([linhaNaOrdem(tabela.cabecalho, tabela.indices, plano.registro)]);
+    if (decisao && decisao.tipo === 'gravar') {
+      decisao.aba.getRange(decisao.aba.getLastRow() + 1, 1, 1, decisao.tabela.cabecalho.length)
+        .setValues([linhaNaOrdem(decisao.tabela.cabecalho, decisao.tabela.indices, decisao.registro)]);
+    }
     SpreadsheetApp.flush();
   } finally {
     lock.releaseLock();
   }
+  // 'gravada' (linha nova em Decisões) | 'ja-existia' (o candidato já estava aprovado lá) | ''
+  const situacaoDecisao = !decisao ? '' : (decisao.tipo === 'gravar' ? 'gravada' : 'ja-existia');
+  const comDecisao = situacaoDecisao ? { decisao: situacaoDecisao } : {};
+  const notaDecisao = situacaoDecisao ? ' A aprovação ficou em Decisões; ao pedir de novo, ela não é gravada outra vez.' : '';
 
   // ---- fora do lock: repassar ao bot
   const registro = plano.registro;
@@ -1120,7 +1352,8 @@ function processarPedido_(e, guardarTokenParaRedigir) {
   if (!webhook) {
     fecharComErro_(cfg, registro.id_execucao, 'webhook não configurado');
     registrar_('info', registro.rotina + ' ' + registro.id_execucao + ': webhook não configurado');
-    return falha('webhook-nao-configurado', null, { id_execucao: registro.id_execucao, status: 'erro' });
+    return falha('webhook-nao-configurado', notaDecisao ? MENSAGENS['webhook-nao-configurado'] + notaDecisao : null,
+      Object.assign({ id_execucao: registro.id_execucao, status: 'erro' }, comDecisao));
   }
   const payload = montarPayloadWebhook({
     registro: registro, agora: agora, planilhaId: cfg.planilhaId, abaExecucoes: cfg.abaExecucoes, dadosBot: conferido.dadosBot,
@@ -1129,10 +1362,40 @@ function processarPedido_(e, guardarTokenParaRedigir) {
   if (!envio.ok) {
     fecharComErro_(cfg, registro.id_execucao, 'webhook falhou' + (envio.codigo ? ' (HTTP ' + envio.codigo + ')' : ' (sem resposta)'));
     registrar_('info', registro.rotina + ' ' + registro.id_execucao + ': webhook falhou ' + envio.codigo);
-    return falha('webhook-falhou', null, { id_execucao: registro.id_execucao, status: 'erro' });
+    return falha('webhook-falhou', notaDecisao ? MENSAGENS['webhook-falhou'] + notaDecisao : null,
+      Object.assign({ id_execucao: registro.id_execucao, status: 'erro' }, comDecisao));
   }
   registrar_('info', registro.rotina + ' ' + registro.id_execucao + ': pedido entregue');
-  return { ok: true, id_execucao: registro.id_execucao, status: 'pedido', rotina: registro.rotina, teste: registro.teste === 'sim' };
+  return Object.assign({ ok: true, id_execucao: registro.id_execucao, status: 'pedido', rotina: registro.rotina, teste: registro.teste === 'sim' }, comDecisao);
+}
+
+/**
+ * Sob o lock, só para radar-candidato com destino 'roteirista': abre a aba Decisões (ABA_DECISOES),
+ * confere a guarda (Decisões só nesta rotina e destino; nunca id T) e as 11 colunas, e planeja a
+ * linha de aprovação (ou nada, se o candidato já está aprovado). O título vem da aba Candidatos
+ * (ângulo ou tema), se ela existir; senão, o id. Nada é gravado aqui.
+ * → {ok:true, aba, tabela, tipo:'gravar', registro} | {ok:true, aba, tabela, tipo:'ja-existe'} | falha.
+ */
+function prepararDecisaoCandidato_(cfg, conferido, pedido, email, agora) {
+  const planilha = SpreadsheetApp.openById(cfg.planilhaId);
+  const abaDec = planilha.getSheetByName(cfg.abaDecisoes);
+  if (!abaDec) return falha('decisoes-sem-colunas', 'A aba "' + cfg.abaDecisoes + '" não foi encontrada na planilha Radar. Nada foi pedido ao Radar.');
+  const id = conferido.dadosBot.id_candidato;
+  const guarda = conferirGravacao(abaDec.getName(), id, cfg.abaExecucoes, { rotina: conferido.rotina, destino: conferido.dadosBot.destino, nomeDecisoes: cfg.abaDecisoes });
+  if (!guarda.ok) return guarda;
+  const tabela = lerDecisoes(abaDec.getDataRange().getValues());
+  if (!tabela.ok) return tabela;
+  let titulo = '';
+  try {
+    const abaCand = planilha.getSheetByName(cfg.abaCandidatos);
+    if (abaCand) titulo = tituloDoCandidato(abaCand.getDataRange().getValues(), id);
+  } catch (e) {
+    titulo = ''; // sem a aba Candidatos, o título é o id
+  }
+  const plano = planejarDecisaoCandidato({
+    decisoes: tabela.decisoes, idCandidato: id, motivo: conferido.dadosBot.motivo, email: email, agora: agora, idLote: pedido.id_lote, titulo: titulo,
+  });
+  return Object.assign({ ok: true, aba: abaDec, tabela: tabela }, plano);
 }
 
 /* ------------------------------------------------------------------ token */

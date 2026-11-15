@@ -715,6 +715,20 @@ button.aviso.fixo:hover{filter:brightness(1.06)}
 .decisao > .pequeno{flex-basis:100%}
 .pauta .pauta-topo .pilha{min-width:0}
 .pauta h2{overflow-wrap:anywhere}
+/* Pautas, chip Candidatos: o destaque da última rodada, os números lado a lado quando cabem, texto
+   longo da planilha (selo, link, id) quebrando sem estourar a largura; no celular os dois botões
+   ocupam a linha toda (toque de 50px) */
+.pauta.nova{border-color:var(--acento)}
+.candidato-numeros{grid-template-columns:repeat(auto-fit,minmax(min(100%,9rem),1fr))}
+.pauta.candidato dd,.pauta.candidato p{overflow-wrap:anywhere}
+.pauta.candidato .meta .selo{white-space:normal;max-width:100%;overflow-wrap:anywhere}
+.candidatos-intro{max-width:58.75rem;margin:0 0 .875rem;overflow-wrap:anywhere}
+.mais-candidatos{max-width:58.75rem;margin-top:1rem;display:flex;justify-content:center}
+.campos-janela{gap:.875rem;margin-top:1.125rem}
+@media (max-width:559px){
+  .pauta.candidato .decisao .botao,.mais-candidatos .botao{flex:1 1 100%}
+  .filtros{border-radius:1.375rem} /* com o chip Candidatos, os chips podem ir para duas linhas */
+}
 /* Roteiros: a decisão do rascunho em três botões largos, empilhados (como no desenho aprovado) */
 .decisao.empilhada{display:grid;gap:.625rem}
 .decisao .botao[aria-pressed="true"].mudar{background:var(--acao-fundo)}

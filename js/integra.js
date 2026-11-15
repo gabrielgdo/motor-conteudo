@@ -3,7 +3,7 @@
 // Integra.
 //
 // Leitura: listagens do Drive, textos e blobs, "data do post", abas da planilha (planilha.ler,
-// planilha.lerPautas, execucoes.ler).
+// planilha.lerPautas, execucoes.ler, candidatos.ler).
 // Escrita (controle manual):
 //   planilha.acrescentar / atualizarCelula   linhas e células da planilha nativa (RAW)
 //   planilha.gravarDecisoes                  decisões de pauta: relê Seleção e Decisões na hora,
@@ -23,9 +23,10 @@ import * as auth from './auth.js';
 import * as drive from './drive.js';
 import * as sheet from './sheet.js';
 import { CONFIG, FLAGS, PONTE_URL, REVISAO_FOLDER, PASTAS } from './config.js';
-import { idValido } from './parse.js';
+import { idValido, idCandidatoValido } from './parse.js';
 import * as C from './controle.js';
 import * as S from './selecao.js';
+import { lerCandidatos } from './candidatos.js';
 import { planejarArquivoRevisao } from './revisao.js';
 
 const naEtapa2 = () => { throw new Error('Disponível na etapa 2'); };
@@ -299,6 +300,21 @@ export const Integra = {
     },
   },
 
+  candidatos: {
+    /** Aba Candidatos (gravada pelo Radar diário) → {candidatos, temIdExecucao, cabecalho, abaAusente}.
+        Sem a aba: lista vazia e abaAusente: true (a tela explica; o resto de Pautas segue igual). */
+    async ler(forcar = false) {
+      try {
+        const aba = await sheet.lerAba(nomeDaAba('candidatos'), { forcar });
+        const t = lerCandidatos(aba.linhas);
+        return { candidatos: t.candidatos, temIdExecucao: t.temIdExecucao, cabecalho: t.cabecalho, abaAusente: false };
+      } catch (e) {
+        if (e?.codigo === 'aba-ausente') return { candidatos: [], temIdExecucao: false, cabecalho: [], abaAusente: true };
+        throw e;
+      }
+    },
+  },
+
   execucoes: {
     /** Aba Execuções → {execucoes, cabecalho, abaAusente}. Sem a aba: lista vazia e abaAusente: true. */
     async ler(forcar = false) {
@@ -321,8 +337,11 @@ export const Integra = {
       if (!C.rotinaConhecida(rotina) || !C.ROTINAS[rotina].disparavel) throw new ErroIntegra('Rotina fora da lista do app.', 'rotina-desconhecida');
       if (rotina === 'roteirista-decisao') throw new ErroIntegra('A decisão de roteiro vai por ponte.decidirRoteiro.', 'rotina-desconhecida');
       if (!C.podeDisparar(auth.emailAtual())) throw new ErroIntegra('Esta conta não pode disparar rodadas.', 'sem-permissao');
+      if (C.ROTINAS[rotina].soDecide && !C.podeDecidir(auth.emailAtual())) throw new ErroIntegra('Só a conta da Robertta decide.', 'sem-permissao');
       const id = texto(id_alvo, 20);
-      if (id && !idValido(id)) throw new ErroIntegra(`Id inválido: ${id}`, 'id-invalido');
+      // radar-candidato: o id_alvo é o id do candidato (AAAA-MM-DD-NN), não um id de roteiro.
+      const idOk = rotina === 'radar-candidato' ? idCandidatoValido : idValido;
+      if (id && !idOk(id)) throw new ErroIntegra(`Id inválido: ${id}`, 'id-invalido');
       if (!texto(chave_idem, 80)) throw new ErroIntegra('Falta a chave do pedido.', 'sem-chave');
       return chamarPonte({
         acao: 'disparar', rotina, id_alvo: id, id_lote: texto(id_lote, 40), chave_idem: texto(chave_idem, 80), dados: dadosLimpos(dados),

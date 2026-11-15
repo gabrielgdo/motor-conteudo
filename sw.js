@@ -12,7 +12,7 @@
 // que ficava numa subpasta ("motor-novo-").
 
 const PREFIXO = 'motor-app-';
-const VERSAO = `${PREFIXO}v10`;
+const VERSAO = `${PREFIXO}v11`;
 const CACHES_ANTIGOS = ['motor-shell-', 'motor-novo-', PREFIXO];
 
 const ARQUIVOS = [
@@ -38,6 +38,7 @@ const ARQUIVOS = [
   './js/visual.js',
   './js/controle.js',
   './js/selecao.js',
+  './js/candidatos.js',
   './js/revisao.js',
   './js/versao.js',
   './js/saida.js',

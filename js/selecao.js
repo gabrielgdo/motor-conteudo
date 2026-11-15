@@ -162,7 +162,7 @@ export function textoMotivo(motivo, observacao = '') {
 
 /* -------------------------------------------------- planejar a gravação */
 
-const ROTULO_ORIGEM = { app: 'app', chat: 'chat', radar: 'Radar', ponte: 'app' };
+const ROTULO_ORIGEM = { app: 'app', 'manual-app': 'app', chat: 'chat', radar: 'Radar', ponte: 'app' };
 
 function textoJaDecidido(d, agora) {
   const quando = lerDataHora(d.data);

@@ -17,6 +17,21 @@ export function ehTeste(id) {
   return idValido(id) && id.startsWith('T');
 }
 
+/**
+ * Id de candidato da aba Candidatos (gravado pelo Radar diário): `AAAA-MM-DD-NN` (ex.:
+ * `2026-11-14-01`), com `T` na frente nos de teste. Igual a ID_CANDIDATO_RE de ponte/Code.gs.
+ */
+export const ID_CANDIDATO_RE = /^T?\d{4}-\d{2}-\d{2}-\d{1,3}$/;
+
+export function idCandidatoValido(id) {
+  return typeof id === 'string' && ID_CANDIDATO_RE.test(id);
+}
+
+/** Candidato de teste: o id começa com T (como os ids T do resto do app). */
+export function ehCandidatoTeste(id) {
+  return /^T/i.test(String(id ?? '').trim());
+}
+
 /** Id no começo do nome, seguido de espaço ou ponto ("S46-03 bruto.MOV", "T01.mp4"). */
 export function idNoInicio(nome) {
   const m = String(nome || '').match(new RegExp(`^(${ID_SRC})(?=[ .])`));
