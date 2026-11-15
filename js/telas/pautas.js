@@ -38,7 +38,7 @@ import {
 import { faixaExecucao } from '../componentes/execucao.js';
 import { moldura } from '../componentes/janelas.js';
 import { cab, selo, chipFiltro, vazio, campo, segmento, painelCarregando } from './pecas.js';
-import { fichaDoTexto, numerosDoTexto, referenciasEmLista, htmlTextoRadar } from './ficha.js';
+import { fichaDoTexto, separarTextoRadar, numerosDoTexto, referenciasEmLista, htmlTextoRadar } from './ficha.js';
 
 export const MENSAGEM_SELECAO_AUSENTE = 'A aba Seleção ainda não existe na planilha Radar. Até lá, a escolha continua na conversa com o Radar.';
 export const NOTA_SO_ROBERTTA = 'Só a conta da Robertta decide.';
@@ -157,6 +157,30 @@ function linhaPrazo(p) {
   return partes.length ? `<p class="linha-id pequeno">${partes.join('<span aria-hidden="true"> · </span>')}</p>` : '';
 }
 
+/** Corpo de um campo longo: com rótulos do Radar, um parágrafo por rótulo (rótulo em negrito). */
+function corpoDoCampo(texto) {
+  return separarTextoRadar(texto).map((s) => {
+    const refs = s.chave === 'REFERÊNCIAS' ? referenciasEmLista(s.texto) : [];
+    const rot = s.rotulo ? `<b>${esc(s.rotulo)}${s.nota ? ` (${esc(s.nota)})` : ''}:</b> ` : '';
+    return refs.length > 1
+      ? `<p>${rot}</p><ol class="ficha-refs">${refs.map((r) => `<li>${htmlTextoRadar(r)}</li>`).join('')}</ol>`
+      : `<p>${rot}${htmlTextoRadar(s.texto)}</p>`;
+  }).join('');
+}
+
+/** As seções recolhidas do cartão de pauta (Ficha): uma por campo preenchido, e os dados no fim. */
+function secoesDaPauta(p) {
+  const campos = [
+    ['Fundamentação', p.fundamentacao], ['Restrição principal', p.restricao_principal],
+    ['Público e situação', p.publico_situacao], ['Entrega', p.entrega], ['Sinal social', p.sinal_social],
+    ['Contribuição junguiana', p.contribuicao_junguiana], ['Ganchos opcionais', p.ganchos_opcionais],
+  ].filter(([, v]) => String(v || '').trim());
+  const secoes = campos.map(([rotulo, v]) => `<details class="ficha-secao"><summary>${esc(rotulo)}</summary><div class="ficha-corpo">${corpoDoCampo(v)}</div></details>`);
+  const dados = [item('Semana', p.semana), item('Data da seleção', p.data_selecao), item('Candidato', p.id_candidato)].join('');
+  if (dados) secoes.push(`<details class="ficha-secao"><summary>Dados da pauta</summary><div class="ficha-corpo"><dl>${dados}</dl></div></details>`);
+  return secoes.length ? `<div class="ficha-secoes">${secoes.join('')}</div>` : '';
+}
+
 function cartao(p, ctx) {
   const id = p.id_pauta;
   const teste = ehIdTeste(id);
@@ -205,22 +229,11 @@ function cartao(p, ctx) {
     <dl>
       ${item('Pergunta central', p.pergunta_central)}
       ${item('Por que agora', p.por_que_agora)}
-      ${item('Fundamentação', p.fundamentacao)}
-      ${item('Restrição principal', p.restricao_principal)}
     </dl>
     ${linhaPrazo(p)}
     ${est.decisao && decidida ? `<p class="pequeno apagado">${esc(linhaDaDecisao(est.decisao, ctx.agora))}</p>` : ''}
     ${notaAprovadoSemEnvio(p, est, ctx)}
-    <details><summary>Mais sobre esta pauta</summary><dl>
-      ${item('Público e situação', p.publico_situacao)}
-      ${item('Entrega', p.entrega)}
-      ${item('Sinal social', p.sinal_social)}
-      ${item('Contribuição junguiana', p.contribuicao_junguiana)}
-      ${item('Ganchos opcionais', p.ganchos_opcionais)}
-      ${item('Semana', p.semana)}
-      ${item('Data da seleção', p.data_selecao)}
-      ${item('Candidato', p.id_candidato)}
-    </dl></details>
+    ${secoesDaPauta(p)}
     ${decisao}
     ${resultado ? `<p class="nota ${TOM_RESULTADO[resultado.acao] || 'calma'} pequeno" role="status">${ic(resultado.acao === 'gravar' ? 'check' : 'info', 18)}<span>${esc(resultado.mensagem)}</span></p>` : ''}
   </article>`;

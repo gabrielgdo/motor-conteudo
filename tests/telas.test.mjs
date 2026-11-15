@@ -414,3 +414,25 @@ test('Resultados: a faixa da retrospectiva fica dentro do mesmo painel do "Em br
   assert.match(h, /Em breve, aqui/);
   assert.match(h, /ainda sem registro/);
 });
+
+test('pauta na Ficha: pergunta e por que agora à vista, o resto em seções, campo vazio some', () => {
+  const d = dadosPautas({ pautas: [{ id_pauta: 'S47-01', titulo: 'T', pergunta_central: 'P?', por_que_agora: 'Agora',
+    fundamentacao: 'REFERÊNCIAS: (1) a https://x.org (2) b <img src=x onerror=alert(1)>', restricao_principal: '', publico_situacao: 'Adultos',
+    data_selecao: '2026-11-18', id_candidato: '2026-11-17-01' }] });
+  const h = htmlPautas({ dados: d, exec: dadosExec([]), email: ROBERTTA, filtro: 'decidir', agora: AGORA });
+  const p = h.match(/aria-labelledby="p-S47-01">[\s\S]*?<\/article>/)[0];
+  const antesDasSecoes = p.slice(0, p.indexOf('ficha-secoes'));
+  assert.match(antesDasSecoes, /<dt>Pergunta central<\/dt><dd>P\?<\/dd>/);
+  assert.match(antesDasSecoes, /<dt>Por que agora<\/dt><dd>Agora<\/dd>/);
+  assert.doesNotMatch(antesDasSecoes, /<details/);
+  const fund = p.match(/<details class="ficha-secao"><summary>Fundamentação<\/summary>[\s\S]*?<\/details>/)[0];
+  assert.match(fund, /<a href="https:\/\/x\.org\/"/);
+  assert.ok(!fund.includes('<img'));
+  assert.match(p, /<details class="ficha-secao"><summary>Público e situação<\/summary>/);
+  assert.doesNotMatch(p, /summary>Restrição principal/);
+  const dados = p.match(/<summary>Dados da pauta<\/summary>[\s\S]*?<\/details>/)[0];
+  assert.match(dados, /<dt>Semana<\/dt><dd>S47<\/dd>/);
+  assert.match(dados, /<dt>Candidato<\/dt><dd>2026-11-17-01<\/dd>/);
+  assert.doesNotMatch(p, /Mais sobre esta pauta/);
+  assert.doesNotMatch(p, /<details[^>]*><summary>[^<]*<\/summary><div class="ficha-corpo"><(p|dl)><\/(p|dl)>/);
+});
