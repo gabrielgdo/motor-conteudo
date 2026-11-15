@@ -21,13 +21,14 @@ const eventos = [];
 globalThis.window = { dispatchEvent: (ev) => { eventos.push(ev.type); return true; } };
 globalThis.sessionStorage = new StorageFalso();
 globalThis.localStorage = new StorageFalso();
-// fetch falso: a revogação do token (auth.revogarToken) nunca sai para a rede nos testes.
+// fetch falso: registra tudo. O "Sair" NUNCA pode chamar o revoke do Google (o rclone do Motor usa o
+// mesmo projeto do Google: revogar derrubava o Drive do Motor).
 const revogacoes = [];
 globalThis.fetch = (url, op) => { revogacoes.push({ url, op }); return Promise.resolve({ ok: true }); };
-const tokensRevogados = () => revogacoes.map((r) => r.op.body.get('token'));
+const pedidosAoRevoke = () => revogacoes.filter((r) => /oauth2\.googleapis\.com\/revoke|accounts\.google\.com\/o\/oauth2\/revoke/.test(String(r.url)));
 
 const auth = await import('../js/auth.js');
-const { limparArmazenamento, chaveParaApagar, opcoesDeEntrada, desligarGoogle, revogarToken, URL_REVOGAR, PREFIXO_UPLOAD, CHAVE_TEMA } = auth;
+const { limparArmazenamento, chaveParaApagar, opcoesDeEntrada, desligarGoogle, PREFIXO_UPLOAD, CHAVE_TEMA } = auth;
 const { chaveSessao } = await import('../js/upload.js');
 
 const EMAIL = 'robertta.c.alonso@gmail.com';
@@ -102,44 +103,32 @@ test('opcoesDeEntrada: com e-mail lembrado usa login_hint; depois de sair (ou se
 
 /* --------------------------------------------------------- Google (puro) */
 
-test('revogarToken: POST keepalive no endpoint do Google, sem o GIS; fetch que lança ou rejeita não quebra', async () => {
-  const pedidos = [];
-  assert.equal(revogarToken('tok-7', (url, op) => { pedidos.push({ url, op }); return Promise.resolve(); }), true);
-  assert.equal(pedidos[0].url, URL_REVOGAR);
-  assert.equal(pedidos[0].op.method, 'POST');
-  assert.equal(pedidos[0].op.keepalive, true); // segue mesmo com a página recarregando logo depois
-  assert.equal(pedidos[0].op.mode, 'no-cors');
-  assert.equal(pedidos[0].op.body.get('token'), 'tok-7');
-  assert.equal(revogarToken('', () => assert.fail('sem token não pede')), false);
-  assert.equal(revogarToken('tok', null), false);
-  assert.equal(revogarToken('tok', () => { throw new Error('sem rede'); }), false);
-  assert.equal(revogarToken('tok', () => Promise.reject(new Error('offline'))), true);
-  await new Promise((r) => setImmediate(r)); // a rejeição foi tratada (não vira erro solto)
+test('auth.js não revoga nada: sem revogarToken, sem URL_REVOGAR e sem nenhuma chamada de revoke no código', async () => {
+  assert.equal(auth.revogarToken, undefined);
+  assert.equal(auth.URL_REVOGAR, undefined);
+  const fs = await import('node:fs');
+  const fonte = fs.readFileSync(new URL('../js/auth.js', import.meta.url), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, ''); // sem comentários
+  assert.ok(!/\.revoke\s*\(/.test(fonte), 'auth.js não pode chamar .revoke(');
+  assert.ok(!/oauth2\.googleapis\.com\/revoke/.test(fonte), 'auth.js não pode usar o endpoint de revogação');
 });
 
-test('desligarGoogle: revoga pelo fetch e desliga a seleção automática; sem fetch usa o GIS; GIS ausente ou que lança não quebra', () => {
+test('desligarGoogle: só desliga a seleção automática; NUNCA revoga (nem pelo GIS nem pelo fetch); GIS ausente ou que lança não quebra', () => {
   const g = gisFalso();
-  const pedidos = [];
-  desligarGoogle(g, 'tok-9', (url, op) => { pedidos.push(op.body.get('token')); return Promise.resolve(); });
-  assert.deepEqual(pedidos, ['tok-9']);
-  assert.deepEqual(g.revogados, []); // pelo fetch, sem pedir de novo ao GIS
+  revogacoes.length = 0;
+  desligarGoogle(g, 'tok-9');
+  assert.deepEqual(g.revogados, []);
+  assert.deepEqual(pedidosAoRevoke(), []);
   assert.equal(g.autoSelectDesligado, 1);
-  // Sem fetch (ou fetch que lança): o GIS, se carregado, revoga
-  desligarGoogle(g, 'tok-8', null);
-  desligarGoogle(g, 'tok-6', () => { throw new Error('x'); });
-  assert.deepEqual(g.revogados, ['tok-8', 'tok-6']);
 
-  assert.doesNotThrow(() => desligarGoogle(undefined, 'tok'));
-  assert.doesNotThrow(() => desligarGoogle({}, 'tok'));
-  assert.doesNotThrow(() => desligarGoogle({ accounts: { oauth2: {} } }, 'tok')); // só o id carregou, ou nada
-  assert.doesNotThrow(() => desligarGoogle({ get accounts() { throw new Error('GIS quebrado'); } }, 'tok'));
-
-  // revoke lançando (sem rede, sem fetch) não impede desligar a seleção automática
+  assert.doesNotThrow(() => desligarGoogle(undefined));
+  assert.doesNotThrow(() => desligarGoogle({}));
+  assert.doesNotThrow(() => desligarGoogle({ accounts: { oauth2: {} } }));
+  assert.doesNotThrow(() => desligarGoogle({ get accounts() { throw new Error('GIS quebrado'); } }));
   let desligou = false;
-  desligarGoogle({ accounts: { oauth2: { revoke() { throw new Error('rede'); } }, id: { disableAutoSelect() { desligou = true; } } } }, 'tok', null);
+  desligarGoogle({ accounts: { oauth2: { revoke() { assert.fail('não pode revogar'); } }, id: { disableAutoSelect() { desligou = true; } } } }, 'tok');
   assert.ok(desligou);
-  // disableAutoSelect lançando também não quebra
-  assert.doesNotThrow(() => desligarGoogle({ accounts: { id: { disableAutoSelect() { throw new Error('x'); } } } }, 'tok'));
+  assert.doesNotThrow(() => desligarGoogle({ accounts: { id: { disableAutoSelect() { throw new Error('x'); } } } }));
 });
 
 /* ------------------------------------------------------------- sair() */
@@ -178,7 +167,7 @@ test('sair: revoke lançando, window.google que lança ao ser lido e armazenamen
   }
 });
 
-test('sair: revoga o token atual e desliga a seleção automática, sem esperar a resposta', () => {
+test('sair: NUNCA revoga o token no Google (nem GIS nem oauth2.googleapis.com/revoke); só apaga a sessão local e desliga a seleção automática', () => {
   const g = gisFalso();
   window.google = g;
   revogacoes.length = 0;
@@ -190,9 +179,12 @@ test('sair: revoga o token atual e desliga a seleção automática, sem esperar 
   } finally {
     globalThis.fetch = fetchAntes;
   }
-  assert.deepEqual(tokensRevogados(), ['tok-1']);
+  assert.deepEqual(pedidosAoRevoke(), []);
+  assert.deepEqual(revogacoes, []); // o Sair não faz nenhum pedido de rede
+  assert.deepEqual(g.revogados, []);
   assert.equal(g.autoSelectDesligado, 1);
   assert.equal(auth.estaLogado(), false);
+  assert.equal(sessionStorage.getItem('motor.sessao'), null);
 });
 
 test('encerrarSessao: limpa tudo ANTES e sem o Google (nada é revogado aqui) e devolve o token', () => {
@@ -208,11 +200,15 @@ test('encerrarSessao: limpa tudo ANTES e sem o Google (nada é revogado aqui) e 
   assert.deepEqual(g.revogados, []);
   assert.equal(g.autoSelectDesligado, 0);
   assert.equal(auth.encerrarSessao(), null); // de novo, sem sessão: null, sem lançar
-  // A segunda metade revoga, e nunca lança, mesmo com o GIS quebrado
+  // A segunda metade também não revoga, e nunca lança, mesmo com o GIS quebrado
+  window.google = g;
+  auth.desligarGoogleDaJanela('tok-1');
+  assert.deepEqual(g.revogados, []);
+  assert.equal(g.autoSelectDesligado, 1);
   Object.defineProperty(window, 'google', { configurable: true, get() { throw new Error('bloqueado'); } });
   assert.doesNotThrow(() => auth.desligarGoogleDaJanela('tok-1'));
   delete window.google;
-  assert.deepEqual(tokensRevogados(), ['tok-1']);
+  assert.deepEqual(pedidosAoRevoke(), []);
 });
 
 test('sair: renovação pendente é rejeitada com "saiu", sem o aviso de sessão expirada; depois nada renova', async () => {

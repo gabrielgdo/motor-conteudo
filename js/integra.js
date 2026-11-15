@@ -127,13 +127,13 @@ export const Integra = {
   /** Toque no aviso "Sua sessão expirou": renova com popup (gesto do usuário). */
   renovarInterativo: () => auth.renovarInterativo(),
 
-  /** Revoga o token (sem esperar), cancela renovações, apaga a sessão e as chaves do app no
+  /** Não revoga nada no Google (ver auth.js). Cancela renovações, apaga a sessão e as chaves do app no
       armazenamento (menos o tema e os envios retomáveis) e esquece os caches do Drive e da planilha. */
   sair() {
     Integra.desligarGoogle(Integra.encerrar());
   },
 
-  /** Primeira metade do sair, síncrona e sem depender do Google: devolve o token para revogar depois. */
+  /** Primeira metade do sair, síncrona e sem depender do Google: devolve o token (que não é revogado). */
   encerrar() {
     const token = auth.encerrarSessao();
     try { drive.esquecerTudo(); } catch { /* segue */ }
@@ -142,7 +142,7 @@ export const Integra = {
     return token;
   },
 
-  /** Segunda metade: revoga o token no Google sem esperar resposta (sem GIS também). Nunca lança. */
+  /** Segunda metade: só desliga a seleção automática do Google; nunca revoga o token. Nunca lança. */
   desligarGoogle: (token) => auth.desligarGoogleDaJanela(token),
 
   email: () => auth.emailAtual(),

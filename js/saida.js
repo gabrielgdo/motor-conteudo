@@ -4,7 +4,7 @@
 // 2. marcar a saída em sessionStorage (a página recarregada abre na entrada, com a mensagem, se houver)
 // 3. mostrarEntrada: troca para a tela de entrada na hora
 // 4. limpezas: janelas, teleprompter, vídeos, downloads, dados e estado em memória
-// 5. desligar: revoga o token no Google, sem esperar resposta (o GIS pode nem ter carregado)
+// 5. desligar: só desliga a seleção automática do Google; NUNCA revoga o token (o rclone do Motor usa o mesmo projeto)
 // 6. recarregar: location.replace para o endereço do app sem rota, para nada da conta ficar em
 //    memória (nem no bfcache do iPhone) e para a página já vir com a versão publicada
 // Cada passo roda num try/catch: um passo que falha não impede os outros.

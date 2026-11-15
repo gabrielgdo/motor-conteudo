@@ -137,7 +137,7 @@ export function mostrarLogin(mensagem = '', { preparar = true } = {}) {
  * Sai da conta (ordem em js/saida.js): primeiro apaga a sessão e o armazenamento e mostra a entrada,
  * de forma síncrona e sem depender do Google; depois fecha janelas e teleprompter, para os players e
  * revoga as URLs dos vídeos, esquece downloads, apaga dados, estado, rascunhos e a lista de ajustes;
- * então revoga o token (sem esperar) e recarrega a página no endereço do app sem rota
+ * então desliga a seleção automática do Google (sem revogar nada: ver auth.js) e recarrega a página no endereço do app sem rota
  * (location.replace), para nada da conta ficar em memória nem no bfcache. Nada renova sozinho.
  */
 export function sairDaConta(mensagem = '') {

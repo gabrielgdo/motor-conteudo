@@ -148,49 +148,22 @@ export function limparArmazenamento(storage) {
   return apagar;
 }
 
-/** Endpoint de revogação do Google (o mesmo que o google.accounts.oauth2.revoke do GIS usa). */
-export const URL_REVOGAR = 'https://oauth2.googleapis.com/revoke';
+/*
+ * O "Sair" NUNCA revoga nada no Google (nem oauth2.revoke do GIS nem oauth2.googleapis.com/revoke).
+ * O app e o rclone do Motor (motordrive) usam clientes do mesmo projeto do Google: revogar o token
+ * do app derrubava também a autorização do Drive do Motor (invalid_grant). Sair apaga só a sessão
+ * local; o token esquecido vence sozinho em até 1 hora.
+ */
 
 /**
- * Revoga o token direto no Google, sem o GIS (no app instalado no iPhone o script do GIS pode não
- * ter carregado). keepalive: o pedido segue mesmo com a página recarregando logo depois do "Sair".
- * no-cors: não precisa ler a resposta. Devolve true se o pedido saiu. Nunca lança nem rejeita.
+ * Desliga só a seleção automática de conta do Google (o próximo login abre a escolha de conta).
+ * Não revoga o token. GIS ausente ou que lança não impede nada.
  */
-export function revogarToken(token, buscar) {
-  if (!token || typeof buscar !== 'function') return false;
-  try {
-    const p = buscar(URL_REVOGAR, {
-      method: 'POST', mode: 'no-cors', credentials: 'omit', keepalive: true,
-      body: new URLSearchParams({ token }),
-    });
-    if (p && typeof p.catch === 'function') p.catch(() => {});
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function fetchDaJanela() {
-  try { return typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : null; } catch { return null; }
-}
-
-/**
- * Desliga a conta no Google sem esperar resposta: revoga o token (pelo fetch; sem fetch, pelo GIS,
- * se carregado) e desliga a seleção automática. GIS ausente, que lança ou sem rede não impede nada.
- */
-export function desligarGoogle(google, token, buscar = fetchDaJanela()) {
-  let revogou = false;
-  try { revogou = revogarToken(token, buscar); } catch { /* segue */ }
-  if (!revogou) {
-    try {
-      const oauth2 = google?.accounts?.oauth2;
-      if (token && typeof oauth2?.revoke === 'function') oauth2.revoke(token, () => {});
-    } catch { /* sem GIS ou sem rede: sai do mesmo jeito */ }
-  }
+export function desligarGoogle(google) {
   try {
     const id = google?.accounts?.id;
     if (typeof id?.disableAutoSelect === 'function') id.disableAutoSelect();
-  } catch { /* idem */ }
+  } catch { /* sem GIS: sai do mesmo jeito */ }
 }
 
 /** Opções do requestAccessToken no "Entrar com Google": depois de sair (ou sem e-mail lembrado), escolha de conta. */
@@ -327,25 +300,17 @@ async function buscarEmail(accessToken) {
   return String(info.email || '').toLowerCase();
 }
 
-function revogar(token) {
-  try {
-    if (token && window.google?.accounts?.oauth2) window.google.accounts.oauth2.revoke(token, () => {});
-  } catch { /* ignorar */ }
-}
-
 /** Transforma a resposta do GIS numa sessão, conferindo e-mail e escopos. */
 async function aceitarToken(resp, emailEsperado, ger = geracao) {
   if (ger !== geracao) throw erroSaiu();
   const oauth2 = window.google.accounts.oauth2;
   if (!oauth2.hasGrantedAllScopes(resp,
     'https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/spreadsheets')) {
-    revogar(resp.access_token);
     throw new ErroAuth('Para usar o Motor é preciso marcar as permissões do Google Drive e das Planilhas. Entre de novo e aceite todas.', 'escopos');
   }
   const email = await buscarEmail(resp.access_token);
-  if (ger !== geracao) { revogar(resp.access_token); throw erroSaiu(); } // saiu enquanto confirmava a conta
+  if (ger !== geracao) throw erroSaiu(); // saiu enquanto confirmava a conta
   if (!ALLOWED.includes(email)) {
-    revogar(resp.access_token);
     limparSessao();
     throw new ErroAuth(`Esta conta (${email}) não tem acesso ao Motor de Conteúdo. Entre com a conta da Robertta ou do Gabriel.`, 'nao_permitido');
   }
@@ -479,7 +444,7 @@ export async function renovarInterativo() {
  * pedido de token pendente (rejeitados com o código 'saiu', sem o aviso "sessão expirou") e apaga,
  * na hora, a sessão (motor.sessao, do localStorage e do sessionStorage) e as outras chaves de conta
  * (motor.email) e dados dos dois armazenamentos (ficam o tema e as sessões de envio retomável). O próximo login abre a escolha de conta. Devolve o token que estava em uso
- * (para revogar depois, com desligarGoogleDaJanela) ou null. Nunca lança.
+ * (não é revogado: o Sair nunca revoga no Google) ou null. Nunca lança.
  */
 export function encerrarSessao() {
   geracao++;
@@ -498,9 +463,9 @@ export function encerrarSessao() {
   return token;
 }
 
-/** Segunda metade do "Sair": revoga o token e desliga a seleção automática. Nunca lança. */
-export function desligarGoogleDaJanela(token) {
-  try { desligarGoogle(googleDaJanela(), token); } catch { /* sai do mesmo jeito */ }
+/** Segunda metade do "Sair": só desliga a seleção automática (NUNCA revoga o token). Nunca lança. */
+export function desligarGoogleDaJanela() {
+  try { desligarGoogle(googleDaJanela()); } catch { /* sai do mesmo jeito */ }
 }
 
 /** "Sair" completo: encerrarSessao() e, depois, desligarGoogleDaJanela(). Nunca lança. */

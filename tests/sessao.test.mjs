@@ -197,13 +197,13 @@ test('continuar: um toque com login_hint; janela fechada mantém a sessão venci
   auth.encerrarSessao();
 });
 
-test('continuar: conta fora da lista é recusada (token revogado, nada gravado)', async (t) => {
+test('continuar: conta fora da lista é recusada (nada gravado, nada revogado no Google)', async (t) => {
   const ctx = ambiente(t, { local: new StorageFalso({ 'motor.sessao': sessao(-5, 'token-falso-velho') }) });
   const auth = await abrirApp();
   ctx.email = OUTRA; // no popup ela escolheu outra conta
   ctx.responder('token-falso-outra');
   await assert.rejects(auth.continuar(EMAIL), (e) => e.codigo === 'nao_permitido');
-  assert.deepEqual(ctx.revogados, ['token-falso-outra']);
+  assert.deepEqual(ctx.revogados, []); // nunca revoga: o rclone do Motor usa o mesmo projeto do Google
   assert.equal(auth.getToken(), null);
   assert.ok(!String(localStorage.getItem('motor.sessao') || '').includes('token-falso-outra'));
 });
