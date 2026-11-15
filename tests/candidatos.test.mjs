@@ -380,8 +380,8 @@ test('janelas: campo de quantidade (number 1–15, padrão 5) e motivo opcional;
 
   const c = { id: '2026-11-17-01', angulo: '<i>ângulo</i>', criador: '@x' };
   const ex = extrasDoCandidato(c, 'roteirista');
-  assert.match(ex[1].texto, /cria a pauta na aba Seleção, verifica as fontes e manda ao Roteirista/);
-  assert.match(ex[1].texto, /grava a sua decisão \(aprovada\) em Decisões/);
+  assert.match(ex[1].texto, /cria a pauta na aba Seleção, verifica as fontes e começa o rascunho/);
+  assert.match(ex[1].texto, /é gravada em Decisões e em 1-Radar\/decisoes da semana/);
   assert.match(extrasDoCandidato(c, 'decidir')[1].texto, /pauta proposta na aba Seleção, verifica as fontes, e ela aparece em Para decidir/);
   const j = janelaRodar({
     rotina: 'radar-candidato', idAlvo: c.id, email: ROBERTTA, agora: AGORA, dados: dadosExec([]), ligada: true, extras: ex,
