@@ -63,7 +63,15 @@ export const CONFIG = {
    nunca aqui). Com a ponte desligada ou sem endereço, Integra.ponte.* responde
    "O disparo pelo app ainda não está ligado." */
 
-export const FLAGS = { ponte: true, decisoesPeloApp: true, revisaoPeloApp: true };
+export const FLAGS = { ponte: true, decisoesPeloApp: true, revisaoPeloApp: true, central: true };
+
+/* Central (Supabase, região São Paulo): pedidos ao motor em segundos (js/central.js). A URL e a chave
+   pública não são segredo: quem pode o quê fica nas regras do banco (RLS). Sem sessão na central ou com
+   o motor sem ouvir, o app grava os pedidos no Drive como antes. */
+export const CENTRAL = {
+  url: 'https://jlknjytaiyjqmgfpsntb.supabase.co',
+  chave: 'sb_publishable_DV3gXV4H9AVoPpZtNgiRcA_dY935tA-',
+};
 
 export const PONTE_URL = 'https://script.google.com/macros/s/AKfycbxJLR-qE9FeD167wx533b6wc8kNlbQYeDV2X0Euad2_wTmUabntp5-mo3PVCQ38o1j6/exec';
 

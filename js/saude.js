@@ -197,3 +197,21 @@ export function htmlSaude(leitura) {
     `<span class="faixa-nome">Motor</span><span class="faixa-item">${selo(s.titulo, s.tom)}</span><span class="faixa-item andamento-frase">${esc(s.frase)}</span>`,
   )}${det}</section>`;
 }
+
+/** Linha da central (Supabase) no Início: ligada, ou o botão para ligar neste aparelho.
+    {conectada, ouvindo} → HTML. `ouvindo`: true | false | null (ainda não sabe). */
+export function htmlCentral({ conectada = false, ouvindo = null } = {}) {
+  const faixa = (itens) => `<div class="faixa" role="group" aria-label="Central do motor">${itens}</div>`;
+  if (!conectada) {
+    return `<section class="painel andamento central" aria-label="Central">${faixa(
+      '<span class="faixa-nome">Central</span><span class="faixa-item andamento-frase">Ligue para os seus pedidos chegarem ao motor em segundos.</span>'
+      + '<button type="button" class="botao pequeno" data-acao="central-conectar">Ligar a central</button>',
+    )}</section>`;
+  }
+  const t = ouvindo === true ? ['ligada', 'ok', 'Seus pedidos chegam ao motor em segundos.']
+    : ouvindo === false ? ['ligada', 'neutro', 'O motor ainda não está ouvindo: os pedidos vão pelo Drive, como antes.']
+      : ['ligada', 'neutro', 'Conferindo o motor…'];
+  return `<section class="painel andamento central" aria-label="Central">${faixa(
+    `<span class="faixa-nome">Central</span><span class="faixa-item">${selo(t[0], t[1])}</span><span class="faixa-item andamento-frase">${esc(t[2])}</span>`,
+  )}</section>`;
+}

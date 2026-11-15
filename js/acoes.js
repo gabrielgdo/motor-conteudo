@@ -31,7 +31,7 @@ import {
 import { versaoVistaDe } from './telas/roteiros.js';
 import { arquivoDeLegenda } from './telas/prontos.js';
 import { desenhar, rotear } from './roteador.js';
-import { abrirJanela, fecharJanela, avisar, avisarComAcao, removerAviso, copiarTexto, janelaSobre, janelaSair } from './componentes/janelas.js';
+import { abrirJanela, fecharJanela, avisar, avisarComAcao, removerAviso, copiarTexto, janelaSobre, janelaSair, moldura } from './componentes/janelas.js';
 import { Paleta } from './componentes/paleta.js';
 import { Tele } from './componentes/tele.js';
 import { Players } from './componentes/players.js';
@@ -338,6 +338,22 @@ export const ACOES = {
   },
   'outra-conta'() { return loginDaEntrada($('#botao-outra-conta'), null, () => Integra.entrarComOutraConta()); },
   sair() { if (estado.logada) abrirJanela(janelaSair(Integra.email())); },
+  // Central (Supabase): botão do Google numa janela; a sessão fica neste aparelho até o "Sair".
+  'central-conectar'() {
+    if (!estado.logada || !Integra.central) return;
+    abrirJanela(moldura('Ligar a central', `<div class="pilha">
+      <p>Com a central ligada, as suas decisões e pedidos chegam ao motor em segundos, e não em até 6 minutos. Se o motor não estiver ouvindo, tudo continua indo pelo Drive, como antes.</p>
+      <p class="pequeno apagado">Use a mesma conta Google do app. Só é preciso fazer isto uma vez neste aparelho.</p>
+      <div id="central-botao" style="min-height:44px"></div>
+      <p class="pequeno erro" id="central-erro" role="alert"></p></div>`));
+    Integra.central.conectar($('#central-botao'))
+      .then(() => {
+        fecharJanela();
+        avisar('Central ligada neste aparelho.');
+        window.dispatchEvent(new CustomEvent('motor:central'));
+      })
+      .catch((e) => { const el = $('#central-erro'); if (el) el.textContent = e?.message || 'Não consegui ligar a central agora.'; });
+  },
   'confirmar-sair'() { sairDaConta(); },
   async 'renovar-sessao'(el) {
     if (el.disabled) return;
@@ -475,7 +491,8 @@ export const ACOES = {
       if (v && j.decisao === 'ajustar') pendentesDe(r, v).length = 0;
       limparCampos('pv-obs');
       fecharJanela();
-      avisar(`“${res.nome}” gravado em 4-Revisao. O motor pega o arquivo em 1 a 6 min.`);
+      avisar(res.viaCentral ? `“${res.nome}” enviado ao motor pela central: ele recebe em segundos.`
+        : `“${res.nome}” gravado em 4-Revisao. O motor pega o arquivo em 1 a 6 min.`);
       carregar({ forcar: true });
     } catch (e) {
       if (estado.janela !== j || !estado.logada) return;
@@ -571,7 +588,8 @@ export const ACOES = {
         for (const id of String(j.dados?.ids || '').split(',').map((s) => s.trim()).filter(Boolean)) {
           estado.enviosLocais[id] = { desde, chave: j.chaveIdem };
         }
-        avisar('Pedido gravado no Drive. O motor escreve os rascunhos na próxima passada do vigia (até 5 min).');
+        avisar(res?.viaCentral ? 'Pedido enviado ao motor pela central: ele começa os rascunhos em instantes.'
+          : 'Pedido gravado no Drive. O motor escreve os rascunhos na próxima passada do vigia (até 5 min).');
       } else {
         const q = j.rotina === 'radar-diario' && j.dados?.quantidade ? ` (${j.dados.quantidade} ${j.dados.quantidade === 1 ? 'candidato' : 'candidatos'})` : '';
         const destino = viaArquivo ? 'Pedido gravado no Drive. O motor atende na próxima passada do vigia (até 5 min).' : 'pedido enviado. O andamento aparece na faixa.';

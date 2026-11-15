@@ -6,7 +6,7 @@ import { Integra } from '../integra.js';
 import { porEtapa, semPostar, ultima, daSemana, semana, estadoDados, temDados, postouTudo } from '../dados.js';
 import { selo, vt, passoDe, destinoDe, painelErro, vazio, rodapeAtualizado } from './pecas.js';
 import { contarParaDecidir } from './pautas.js';
-import { resumirSaude, htmlSaude } from '../saude.js';
+import { resumirSaude, htmlSaude, htmlCentral } from '../saude.js';
 import { estado } from '../estado.js';
 
 const enc = encodeURIComponent;
@@ -38,6 +38,24 @@ if (temNavegador()) {
     if (estado.rota?.nome === 'inicio' && document.visibilityState === 'visible') lerSaude();
   }, RELER_SAUDE_MS);
   window.addEventListener('motor:conta-trocada', () => { saude.fase = 'carregando'; saude.dados = null; saude.lidoEm = 0; });
+}
+
+/* ---- Central (Supabase): ligada neste aparelho? o motor está ouvindo? (relido com o sinal de vida) ---- */
+const central = { ouvindo: null, lendo: false, lidoEm: 0 };
+function centralNaTela() {
+  if (!temNavegador() || !Integra.central) return '';
+  const conectada = Integra.central.conectada();
+  if (conectada && !central.lendo && Date.now() - central.lidoEm > RELER_SAUDE_MS) {
+    central.lendo = true;
+    Integra.central.motorOuvindo().catch(() => false).then((v) => {
+      central.lendo = false; central.lidoEm = Date.now(); central.ouvindo = v; avisarTela();
+    });
+  }
+  return htmlCentral({ conectada, ouvindo: conectada ? central.ouvindo : null });
+}
+if (temNavegador()) {
+  window.addEventListener('motor:central', () => { central.ouvindo = null; central.lidoEm = 0; avisarTela(); });
+  window.addEventListener('motor:conta-trocada', () => { central.ouvindo = null; central.lidoEm = 0; });
 }
 
 /** Faixa do motor para o Início → {html, alerta}. Dispara a leitura se nunca leu ou se a última passou de 2 min.
@@ -194,5 +212,6 @@ export function vInicio() {
     </section>
   </div>
   ${motorAlerta ? '' : motor}
+  ${centralNaTela()}
   ${rodapeAtualizado()}`;
 }

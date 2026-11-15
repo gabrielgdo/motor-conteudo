@@ -28,3 +28,4 @@ import('./estado-candidato.test.mjs');
 import('./ficha.test.mjs');
 import('./nav.test.mjs');
 import('./pedidos-motor.test.mjs');
+import('./central.test.mjs');

@@ -13,6 +13,9 @@
 //                                            os nomes imediatamente antes (revisao.js)
 //   ponte.disparar / ponte.decidirRoteiro    atrás de FLAGS.ponte e PONTE_URL (config.js);
 //                                            desligada, erro com codigo 'ponte-desligada'
+//   central.enviarSePuder                    pedido ao motor pela central (Supabase, js/central.js); os
+//                                            gravadores de pedido (prévia, roteiro, busca, decisões da
+//                                            semana) tentam a central primeiro e caem no Drive
 //   drive.enviarVideo                        vídeo bruto → 3-Brutos (`<id>.<ext>`), retomável com
 //                                            upload.js e conferido nos metadados (envio-video.js)
 //
@@ -22,7 +25,8 @@
 import * as auth from './auth.js';
 import * as drive from './drive.js';
 import * as sheet from './sheet.js';
-import { CONFIG, FLAGS, PONTE_URL, REVISAO_FOLDER, PASTAS, ROOT_FOLDER } from './config.js';
+import { CONFIG, FLAGS, PONTE_URL, REVISAO_FOLDER, PASTAS, ROOT_FOLDER, CENTRAL, CLIENT_ID } from './config.js';
+import * as CT from './central.js';
 import { idValido, idCandidatoValido } from './parse.js';
 import * as C from './controle.js';
 import * as S from './selecao.js';
@@ -34,6 +38,25 @@ import { criarUpload } from './upload.js';
 import { criarEnviador, travaDoNavegador } from './envio-video.js';
 
 const naEtapa2 = () => { throw new Error('Disponível na etapa 2'); };
+
+// Central (Supabase): cliente criado na primeira vez; o sinal de vida do motor é relido no máximo a cada 30 s.
+let clienteCentral = null;
+let estadoCentral = { em: 0, valor: null };
+const localStorageSeguro = () => { try { return window.localStorage; } catch { return null; } };
+function central() {
+  if (!clienteCentral) clienteCentral = CT.criarCentral({ url: CENTRAL.url, chave: CENTRAL.chave, storage: localStorageSeguro() });
+  return clienteCentral;
+}
+function conectadaComo(email) {
+  const s = central().sessao();
+  return !!(s && email && String(s.email || '').toLowerCase() === String(email).toLowerCase());
+}
+async function estadoDoMotor(forcar = false) {
+  if (!forcar && Date.now() - estadoCentral.em < 30000) return estadoCentral.valor;
+  const valor = await central().estadoMotor();
+  estadoCentral = { em: Date.now(), valor };
+  return valor;
+}
 
 // Enviador do vídeo bruto: montado uma vez (guarda os envios desta aba contra o clique repetido).
 let enviadorVideo = null;
@@ -215,6 +238,67 @@ export const Integra = {
 
   /* -------------------------------------------------------------- escrita */
 
+  central: {
+    /** Esta conta tem sessão na central? (sem rede) */
+    conectada: () => FLAGS.central && conectadaComo(auth.emailAtual()),
+
+    /** Botão "Continuar com o Google" do GIS dentro de `container`; ao tocar, abre a sessão na central.
+        → Promise {email}. Conta diferente da do app: desfaz e lança ErroIntegra('conta-diferente'). */
+    async conectar(container) {
+      await auth.carregarGis();
+      const nonce = await CT.gerarNonce();
+      const email = auth.emailAtual();
+      return new Promise((resolve, reject) => {
+        window.google.accounts.id.initialize({
+          client_id: CLIENT_ID, nonce: nonce.hash, login_hint: email || undefined, auto_select: false,
+          use_fedcm_for_prompt: true, itp_support: true, context: 'signin', ux_mode: 'popup',
+          callback: async (resp) => {
+            try {
+              const r = await central().entrarComIdToken(resp.credential, nonce.cru);
+              if (email && r.email !== String(email).toLowerCase()) {
+                central().esquecer();
+                reject(new ErroIntegra(`Entre com a mesma conta do app (${email}).`, 'conta-diferente'));
+                return;
+              }
+              estadoCentral = { em: 0, valor: null };
+              resolve(r);
+            } catch (e) {
+              reject(new ErroIntegra(e?.message || 'Não consegui entrar na central.', e?.codigo || 'central'));
+            }
+          },
+        });
+        window.google.accounts.id.renderButton(container, { type: 'standard', theme: 'outline', size: 'large', text: 'continue_with', shape: 'pill', locale: 'pt-BR' });
+      });
+    },
+
+    /** Esquece a sessão da central neste aparelho (o "Sair" do app já apaga). */
+    esquecer() { central().esquecer(); estadoCentral = { em: 0, valor: null }; },
+
+    /** O motor está ouvindo a central agora? → true | false (sem sessão ou erro: false). */
+    async motorOuvindo() {
+      if (!FLAGS.central || !conectadaComo(auth.emailAtual())) return false;
+      try { return CT.motorOuvindo(await estadoDoMotor()); } catch { return false; }
+    },
+
+    /** Tenta mandar o pedido pela central. → {via:'central', id, arquivo} ou null (aí quem chamou grava no
+        Drive, como antes). Nunca lança: sem sessão, motor sem ouvir ou qualquer erro devolvem null. */
+    async enviarSePuder({ tipo, nome, conteudo_id = null, conteudo }) {
+      if (!FLAGS.central || !conectadaComo(auth.emailAtual())) return null;
+      try {
+        if (!CT.motorOuvindo(await estadoDoMotor())) return null;
+        const arquivo = CT.arquivoDoPedido(tipo, nome);
+        const r = await central().enviarPedido({ tipo, conteudo_id, arquivo, conteudo });
+        return { via: 'central', id: r.id, arquivo };
+      } catch (e) {
+        console.warn('central: pedido vai pelo Drive', e?.message || e);
+        return null;
+      }
+    },
+
+    /** Situação de um pedido enviado pela central → {status, motivo, entregue_em} | null. */
+    pedido: (id) => central().pedido(id),
+  },
+
   drive: {
     /** Cria um arquivo de texto (text/markdown) numa pasta do motor: 'revisao' (4-Revisao,
         REVISAO_FOLDER) ou uma chave de PASTAS; nunca um id livre. Precisa ser arquivo de texto
@@ -250,6 +334,8 @@ export const Integra = {
         id, decisao, versao, ajustes, observacoes, arquivosExistentes, email: auth.emailAtual(), agora: new Date(),
       });
       if (!plano.ok) return plano;
+      const c = await Integra.central.enviarSePuder({ tipo: 'decisao_previa', nome: plano.nome, conteudo_id: id, conteudo: plano.conteudo });
+      if (c) return { ok: true, arquivo: null, nome: plano.nome, viaCentral: true, pedido: c.id };
       const arquivo = await Integra.drive.criarArquivo('revisao', plano.nome, plano.conteudo);
       return { ok: true, arquivo, nome: plano.nome };
     },
@@ -273,6 +359,8 @@ export const Integra = {
       const textoAntigo = existente ? await drive.baixarTexto({ id: existente.id, modifiedTime: `${existente.modifiedTime}-${Date.now()}` }) : '';
       const plano = PM.planejarPedidoBusca({ quantidade, tipo, ids, teste, quem: email, existente: textoAntigo });
       if (!plano.ok) throw new ErroIntegra(plano.mensagem, plano.erro);
+      const c = await Integra.central.enviarSePuder({ tipo: 'busca', nome: plano.nome, conteudo: plano.texto });
+      if (c) return { ok: true, nome: plano.nome, pedido: plano.pedido, mesclado: !!existente, viaCentral: true };
       try {
         if (existente) await drive.substituirConteudo(existente.id, plano.texto, 'text/markdown');
         else await drive.criarArquivoTexto(plano.nome, plano.texto, pasta);
@@ -289,6 +377,8 @@ export const Integra = {
       if (!pasta) throw new ErroIntegra('Não encontrei a pasta 1-Radar.', 'pasta-desconhecida');
       const nome = PM.nomeDecisoesSemana(semana);
       const texto = PM.textoDecisoesSemana({ semana, itens, quem: email });
+      const c = await Integra.central.enviarSePuder({ tipo: 'decisoes_semana', nome, conteudo: texto });
+      if (c) return { ok: true, nome, gravado: itens.length, viaCentral: true };
       const existente = await Integra.drive._acharArquivo(pasta, nome);
       try {
         if (existente) await drive.substituirConteudo(existente.id, texto, 'text/markdown');
@@ -311,6 +401,8 @@ export const Integra = {
       if (!pasta) throw new ErroIntegra('Não encontrei 2-Roteiros/rascunhos.', 'pasta-desconhecida');
       const nome = PM.nomeDecisaoRoteiro(id, v);
       const texto = PM.textoDecisaoRoteiro({ id, versao: v, decisao, pedido, motivo, quem: email });
+      const c = await Integra.central.enviarSePuder({ tipo: 'decisao_roteiro', nome, conteudo_id: id, conteudo: texto });
+      if (c) return { ok: true, nome, viaCentral: true };
       try {
         const existente = await Integra.drive._acharArquivo(pasta.id, nome);
         if (existente) await drive.substituirConteudo(existente.id, texto, 'text/markdown');
