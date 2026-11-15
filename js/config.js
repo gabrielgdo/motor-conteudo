@@ -63,9 +63,9 @@ export const CONFIG = {
    nunca aqui). Com a ponte desligada ou sem endereço, Integra.ponte.* responde
    "O disparo pelo app ainda não está ligado." */
 
-export const FLAGS = { ponte: false, decisoesPeloApp: true, revisaoPeloApp: true };
+export const FLAGS = { ponte: true, decisoesPeloApp: true, revisaoPeloApp: true };
 
-export const PONTE_URL = '';
+export const PONTE_URL = 'https://script.google.com/macros/s/AKfycbxJLR-qE9FeD167wx533b6wc8kNlbQYeDV2X0Euad2_wTmUabntp5-mo3PVCQ38o1j6/exec';
 
 /** Primeiro nome de quem está logado (NOMES), ou '' se o e-mail não estiver lá. */
 export function nomeDe(email) {

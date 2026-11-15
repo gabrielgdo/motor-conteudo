@@ -7,6 +7,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ALLOWED, FLAGS } from '../js/config.js';
+// Estes testes cobrem o app com a ponte desligada (o padrão antigo); a ponte ligada é testada em ponte.test.mjs.
+FLAGS.ponte = false;
 import { lerDataHora } from '../js/parse.js';
 import { lerExecucoes, COLUNAS_EXECUCOES, planejarDecisaoRoteiro, MOTIVOS_ROTEIRO } from '../js/controle.js';
 import { lerSelecao, lerDecisoes, MENSAGEM_COLUNAS_DECISOES } from '../js/selecao.js';

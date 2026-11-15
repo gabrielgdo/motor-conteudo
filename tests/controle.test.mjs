@@ -363,10 +363,15 @@ test('ids T: teste = sim em Execuções; registro na ordem do cabeçalho real', 
 
 test('ponte desligada: disparar e decidirRoteiro lançam codigo ponte-desligada', async () => {
   const { Integra } = await import('../js/integra.js');
+  const { FLAGS } = await import('../js/config.js');
+  const antes = FLAGS.ponte;
+  FLAGS.ponte = false;
+  try {
   for (const chamada of [
     () => Integra.ponte.disparar({ rotina: 'radar-diario', chave_idem: 'c-1' }),
     () => Integra.ponte.decidirRoteiro({ id: 'T01', versao: 1, decisao: 'aprovar', chave_idem: 'c-2' }),
   ]) {
     await assert.rejects(chamada, (e) => e.codigo === 'ponte-desligada' && e.message === 'O disparo pelo app ainda não está ligado.');
   }
+  } finally { FLAGS.ponte = antes; }
 });
