@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  arquivoDoPedido, motorOuvindo, sessaoDe, gerarNonce, criarCentral, CHAVE_SESSAO, FORMATOS, MOTOR_OUVINDO_MS,
+  arquivoDoPedido, motorOuvindo, sessaoDe, criarCentral, CHAVE_SESSAO, FORMATOS, MOTOR_OUVINDO_MS,
 } from '../js/central.js';
 import { htmlCentral } from '../js/saude.js';
 import { chaveParaApagar } from '../js/auth.js';
@@ -54,13 +54,6 @@ test('a sessão da central some no "Sair" (chave motor.*)', () => {
   assert.equal(chaveParaApagar(CHAVE_SESSAO), true);
 });
 
-test('gerarNonce: cru diferente a cada vez e hash SHA-256 em hex', async () => {
-  const a = await gerarNonce();
-  const b = await gerarNonce();
-  assert.notEqual(a.cru, b.cru);
-  assert.match(a.hash, /^[0-9a-f]{64}$/);
-});
-
 /* central falsa: registra as chamadas e responde como o Auth e o PostgREST */
 function centralFalsa({ expiraEm = 3600, falhar = null } = {}) {
   const chamadas = [];
@@ -70,7 +63,7 @@ function centralFalsa({ expiraEm = 3600, falhar = null } = {}) {
     chamadas.push({ metodo: op.method, caminho: u.pathname + u.search, cab: op.headers, corpo });
     const resp = (status, dados) => ({ ok: status < 300, status, text: async () => (dados === undefined ? '' : JSON.stringify(dados)) });
     if (falhar) return falhar(u, op);
-    if (u.pathname === '/auth/v1/token' && u.searchParams.get('grant_type') === 'id_token') {
+    if (u.pathname === '/functions/v1/entrar-com-google') {
       return resp(200, { access_token: 'A1', refresh_token: 'R1', expires_in: expiraEm, user: { email: 'Ela@Teste.br' } });
     }
     if (u.pathname === '/auth/v1/token') return resp(200, { access_token: 'A2', refresh_token: 'R2', expires_in: 3600 });
@@ -82,13 +75,15 @@ function centralFalsa({ expiraEm = 3600, falhar = null } = {}) {
   return { fetch, chamadas };
 }
 
-test('cliente: entra com o ID token, guarda a sessão e envia o pedido com a chave pública', async () => {
+test('cliente: entra com o token Google do app, guarda a sessão e envia o pedido com a chave pública', async () => {
   const st = armazenamento();
   const f = centralFalsa();
   const c = criarCentral({ url: 'https://x.supabase.co/', chave: 'sb_publishable_t', fetch: f.fetch, storage: st, agora: () => 1000 });
-  const r = await c.entrarComIdToken('idtoken', 'nonce-cru');
+  const r = await c.entrarComGoogle('ya29.token');
   assert.equal(r.email, 'ela@teste.br');
-  assert.deepEqual(f.chamadas[0].corpo, { provider: 'google', id_token: 'idtoken', nonce: 'nonce-cru' });
+  assert.equal(f.chamadas[0].caminho, '/functions/v1/entrar-com-google');
+  assert.deepEqual(f.chamadas[0].corpo, { access_token: 'ya29.token' });
+  await assert.rejects(c.entrarComGoogle(null), (e) => e.codigo === 'sem-google');
   assert.equal(f.chamadas[0].cab.apikey, 'sb_publishable_t');
   assert.ok(sessaoDe(st, 'ela@teste.br'));
   const p = await c.enviarPedido({ tipo: 'decisao_previa', conteudo_id: 'S47-01', arquivo: '4-Revisao/S47-01 aprovado.md', conteudo: 'id: S47-01' });
@@ -115,7 +110,7 @@ test('cliente: token perto de vencer é renovado antes do pedido', async () => {
   const f = centralFalsa({ expiraEm: 60 });
   const st = armazenamento();
   const c = criarCentral({ url: 'https://x', chave: 'k', fetch: f.fetch, storage: st, agora: () => agora });
-  await c.entrarComIdToken('t', 'n');
+  await c.entrarComGoogle('t');
   agora = 30 * 1000;
   await c.estadoMotor();
   assert.ok(f.chamadas.some((x) => x.caminho.includes('grant_type=refresh_token')));
@@ -130,10 +125,12 @@ test('cliente: refresh recusado esquece a sessão; sem rede vira erro "rede"', a
   await assert.rejects(c.estadoMotor());
   assert.equal(st.getItem(CHAVE_SESSAO), null);
   const semRede = criarCentral({ url: 'https://x', chave: 'k', fetch: async () => { throw new TypeError('offline'); }, storage: armazenamento() });
-  await assert.rejects(semRede.entrarComIdToken('t', 'n'), (e) => e.codigo === 'rede');
+  await assert.rejects(semRede.entrarComGoogle('t'), (e) => e.codigo === 'rede');
 });
 
-test('htmlCentral: botão para ligar; ligada com o motor ouvindo ou não', () => {
+test('htmlCentral: conectando, tentar de novo, ligada com o motor ouvindo ou não', () => {
+  assert.match(htmlCentral({ conectada: false, conectando: true }), /Conectando/);
+  assert.doesNotMatch(htmlCentral({ conectada: false, conectando: true }), /data-acao/);
   assert.match(htmlCentral({ conectada: false }), /data-acao="central-conectar"/);
   assert.match(htmlCentral({ conectada: true, ouvindo: true }), /em segundos/);
   assert.match(htmlCentral({ conectada: true, ouvindo: false }), /pelo Drive/);

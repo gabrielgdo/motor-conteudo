@@ -45,13 +45,13 @@ const central = { ouvindo: null, lendo: false, lidoEm: 0 };
 function centralNaTela() {
   if (!temNavegador() || !Integra.central) return '';
   const conectada = Integra.central.conectada();
-  if (conectada && !central.lendo && Date.now() - central.lidoEm > RELER_SAUDE_MS) {
+  if (!central.lendo && Date.now() - central.lidoEm > RELER_SAUDE_MS) {   // liga sozinha e confere o motor
     central.lendo = true;
     Integra.central.motorOuvindo().catch(() => false).then((v) => {
       central.lendo = false; central.lidoEm = Date.now(); central.ouvindo = v; avisarTela();
     });
   }
-  return htmlCentral({ conectada, ouvindo: conectada ? central.ouvindo : null });
+  return htmlCentral({ conectada, ouvindo: conectada ? central.ouvindo : null, conectando: central.lendo });
 }
 if (temNavegador()) {
   window.addEventListener('motor:central', () => { central.ouvindo = null; central.lidoEm = 0; avisarTela(); });

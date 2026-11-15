@@ -200,12 +200,15 @@ export function htmlSaude(leitura) {
 
 /** Linha da central (Supabase) no Início: ligada, ou o botão para ligar neste aparelho.
     {conectada, ouvindo} → HTML. `ouvindo`: true | false | null (ainda não sabe). */
-export function htmlCentral({ conectada = false, ouvindo = null } = {}) {
+export function htmlCentral({ conectada = false, ouvindo = null, conectando = false } = {}) {
   const faixa = (itens) => `<div class="faixa" role="group" aria-label="Central do motor">${itens}</div>`;
+  if (!conectada && conectando) {
+    return `<section class="painel andamento central" aria-label="Central">${faixa('<span class="faixa-nome">Central</span><span class="faixa-item andamento-frase">Conectando…</span>')}</section>`;
+  }
   if (!conectada) {
     return `<section class="painel andamento central" aria-label="Central">${faixa(
-      '<span class="faixa-nome">Central</span><span class="faixa-item andamento-frase">Ligue para os seus pedidos chegarem ao motor em segundos.</span>'
-      + '<button type="button" class="botao pequeno" data-acao="central-conectar">Ligar a central</button>',
+      '<span class="faixa-nome">Central</span><span class="faixa-item andamento-frase">Ainda não conectada: os pedidos vão pelo Drive, como antes.</span>'
+      + '<button type="button" class="botao pequeno" data-acao="central-conectar">Tentar de novo</button>',
     )}</section>`;
   }
   const t = ouvindo === true ? ['ligada', 'ok', 'Seus pedidos chegam ao motor em segundos.']

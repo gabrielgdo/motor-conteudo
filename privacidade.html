@@ -53,7 +53,7 @@ try { if (localStorage.getItem('motor-tema') === 'dia') { document.documentEleme
     <p>Ao entrar com a conta Google, o app pede acesso ao Google Drive e às Planilhas Google. Ele usa esse acesso só para ler e gravar os arquivos da pasta "Motor de Conteúdo" e a planilha de pautas que fica nela.</p>
     <h2>Onde os dados ficam</h2>
     <p>Os arquivos (vídeos, roteiros, imagens) continuam no Google Drive de quem usa o app. O app não copia arquivos para outro lugar e não vende nem compartilha dados com terceiros. O acesso fica guardado só no seu navegador enquanto a sessão está aberta.</p>
-    <p>Para que os pedidos cheguem ao motor de edição em segundos, o app usa uma central no Supabase, hospedada em São Paulo. Lá ficam só informações de controle: o e-mail de quem pediu, o tipo e a hora do pedido, o texto da decisão (o mesmo que vai para o Drive), os avisos do motor e, se você ativar, o endereço técnico para avisos no celular. Nenhum dado de paciente vai para a central.</p>
+    <p>Para que os pedidos cheguem ao motor de edição em segundos, o app usa uma central no Supabase, hospedada em São Paulo. Lá ficam só informações de controle: o e-mail de quem pediu, o tipo e a hora do pedido, o texto da decisão (o mesmo que vai para o Drive), os avisos do motor e, se você ativar, o endereço técnico para avisos no celular. Nenhum dado de paciente vai para a central. Para conectar à central sem pedir outro login, o app envia o acesso do Google que já tem a uma função da própria central, que só confere com o Google quem é você e não guarda esse acesso.</p>
     <h2>Redes sociais</h2>
     <p>O app nunca publica nada nas redes sociais.</p>
     <h2>Como encerrar o acesso</h2>

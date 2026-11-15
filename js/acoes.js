@@ -31,7 +31,7 @@ import {
 import { versaoVistaDe } from './telas/roteiros.js';
 import { arquivoDeLegenda } from './telas/prontos.js';
 import { desenhar, rotear } from './roteador.js';
-import { abrirJanela, fecharJanela, avisar, avisarComAcao, removerAviso, copiarTexto, janelaSobre, janelaSair, moldura } from './componentes/janelas.js';
+import { abrirJanela, fecharJanela, avisar, avisarComAcao, removerAviso, copiarTexto, janelaSobre, janelaSair } from './componentes/janelas.js';
 import { Paleta } from './componentes/paleta.js';
 import { Tele } from './componentes/tele.js';
 import { Players } from './componentes/players.js';
@@ -338,21 +338,13 @@ export const ACOES = {
   },
   'outra-conta'() { return loginDaEntrada($('#botao-outra-conta'), null, () => Integra.entrarComOutraConta()); },
   sair() { if (estado.logada) abrirJanela(janelaSair(Integra.email())); },
-  // Central (Supabase): botão do Google numa janela; a sessão fica neste aparelho até o "Sair".
-  'central-conectar'() {
-    if (!estado.logada || !Integra.central) return;
-    abrirJanela(moldura('Ligar a central', `<div class="pilha">
-      <p>Com a central ligada, as suas decisões e pedidos chegam ao motor em segundos, e não em até 6 minutos. Se o motor não estiver ouvindo, tudo continua indo pelo Drive, como antes.</p>
-      <p class="pequeno apagado">Use a mesma conta Google do app. Só é preciso fazer isto uma vez neste aparelho.</p>
-      <div id="central-botao" style="min-height:44px"></div>
-      <p class="pequeno erro" id="central-erro" role="alert"></p></div>`));
-    Integra.central.conectar($('#central-botao'))
-      .then(() => {
-        fecharJanela();
-        avisar('Central ligada neste aparelho.');
-        window.dispatchEvent(new CustomEvent('motor:central'));
-      })
-      .catch((e) => { const el = $('#central-erro'); if (el) el.textContent = e?.message || 'Não consegui ligar a central agora.'; });
+  // Central (Supabase): liga de novo com o login Google do app (sem janela).
+  async 'central-conectar'(el) {
+    if (!estado.logada || !Integra.central || el?.disabled) return;
+    if (el) el.disabled = true;
+    const ok = await Integra.central.conectar({ forcar: true });
+    if (el) el.disabled = false;
+    avisar(ok ? 'Central conectada.' : 'Não consegui conectar a central agora. Os pedidos seguem pelo Drive.');
   },
   'confirmar-sair'() { sairDaConta(); },
   async 'renovar-sessao'(el) {

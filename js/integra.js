@@ -25,7 +25,7 @@
 import * as auth from './auth.js';
 import * as drive from './drive.js';
 import * as sheet from './sheet.js';
-import { CONFIG, FLAGS, PONTE_URL, REVISAO_FOLDER, PASTAS, ROOT_FOLDER, CENTRAL, CLIENT_ID } from './config.js';
+import { CONFIG, FLAGS, PONTE_URL, REVISAO_FOLDER, PASTAS, ROOT_FOLDER, CENTRAL } from './config.js';
 import * as CT from './central.js';
 import { idValido, idCandidatoValido } from './parse.js';
 import * as C from './controle.js';
@@ -42,6 +42,7 @@ const naEtapa2 = () => { throw new Error('Disponível na etapa 2'); };
 // Central (Supabase): cliente criado na primeira vez; o sinal de vida do motor é relido no máximo a cada 30 s.
 let clienteCentral = null;
 let estadoCentral = { em: 0, valor: null };
+const tentativaCentral = { promessa: null, falhouEm: 0 };
 const localStorageSeguro = () => { try { return window.localStorage; } catch { return null; } };
 function central() {
   if (!clienteCentral) clienteCentral = CT.criarCentral({ url: CENTRAL.url, chave: CENTRAL.chave, storage: localStorageSeguro() });
@@ -242,33 +243,30 @@ export const Integra = {
     /** Esta conta tem sessão na central? (sem rede) */
     conectada: () => FLAGS.central && conectadaComo(auth.emailAtual()),
 
-    /** Botão "Continuar com o Google" do GIS dentro de `container`; ao tocar, abre a sessão na central.
-        → Promise {email}. Conta diferente da do app: desfaz e lança ErroIntegra('conta-diferente'). */
-    async conectar(container) {
-      await auth.carregarGis();
-      const nonce = await CT.gerarNonce();
+    /** Liga a central com o login Google do app (sem tocar em nada). Uma tentativa por vez, e no máximo
+        uma a cada 2 min se a anterior falhou. → true (ligada) | false. Nunca lança. */
+    async conectar({ forcar = false } = {}) {
       const email = auth.emailAtual();
-      return new Promise((resolve, reject) => {
-        window.google.accounts.id.initialize({
-          client_id: CLIENT_ID, nonce: nonce.hash, login_hint: email || undefined, auto_select: false,
-          use_fedcm_for_prompt: true, itp_support: true, context: 'signin', ux_mode: 'popup',
-          callback: async (resp) => {
-            try {
-              const r = await central().entrarComIdToken(resp.credential, nonce.cru);
-              if (email && r.email !== String(email).toLowerCase()) {
-                central().esquecer();
-                reject(new ErroIntegra(`Entre com a mesma conta do app (${email}).`, 'conta-diferente'));
-                return;
-              }
-              estadoCentral = { em: 0, valor: null };
-              resolve(r);
-            } catch (e) {
-              reject(new ErroIntegra(e?.message || 'Não consegui entrar na central.', e?.codigo || 'central'));
-            }
-          },
-        });
-        window.google.accounts.id.renderButton(container, { type: 'standard', theme: 'outline', size: 'large', text: 'continue_with', shape: 'pill', locale: 'pt-BR' });
-      });
+      if (!FLAGS.central || !email) return false;
+      if (conectadaComo(email)) return true;
+      if (tentativaCentral.promessa) return tentativaCentral.promessa;
+      if (!forcar && Date.now() - tentativaCentral.falhouEm < 120000) return false;
+      tentativaCentral.promessa = (async () => {
+        try {
+          const r = await central().entrarComGoogle(auth.getToken());
+          if (r.email !== String(email).toLowerCase()) { central().esquecer(); throw new Error('conta diferente'); }
+          estadoCentral = { em: 0, valor: null };
+          if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('motor:central'));
+          return true;
+        } catch (e) {
+          tentativaCentral.falhouEm = Date.now();
+          console.warn('central: não liguei agora', e?.message || e);
+          return false;
+        } finally {
+          tentativaCentral.promessa = null;
+        }
+      })();
+      return tentativaCentral.promessa;
     },
 
     /** Esquece a sessão da central neste aparelho (o "Sair" do app já apaga). */
@@ -276,14 +274,14 @@ export const Integra = {
 
     /** O motor está ouvindo a central agora? → true | false (sem sessão ou erro: false). */
     async motorOuvindo() {
-      if (!FLAGS.central || !conectadaComo(auth.emailAtual())) return false;
+      if (!FLAGS.central || !(await Integra.central.conectar())) return false;
       try { return CT.motorOuvindo(await estadoDoMotor()); } catch { return false; }
     },
 
     /** Tenta mandar o pedido pela central. → {via:'central', id, arquivo} ou null (aí quem chamou grava no
         Drive, como antes). Nunca lança: sem sessão, motor sem ouvir ou qualquer erro devolvem null. */
     async enviarSePuder({ tipo, nome, conteudo_id = null, conteudo }) {
-      if (!FLAGS.central || !conectadaComo(auth.emailAtual())) return null;
+      if (!FLAGS.central || !(await Integra.central.conectar())) return null;
       try {
         if (!CT.motorOuvindo(await estadoDoMotor())) return null;
         const arquivo = CT.arquivoDoPedido(tipo, nome);

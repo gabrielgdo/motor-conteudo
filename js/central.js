@@ -4,10 +4,11 @@
 // sem o motor ouvindo (sinal de vida com mais de 3 min) ou com qualquer erro, o app grava o arquivo no
 // Drive como antes. Só o integra.js importa este módulo (é ele que fala com o mundo externo).
 //
-// Login: botão "Entrar com Google" do GIS (mesmo CLIENT_ID do app) → ID token com nonce → sessão do
-// Supabase (grant_type=id_token), guardada no localStorage como `motor.central.sessao` (o "Sair" apaga,
-// como as outras chaves motor.*). As regras de quem pode o quê ficam no banco (RLS): só a conta da
-// Robertta decide; a do Gabriel só pede busca.
+// Login automático: o app manda o token do Google que já tem (login do app) para a função
+// entrar-com-google da central, que confere no Google se o token é do app e se a conta tem acesso, e
+// devolve a sessão. Ninguém toca em nada. A sessão fica no localStorage como `motor.central.sessao` (o
+// "Sair" apaga, como as outras chaves motor.*). As regras de quem pode o quê ficam no banco (RLS): só a
+// conta da Robertta decide; a do Gabriel só pede busca.
 
 export const CHAVE_SESSAO = 'motor.central.sessao';
 export const MOTOR_OUVINDO_MS = 3 * 60 * 1000; // o motor grava o sinal de vida a cada ~60 s
@@ -49,17 +50,9 @@ export function sessaoDe(storage, email = '') {
   return s;
 }
 
-/** Nonce do login Google: o cru vai para o Supabase, o hash (SHA-256 em hex) vai para o Google. */
-export async function gerarNonce(cripto = globalThis.crypto) {
-  const bytes = cripto.getRandomValues(new Uint8Array(32));
-  const cru = btoa(String.fromCharCode(...bytes));
-  const hash = await cripto.subtle.digest('SHA-256', new TextEncoder().encode(cru));
-  return { cru, hash: [...new Uint8Array(hash)].map((b) => b.toString(16).padStart(2, '0')).join('') };
-}
-
 /**
  * Cliente da central. Tudo injetável para os testes: fetch, storage e relógio.
- * → {sessao, entrarComIdToken, esquecer, estadoMotor, enviarPedido, pedido}
+ * → {sessao, entrarComGoogle, esquecer, estadoMotor, enviarPedido, pedido}
  */
 export function criarCentral({ url, chave, fetch: f = globalThis.fetch, storage = null, agora = () => Date.now() } = {}) {
   const base = String(url || '').replace(/\/+$/, '');
@@ -89,7 +82,7 @@ export function criarCentral({ url, chave, fetch: f = globalThis.fetch, storage 
     const txt = await r.text();
     let dados = null;
     try { dados = txt ? JSON.parse(txt) : null; } catch { dados = null; }
-    if (!r.ok) throw new ErroCentral(dados?.message || dados?.msg || dados?.error_description || `HTTP ${r.status}`, 'http', r.status);
+    if (!r.ok) throw new ErroCentral(dados?.erro || dados?.message || dados?.msg || dados?.error_description || `HTTP ${r.status}`, 'http', r.status);
     return dados;
   }
 
@@ -118,9 +111,10 @@ export function criarCentral({ url, chave, fetch: f = globalThis.fetch, storage 
   return {
     sessao: atual,
     esquecer,
-    /** ID token do Google (com o nonce cru) → sessão. → {email} */
-    async entrarComIdToken(idToken, nonce) {
-      const s = await http('POST', '/auth/v1/token?grant_type=id_token', { provider: 'google', id_token: idToken, nonce });
+    /** Token de acesso do Google (o do login do app) → sessão, pela função entrar-com-google. → {email} */
+    async entrarComGoogle(tokenGoogle) {
+      if (!tokenGoogle) throw new ErroCentral('Sem o login do Google no app.', 'sem-google');
+      const s = await http('POST', '/functions/v1/entrar-com-google', { access_token: tokenGoogle });
       return { email: guardar(s).email };
     },
     /** Linha de motor_estado → {atualizado_em, dados} ou null. */
