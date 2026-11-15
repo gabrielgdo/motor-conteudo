@@ -23,9 +23,9 @@ import { pautasLidas, execucoesLidas, candidatosLidas } from '../dados.js';
 import {
   podeDecidir, idLote, DESTINOS_CANDIDATO, MAX_MOTIVO_CANDIDATO, QUANTIDADE_PADRAO, QUANTIDADE_MIN, QUANTIDADE_MAX,
 } from '../controle.js';
-import { paraDecidir, estadoDasPautas, MOTIVOS_RECUSA, MENSAGEM_COLUNAS_DECISOES, STATUS_PAUTA } from '../selecao.js';
+import { paraDecidir, estadoDasPautas, aprovacaoDoCandidato, MOTIVOS_RECUSA, MENSAGEM_COLUNAS_DECISOES, STATUS_PAUTA } from '../selecao.js';
 import { ehTeste, prefixoSemana, lerDataHora, formatarData, horaCurta, hojeISO, dataCurta } from '../parse.js';
-import { candidatosDaTela, contarCandidatos, ultimaRodada, estadoDoCandidato } from '../candidatos.js';
+import { candidatosDaTela, contarCandidatos, ultimaRodada, estadoDoCandidato, rotuloOrigem } from '../candidatos.js';
 import { faixaExecucao } from '../componentes/execucao.js';
 import { moldura } from '../componentes/janelas.js';
 import { cab, selo, chipFiltro, vazio, campo, segmento, painelCarregando } from './pecas.js';
@@ -97,6 +97,22 @@ function linhaDaDecisao(d, agora) {
   return partes.join(' · ');
 }
 
+/**
+ * A pauta continua proposta, mas o candidato dela foi aprovado para o Roteirista (linha de Decisões
+ * por id_candidato, sem id_pauta: "Mandar ao Roteirista" na lista de candidatos). O Radar deixou a
+ * pauta para decidir porque a verificação das fontes não passou: ela fica em Para decidir (precisa de
+ * uma decisão nova, sobre a pauta verificada), com este aviso.
+ */
+function notaAprovadoSemEnvio(p, est, ctx) {
+  if (est.status !== STATUS_PAUTA.proposta || !p.id_candidato) return '';
+  const a = aprovacaoDoCandidato(ctx.decisoes, p.id_candidato);
+  if (!a) return '';
+  const q = lerDataHora(a.data);
+  const quando = q ? ` em ${formatarData(q)}` : '';
+  const texto = `Você mandou o candidato ${p.id_candidato} ao Roteirista${quando}, mas a verificação das fontes não passou: o Radar deixou esta pauta para decidir e ela não foi ao Roteirista.${p.estado_verificacao ? ` Verificação: ${p.estado_verificacao}.` : ''}`;
+  return `<p class="nota atencao pequeno" role="status">${ic('alerta', 18)}<span>${esc(texto)}</span></p>`;
+}
+
 const TOM_RESULTADO = { gravar: 'ok', nada: 'calma', recusado: 'atencao', erro: 'atencao' };
 
 function cartao(p, ctx) {
@@ -151,6 +167,7 @@ function cartao(p, ctx) {
     </dl>
     <p class="meta pequeno apagado">${[p.prazo ? `Prazo: ${p.prazo}` : '', p.estado_verificacao ? `Verificação: ${p.estado_verificacao}` : '', p.id_lote ? `Lote ${p.id_lote}` : ''].filter(Boolean).map(esc).join(' · ')}</p>
     ${est.decisao && decidida ? `<p class="pequeno apagado">${esc(linhaDaDecisao(est.decisao, ctx.agora))}</p>` : ''}
+    ${notaAprovadoSemEnvio(p, est, ctx)}
     <details><summary>Mais sobre esta pauta</summary><dl>
       ${item('Público e situação', p.publico_situacao)}
       ${item('Entrega', p.entrega)}
@@ -229,7 +246,7 @@ export function htmlPautas({
   const bloqueio = bloqueioDeDecisao({ email, dados, offline: dados.offline });
   // A conta que não decide: uma nota só, no topo (não repetida em cada cartão).
   const notaNoTopo = bloqueio === NOTA_SO_ROBERTTA;
-  const ctx = { estado: est, pendentes, mudando, resultados, erros, bloqueio, agora, filtro, notaNoTopo };
+  const ctx = { estado: est, decisoes, pendentes, mudando, resultados, erros, bloqueio, agora, filtro, notaNoTopo };
 
   const estrutural = !bloqueio ? ''
     : notaNoTopo ? `<p class="nota calma" ${largura}>${ic('info')}<span>${esc(NOTA_SO_ROBERTTA)} Esta conta vê as pautas e pode pedir rodadas, mas não aprova nem recusa.</span></p>`
@@ -322,10 +339,17 @@ function linhaDoEstado(est, ctx) {
   switch (est.tipo) {
     case 'pauta': {
       const p = est.pauta;
-      const status = ctx.estadoPautas.get(p.id_pauta)?.status || p.status;
-      if (status === STATUS_PAUTA.enviada) return `<p class="meta">${selo(`Virou pauta ${p.id_pauta}`, 'ok')}${selo('Enviado ao Roteirista', 'espera')}</p>`;
-      const [rotulo, tom] = SELO_ESTADO[status] || [p.statusOriginal || status || 'sem status', 'neutro'];
-      return `<p class="meta">${selo(`Virou pauta ${p.id_pauta}`, 'ok')}${selo(rotulo, tom)}</p>`;
+      const virou = selo(`Virou pauta ${p.id_pauta}`, 'ok');
+      if (est.enviada) return `<p class="meta">${virou}${selo('Enviado ao Roteirista', 'espera')}</p>`;
+      if (est.ficouParaDecidir) {
+        // "Mandar ao Roteirista" pedido, mas o Radar deixou a pauta como proposta.
+        const det = est.detalhe ? ` O Radar disse: ${est.detalhe}` : '';
+        return `<p class="meta">${virou}${selo('Aprovado', 'ok')}${selo('Para decidir', 'acao')}</p>
+    <p class="nota atencao pequeno" role="status">${ic('alerta', 18)}<span>${esc(`Aprovado, mas a pauta ${p.id_pauta} ficou para decidir: a verificação das fontes não passou e ela não foi ao Roteirista.${det}`)} Decida a pauta em Para decidir.</span></p>`;
+      }
+      const [rotulo, tom] = SELO_ESTADO[est.status] || [p.statusOriginal || est.status || 'sem status', 'neutro'];
+      const ainda = est.aberto ? `<span class="pequeno apagado">${esc('O Radar ainda está terminando o pedido.')}</span>` : '';
+      return `<p class="meta">${virou}${selo(rotulo, tom)}${ainda}</p>`;
     }
     case 'andamento': {
       const l = est.linha;
@@ -335,7 +359,7 @@ function linhaDoEstado(est, ctx) {
     case 'parece-travada':
       return `<p class="nota atencao pequeno" role="status">${ic('alerta', 18)}<span>O pedido está aberto há mais de 2 h e parece travado. Dá para pedir de novo: a janela pede para marcar o antigo como travado.</span></p>`;
     case 'erro':
-      return `<p class="nota atencao pequeno" role="status">${ic('alerta', 18)}<span>${esc(`O último pedido deu erro${est.erro ? `: ${est.erro}` : ''}.`)} Dá para tentar de novo.</span></p>`;
+      return `<p class="nota atencao pequeno" role="status">${ic('alerta', 18)}<span>${esc(`O último pedido deu erro${est.erro ? `: ${est.erro}` : ''}.`)} Dá para tentar de novo${est.aprovacao ? ' (a aprovação já está em Decisões e não é gravada outra vez)' : ''}.</span></p>`;
     case 'aprovado':
       return `<p class="meta">${selo('Aprovado', 'ok')}<span class="pequeno apagado">A aprovação está em Decisões; a pauta ainda não apareceu na aba Seleção.</span></p>`;
     case 'concluido':
@@ -357,7 +381,8 @@ function cartaoCandidato(c, ctx) {
     ? `<p class="pequeno"><a href="${esc(href)}" target="_blank" rel="noopener noreferrer">Abrir o post${host ? ` (${esc(host)})` : ''}</a></p>`
     : (c.link ? '<p class="pequeno apagado">O link não é http nem https: o app não abre.</p>' : '');
   const data = c.dataData ? formatarData(c.dataData) : c.data;
-  const rodape = [data ? `Data: ${data}` : '', c.origem ? `Origem: ${c.origem}` : '', c.id_execucao ? `Rodada ${c.id_execucao}` : '']
+  const origem = rotuloOrigem(c.origem);
+  const rodape = [data ? `Data: ${data}` : '', origem ? `Rodada ${origem}` : '', c.id_execucao ? c.id_execucao : '']
     .filter(Boolean).map(esc).join(' · ');
 
   let acoes = '';
@@ -427,13 +452,13 @@ export function htmlCandidatos({ candidatos = {}, dados = {}, exec = {}, email =
   const bloqueio = bloqueioDeCandidato({ email, offline: candidatos.offline });
   const ctx = {
     nova: rodada.ids,
-    fontes: { selecao: dados.selecao || null, decisoes: dados.decisoes || null, execucoes, agora },
-    estadoPautas: dados.selecao ? estadoDasPautas(dados.selecao, dados.decisoes) : new Map(),
+    fontes: { selecao: dados.selecao || null, decisoes: dados.decisoes || null, execucoes, agora, estadoPautas: null },
     bloqueio,
     bloqueioRoteirista: bloqueioDeRoteirista(dados),
     notaNoTopo: bloqueio === NOTA_SO_ROBERTTA,
     agora,
   };
+  ctx.fontes.estadoPautas = dados.selecao ? estadoDasPautas(dados.selecao, dados.decisoes) : new Map();
   const limite = Math.max(1, Number(visiveis) || LIMITE_CANDIDATOS);
   const mostrar = lista.slice(0, limite);
   const resto = lista.length - mostrar.length;

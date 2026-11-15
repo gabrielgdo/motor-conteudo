@@ -173,6 +173,7 @@ const MENSAGENS = {
   'quantidade-invalida': 'A quantidade de candidatos precisa ser um número inteiro de 1 a 15.',
   'destino-invalido': 'O destino do candidato precisa ser "decidir" (Para decidir) ou "roteirista".',
   'decisoes-sem-colunas': 'A aba Decisões não tem as colunas novas (id_pauta, rede, id_candidato, id_lote, data, quem, origem). Nada foi pedido ao Radar.',
+  'decisoes-falhou': 'Não consegui gravar a aprovação na aba Decisões, então nada foi pedido ao Radar. Tente de novo em instantes.',
   'ocupado': 'A ponte está atendendo outro pedido. Tente de novo em instantes.',
   'planilha-sem-execucoes': 'A aba Execuções não foi encontrada (ou está sem os cabeçalhos esperados).',
   'ponte-sem-configuracao': 'A ponte ainda não está configurada.',
@@ -606,7 +607,8 @@ function lerQuantidade(v) {
  * radar-candidato (pedido de um candidato da aba Candidatos) → {ok:true, dados, resumo} | falha.
  * dados.id_candidato no formato de candidato, igual ao id_alvo e não de teste (T); destino
  * 'decidir' | 'roteirista'; motivo opcional (texto), numa linha só e com até 300 caracteres. Nenhum
- * outro campo (além dos dois de trava). Ao bot vão exatamente {id_candidato, destino, motivo}.
+ * outro campo (além dos dois de trava). Ao bot vão exatamente {id_candidato, destino, motivo?}
+ * (motivo só quando não vazio).
  */
 function validarPedidoCandidato(pedido) {
   const d = pedido.dados || {};
@@ -620,9 +622,11 @@ function validarPedidoCandidato(pedido) {
   if (DESTINOS_CANDIDATO.indexOf(destino) < 0) return falha('destino-invalido');
   if (d.motivo !== undefined && typeof d.motivo !== 'string') return falha('pedido-invalido', 'O motivo precisa ser texto.');
   const motivo = umaLinha(d.motivo).slice(0, MAX_MOTIVO_CANDIDATO).trim();
+  const dados = { id_candidato: id, destino: destino };
+  if (motivo) dados.motivo = motivo; // vazio: o campo não vai ao bot
   return {
     ok: true,
-    dados: { id_candidato: id, destino: destino, motivo: motivo },
+    dados: dados,
     resumo: 'candidato ' + id + (destino === 'roteirista' ? ' → Roteirista' : ' → Para decidir'),
   };
 }
@@ -979,9 +983,10 @@ function limitePorHora(props, rotina) {
   };
   const daRotina = ler('LIMITE_POR_HORA_' + nomeDePropriedade(rotina));
   if (daRotina !== null) return daRotina;
+  const geral = ler('LIMITE_POR_HORA');
+  if (geral === 0) return 0; // LIMITE_POR_HORA = 0 fecha tudo, inclusive as rotinas com padrão próprio
   const doCatalogo = rotinaConhecida(rotina) ? ROTINAS[rotina].limitePorHora : undefined;
   if (Number.isInteger(doCatalogo)) return doCatalogo;
-  const geral = ler('LIMITE_POR_HORA');
   return geral !== null ? geral : LIMITE_POR_HORA_PADRAO;
 }
 
@@ -1333,13 +1338,24 @@ function processarPedido_(e, guardarTokenParaRedigir) {
     plano.travadas.forEach(function (linha) { marcarTravada_(aba, tabela.indices, linha, plano.registro.id_execucao); });
     aba.getRange(aba.getLastRow() + 1, 1, 1, tabela.cabecalho.length)
       .setValues([linhaNaOrdem(tabela.cabecalho, tabela.indices, plano.registro)]);
+    // A aprovação vai para Decisões ANTES do webhook (sem ela o Radar recusa o pedido). Se a escrita
+    // falhar, nada é repassado: a linha de Execuções fecha com erro, fora do lock, logo abaixo.
     if (decisao && decisao.tipo === 'gravar') {
-      decisao.aba.getRange(decisao.aba.getLastRow() + 1, 1, 1, decisao.tabela.cabecalho.length)
-        .setValues([linhaNaOrdem(decisao.tabela.cabecalho, decisao.tabela.indices, decisao.registro)]);
+      try {
+        decisao.aba.getRange(decisao.aba.getLastRow() + 1, 1, 1, decisao.tabela.cabecalho.length)
+          .setValues([linhaNaOrdem(decisao.tabela.cabecalho, decisao.tabela.indices, decisao.registro)]);
+      } catch (err) {
+        decisao = { ok: false, tipo: 'falhou' };
+      }
     }
     SpreadsheetApp.flush();
   } finally {
     lock.releaseLock();
+  }
+  if (decisao && decisao.tipo === 'falhou') {
+    fecharComErro_(cfg, plano.registro.id_execucao, 'não consegui gravar a aprovação em Decisões');
+    registrar_('info', plano.registro.rotina + ' ' + plano.registro.id_execucao + ': Decisões não gravada, nada repassado');
+    return falha('decisoes-falhou', null, { id_execucao: plano.registro.id_execucao, status: 'erro' });
   }
   // 'gravada' (linha nova em Decisões) | 'ja-existia' (o candidato já estava aprovado lá) | ''
   const situacaoDecisao = !decisao ? '' : (decisao.tipo === 'gravar' ? 'gravada' : 'ja-existia');

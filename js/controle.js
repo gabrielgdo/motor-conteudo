@@ -614,7 +614,8 @@ export function planejarPedidoCandidato({ id, destino, motivo = '', email } = {}
   if (!Object.prototype.hasOwnProperty.call(DESTINOS_CANDIDATO, destino)) erros.destino = 'Escolha: Mandar ao Roteirista ou Passar para Para decidir.';
   if (Object.keys(erros).length) return { ok: false, erros };
   const m = umaLinha(motivo).slice(0, MAX_MOTIVO_CANDIDATO).trimEnd();
-  return { ok: true, dados: { id_candidato: idc, destino, motivo: m } };
+  // Contrato com o Radar: exatamente {id_candidato, destino, motivo?}; motivo vazio não vai.
+  return { ok: true, dados: m ? { id_candidato: idc, destino, motivo: m } : { id_candidato: idc, destino } };
 }
 
 /**

@@ -8,8 +8,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import vm from 'node:vm';
-import { lerDataHora as lerDataHoraApp } from '../js/parse.js';
+import { lerDataHora as lerDataHoraApp, prefixoSemana, dataHoraPlanilha, ID_CANDIDATO_RE } from '../js/parse.js';
 import * as C from '../js/controle.js';
+import * as S from '../js/selecao.js';
 
 const CODIGO = readFileSync(new URL('../ponte/Code.gs', import.meta.url), 'utf8');
 const INTEGRA = readFileSync(new URL('../js/integra.js', import.meta.url), 'utf8');
@@ -653,7 +654,7 @@ test('webhook: um por bot (WEBHOOK_<BOT>_URL/_KEY), só https e com chave; o esq
   const amb = criarAmbiente();
   const escolher = amb.pure('escolherWebhook');
   const radar = { WEBHOOK_RADAR_URL: 'https://x.test/r', WEBHOOK_RADAR_KEY: 'k' };
-  for (const r of ['radar-diario', 'radar-selecao', 'radar-enviar']) assert.equal(escolher(radar, r).url, 'https://x.test/r', r);
+  for (const r of ['radar-diario', 'radar-selecao', 'radar-enviar', 'radar-candidato']) assert.equal(escolher(radar, r).url, 'https://x.test/r', r);
   assert.equal(escolher(radar, 'roteirista-decisao'), null);
   assert.equal(escolher({ WEBHOOK_ROTEIRISTA_URL: 'https://x.test/t', WEBHOOK_ROTEIRISTA_KEY: 'k' }, 'roteirista-decisao').url, 'https://x.test/t');
   assert.equal(escolher({ WEBHOOK_DIRETOR_URL: 'https://x.test/d', WEBHOOK_DIRETOR_KEY: 'k' }, 'diretor-retrospectiva').url, 'https://x.test/d');
@@ -966,6 +967,238 @@ test('autorizar(): só abre a planilha e faz um GET; não grava nada', () => {
   assert.equal(amb.gravacoesDeProps.length, 0);
 });
 
+/* ----------------------------------------------------------------- radar-diario: quantidade */
+
+test('radar-diario: dados.quantidade opcional; inteiro de 1 a 15 vai ao webhook como número; fora disso, falha clara', () => {
+  const amb = criarAmbiente();
+  const r = amb.post(disparo('tok-falso-robertta', 'radar-diario', { dados: { quantidade: 7 } }));
+  assert.equal(r.ok, true);
+  assert.deepEqual(JSON.parse(amb.webhooksChamados()[0].params.payload).dados, { quantidade: 7 });
+  assert.equal(amb.execs()[0].resumo, '7 candidatos');
+
+  const texto = criarAmbiente();
+  assert.equal(texto.post(disparo('tok-falso-gabriel', 'radar-diario', { dados: { quantidade: '12' } })).ok, true);
+  assert.deepEqual(JSON.parse(texto.webhooksChamados()[0].params.payload).dados, { quantidade: 12 }); // sempre inteiro
+
+  const sem = criarAmbiente();
+  assert.equal(sem.post(disparo('tok-falso-robertta', 'radar-diario')).ok, true); // ausente: o bot usa o padrão dele
+  assert.deepEqual(JSON.parse(sem.webhooksChamados()[0].params.payload).dados, {});
+
+  for (const q of [0, 16, 2.5, -1, '', 'cinco', '3,0', true]) {
+    const a = criarAmbiente();
+    const x = a.post(disparo('tok-falso-robertta', 'radar-diario', { dados: { quantidade: q } }));
+    assert.equal(x.ok, false, String(q));
+    assert.equal(x.codigo, 'quantidade-invalida', String(q));
+    assert.match(x.mensagem, /inteiro de 1 a 15/);
+    assert.equal(a.aba.linhas.length, 1, 'nada gravado');
+    assert.equal(a.webhooksChamados().length, 0);
+  }
+  // as outras rotinas não mudam (a quantidade é só do radar-diario)
+  const sel = criarAmbiente();
+  assert.equal(sel.post(disparo('tok-falso-robertta', 'radar-selecao', { dados: { quantidade: 99 } })).ok, true);
+});
+
+/* ----------------------------------------------------------------- radar-candidato */
+
+const CAND = '2026-11-14-01';
+const pedidoCandidato = (token, dados, extra = {}) => ({
+  acao: 'disparar', rotina: 'radar-candidato', id_alvo: dados.id_candidato ?? CAND, id_lote: '',
+  chave_idem: `${C.chaveIdemCandidato(dados.id_candidato ?? CAND, dados.destino, [])}-${++n}`, dados, access_token: token, ...extra,
+});
+/** Ambiente com Decisões (cabeçalho em outra ordem, maiúsculas e uma coluna extra) e Candidatos. */
+function ambienteCandidato({ decisoes = null, candidatos = true, ...o } = {}) {
+  const amb = criarAmbiente(o);
+  const cabDec = ['Data', 'Quem', 'Decisão', 'Semana', 'Pauta', 'Motivo', 'ID Pauta', 'Rede', 'Observação interna', 'ID Candidato', 'id_lote', 'Origem'];
+  amb.abas['Decisões'] = criarAba('Decisões', decisoes || [cabDec]);
+  if (candidatos) {
+    amb.abas.Candidatos = criarAba('Candidatos', [
+      ['id', 'data', 'plataforma', 'link', 'criador', 'Visualizações', 'mediana do criador', 'outlier (x)', 'tema', 'Ângulo', 'nota', 'status', 'id_execucao', 'origem'],
+      [CAND, '2026-11-14', 'Instagram', 'https://instagram.com/p/x', '@p', '1000', '100', '10', 'sono', 'Insônia de domingo', '80', 'novo', 'EX-A', 'automatica'],
+    ]);
+  }
+  return amb;
+}
+/** Decisões lida como o app lê (pelo cabeçalho). */
+const decisoesDoApp = (amb) => S.lerDecisoes(amb.abas['Decisões'].linhas).decisoes;
+
+test('radar-candidato: Gabriel recusado; T, id errado, destino inválido e campos extras recusados sem gravar nada', () => {
+  const casos = [
+    ['tok-falso-gabriel', { id_candidato: CAND, destino: 'decidir' }, {}, 'sem-permissao'],
+    ['tok-falso-robertta', { id_candidato: 'T2026-11-14-01', destino: 'roteirista' }, {}, 'teste-recusado'],
+    ['tok-falso-robertta', { id_candidato: 'S47-01', destino: 'decidir' }, {}, 'id-invalido'],
+    ['tok-falso-robertta', { id_candidato: CAND, destino: 'decidir' }, { id_alvo: '2026-11-14-02' }, 'id-invalido'],
+    ['tok-falso-robertta', { id_candidato: CAND, destino: 'publicar' }, {}, 'destino-invalido'],
+    ['tok-falso-robertta', { id_candidato: CAND, destino: 'decidir', prioridade: 'alta' }, {}, 'pedido-invalido'],
+    ['tok-falso-robertta', { id_candidato: CAND, destino: 'decidir', motivo: 3 }, {}, 'pedido-invalido'],
+    ['tok-falso-robertta', { destino: 'decidir' }, { id_alvo: '' }, 'id-invalido'],
+  ];
+  for (const [tok, dados, extra, codigo] of casos) {
+    const amb = ambienteCandidato();
+    const r = amb.post(pedidoCandidato(tok, dados, extra));
+    assert.equal(r.ok, false, JSON.stringify(dados));
+    assert.equal(r.codigo, codigo, JSON.stringify(dados));
+    assert.equal(amb.aba.linhas.length, 1, 'nada em Execuções');
+    assert.equal(amb.abas['Decisões'].linhas.length, 1, 'nada em Decisões');
+    assert.equal(amb.webhooksChamados().length, 0);
+  }
+  const g = ambienteCandidato().post(pedidoCandidato('tok-falso-gabriel', { id_candidato: CAND, destino: 'decidir' }));
+  assert.equal(g.mensagem, 'Só a conta da Robertta decide.');
+});
+
+test('radar-candidato "decidir": não grava Decisões; Execuções com id_alvo = candidato; payload exato ao Radar', () => {
+  const amb = ambienteCandidato();
+  const ped = pedidoCandidato('tok-falso-robertta', { id_candidato: CAND, destino: 'decidir' }, { id_lote: 'S47-manual-1' });
+  const r = amb.post(ped);
+  assert.equal(r.ok, true);
+  assert.equal(r.status, 'pedido');
+  assert.equal(r.decisao, undefined);
+  assert.equal(amb.abas['Decisões'].linhas.length, 1);
+  const [e] = amb.execs();
+  assert.deepEqual([e.rotina, e.bot, e.id_alvo, e.teste, e.resumo], ['radar-candidato', 'radar', CAND, false, `candidato ${CAND} → Para decidir`]);
+  const [w] = amb.webhooksChamados();
+  assert.equal(w.url, URL_RADAR);
+  assert.deepEqual(json(w.params.headers), { Authorization: `Bearer ${CHAVE_RADAR}` });
+  const p = JSON.parse(w.params.payload);
+  assert.deepEqual(Object.keys(p), ['rotina', 'id_execucao', 'chave_idem', 'origem', 'quem', 'id_alvo', 'id_lote', 'dados']);
+  assert.deepEqual(p, {
+    rotina: 'radar-candidato', id_execucao: r.id_execucao, chave_idem: ped.chave_idem, origem: 'manual-app', quem: ROBERTTA,
+    id_alvo: CAND, id_lote: 'S47-manual-1', dados: { id_candidato: CAND, destino: 'decidir' }, // motivo vazio não vai
+  });
+  // com motivo: uma linha, até 300
+  const m = ambienteCandidato();
+  m.post(pedidoCandidato('tok-falso-robertta', { id_candidato: CAND, destino: 'decidir', motivo: ` forte\n\nesta\tsemana ${'x'.repeat(400)}` }));
+  const dm = JSON.parse(m.webhooksChamados()[0].params.payload).dados;
+  assert.deepEqual(Object.keys(dm), ['id_candidato', 'destino', 'motivo']);
+  assert.ok(dm.motivo.startsWith('forte esta semana x'));
+  assert.ok(dm.motivo.length <= 300 && !/\n|\t/.test(dm.motivo));
+});
+
+test('radar-candidato "roteirista": UMA linha em Decisões pelo cabeçalho, gravada ANTES do webhook; payload certo', () => {
+  const amb = ambienteCandidato();
+  const ordem = [];
+  const fetchOriginal = amb.ctx.UrlFetchApp.fetch;
+  amb.ctx.UrlFetchApp.fetch = (url, params) => {
+    if (url.startsWith('https://webhook.')) ordem.push(`webhook (Decisões com ${amb.abas['Decisões'].linhas.length} linhas)`);
+    return fetchOriginal(url, params);
+  };
+  const ped = pedidoCandidato('tok-falso-robertta', { id_candidato: CAND, destino: 'roteirista', motivo: 'tema forte' }, { id_lote: 'S47-manual-2' });
+  const r = amb.post(ped);
+  assert.equal(r.ok, true);
+  assert.equal(r.decisao, 'gravada');
+  assert.deepEqual(ordem, ['webhook (Decisões com 2 linhas)']); // a aprovação já estava lá quando o Radar foi chamado
+  const linhas = amb.abas['Decisões'].linhas;
+  assert.equal(linhas.length, 2);
+  const cab = linhas[0];
+  const col = (nome) => linhas[1][cab.indexOf(nome)];
+  assert.equal(col('Decisão'), 'aprovada');
+  assert.equal(col('ID Candidato'), CAND);
+  assert.equal(col('ID Pauta'), ''); // a pauta ainda não existe
+  assert.equal(col('Origem'), 'manual-app');
+  assert.equal(col('Quem'), ROBERTTA);
+  assert.equal(col('Data'), '2026-11-18 10:00'); // São Paulo, como o app grava (texto, não data)
+  assert.equal(col('Semana'), 'S47');
+  assert.equal(col('Pauta'), 'Insônia de domingo'); // o ângulo do candidato
+  assert.equal(col('Motivo'), 'tema forte');
+  assert.equal(col('id_lote'), 'S47-manual-2');
+  assert.equal(col('Observação interna'), ''); // coluna que a ponte não conhece fica vazia
+  assert.equal(amb.abas['Decisões'].formulas.length, 0);
+  // o app lê a linha como aprovação do candidato
+  const [d] = decisoesDoApp(amb);
+  assert.deepEqual([d.decisao, d.id_candidato, d.id_pauta, d.origem], ['aprovada', CAND, '', 'manual-app']);
+  assert.equal(S.aprovacaoDoCandidato(decisoesDoApp(amb), CAND)._linha, 2);
+  const p = JSON.parse(amb.webhooksChamados()[0].params.payload);
+  assert.equal(p.rotina, 'radar-candidato');
+  assert.equal(p.id_alvo, CAND);
+  assert.deepEqual(p.dados, { id_candidato: CAND, destino: 'roteirista', motivo: 'tema forte' });
+  assert.equal(amb.execs()[0].resumo, `candidato ${CAND} → Roteirista`);
+
+  // sem a aba Candidatos: a pauta em Decisões é o id
+  const semCand = ambienteCandidato({ candidatos: false });
+  assert.equal(semCand.post(pedidoCandidato('tok-falso-robertta', { id_candidato: CAND, destino: 'roteirista' })).ok, true);
+  assert.equal(decisoesDoApp(semCand)[0].pauta, CAND);
+});
+
+test('radar-candidato "roteirista": não duplica Decisões (já aprovado → informa); mesma chave = repetido; trava por candidato', () => {
+  const cabDec = ['semana', 'pauta', 'decisao', 'motivo', 'id_pauta', 'rede', 'id_candidato', 'id_lote', 'data', 'quem', 'origem'];
+  const ja = ambienteCandidato({ decisoes: [cabDec, ['S47', 'x', 'Aprovada', '', '', '', CAND, '', '2026-11-17 10:00', ROBERTTA, 'manual-app']] });
+  const r = ja.post(pedidoCandidato('tok-falso-robertta', { id_candidato: CAND, destino: 'roteirista' }));
+  assert.equal(r.ok, true);
+  assert.equal(r.decisao, 'ja-existia');
+  assert.equal(ja.abas['Decisões'].linhas.length, 2, 'nenhuma linha nova');
+  assert.equal(ja.webhooksChamados().length, 1); // o pedido segue para o Radar
+
+  const amb = ambienteCandidato();
+  const ped = pedidoCandidato('tok-falso-robertta', { id_candidato: CAND, destino: 'roteirista' });
+  assert.equal(amb.post(ped).ok, true);
+  const rep = amb.post({ ...ped }); // mesma chave (dois toques)
+  assert.equal(rep.repetido, true);
+  assert.equal(amb.abas['Decisões'].linhas.length, 2);
+  assert.equal(amb.webhooksChamados().length, 1);
+  // outra chave para o mesmo candidato: a trava segura (pedido aberto)
+  assert.equal(amb.post(pedidoCandidato('tok-falso-robertta', { id_candidato: CAND, destino: 'decidir' })).codigo, 'rodando');
+  // outro candidato não fica preso
+  assert.equal(amb.post(pedidoCandidato('tok-falso-robertta', { id_candidato: '2026-11-14-02', destino: 'decidir' })).ok, true);
+  // depois de um erro, pedir de novo não grava outra aprovação
+  amb.aba.linhas[1][CAB.indexOf('status')] = 'erro';
+  const denovo = amb.post(pedidoCandidato('tok-falso-robertta', { id_candidato: CAND, destino: 'roteirista' }));
+  assert.equal(denovo.decisao, 'ja-existia');
+  assert.equal(amb.abas['Decisões'].linhas.length, 2);
+});
+
+test('radar-candidato "roteirista": Decisões sem as colunas novas (ou ausente) falha antes de gravar e de repassar', () => {
+  const antigas = ambienteCandidato({ decisoes: [['semana', 'pauta', 'decisao', 'motivo'], ['S46', 'velha', 'aprovada', '']] });
+  const r = antigas.post(pedidoCandidato('tok-falso-robertta', { id_candidato: CAND, destino: 'roteirista' }));
+  assert.equal(r.ok, false);
+  assert.equal(r.codigo, 'decisoes-sem-colunas');
+  assert.match(r.mensagem, /id_pauta, rede, id_candidato, id_lote, data, quem, origem/);
+  assert.match(r.mensagem, /Nada foi pedido ao Radar/);
+  assert.equal(antigas.aba.linhas.length, 1, 'nada em Execuções');
+  assert.equal(antigas.abas['Decisões'].linhas.length, 2);
+  assert.equal(antigas.webhooksChamados().length, 0);
+
+  const sem = criarAmbiente();
+  assert.equal(sem.post(pedidoCandidato('tok-falso-robertta', { id_candidato: CAND, destino: 'roteirista' })).codigo, 'decisoes-sem-colunas');
+  assert.equal(sem.webhooksChamados().length, 0);
+  // "decidir" não precisa de Decisões
+  assert.equal(criarAmbiente().post(pedidoCandidato('tok-falso-robertta', { id_candidato: CAND, destino: 'decidir' })).ok, true);
+});
+
+test('radar-candidato "roteirista": se a escrita em Decisões falha, não chama o webhook e fecha Execuções com erro', () => {
+  const amb = ambienteCandidato();
+  amb.abas['Decisões'].sheet.getRange = () => ({ setValues() { throw new Error('Service Spreadsheets failed'); }, setValue() { throw new Error('x'); } });
+  const r = amb.post(pedidoCandidato('tok-falso-robertta', { id_candidato: CAND, destino: 'roteirista' }));
+  assert.equal(r.ok, false);
+  assert.equal(r.codigo, 'decisoes-falhou');
+  assert.match(r.mensagem, /nada foi pedido ao Radar/);
+  assert.match(r.id_execucao, /^EX-/);
+  assert.equal(amb.webhooksChamados().length, 0);
+  const [e] = amb.execs();
+  assert.equal(e.status, 'erro');
+  assert.equal(e.erro, 'não consegui gravar a aprovação em Decisões');
+});
+
+test('limite de radar-candidato: 15 por hora por padrão; a propriedade da rotina vence; LIMITE_POR_HORA = 0 fecha também', () => {
+  const lim = criarAmbiente().pure('limitePorHora');
+  assert.equal(lim({}, 'radar-candidato'), 15);
+  assert.equal(lim({ LIMITE_POR_HORA: '2' }, 'radar-candidato'), 15);
+  assert.equal(lim({ LIMITE_POR_HORA_RADAR_CANDIDATO: '3' }, 'radar-candidato'), 3);
+  assert.equal(lim({ LIMITE_POR_HORA: '0' }, 'radar-candidato'), 0);
+  assert.equal(lim({ LIMITE_POR_HORA: '0' }, 'radar-diario'), 0);
+  assert.equal(lim({}, 'radar-diario'), 4);
+});
+
+test('guardas: Decisões só para radar-candidato com destino roteirista; T nunca', () => {
+  const g = criarAmbiente().pure('conferirGravacao');
+  const op = (destino, rotina = 'radar-candidato') => ({ rotina, destino, nomeDecisoes: 'Decisões' });
+  assert.equal(g('Decisões', CAND, 'Execuções', op('roteirista')).ok, true);
+  assert.equal(g('decisoes', CAND, 'Execuções', op('roteirista')).ok, true);
+  assert.equal(g('Decisões', CAND, 'Execuções', op('decidir')).codigo, 'aba-nao-permitida');
+  assert.equal(g('Decisões', CAND, 'Execuções', op('roteirista', 'radar-enviar')).codigo, 'aba-nao-permitida');
+  assert.equal(g('Desempenho', CAND, 'Execuções', op('roteirista')).codigo, 'aba-nao-permitida');
+  assert.equal(g('Decisões', 'T2026-11-14-01', 'Execuções', op('roteirista')).codigo, 'teste-recusado');
+  assert.equal(g('Decisões', CAND, 'Execuções').codigo, 'aba-nao-permitida'); // sem opções: como antes
+});
+
 /* ----------------------------------------------------------------- paridade com o app */
 
 test('paridade: catálogo, colunas, sinônimos, status e motivos iguais aos de js/controle.js', () => {
@@ -973,12 +1206,23 @@ test('paridade: catálogo, colunas, sinônimos, status e motivos iguais aos de j
   const R = amb.pure('ROTINAS');
   assert.deepEqual(Object.keys(R).sort(), Object.keys(C.ROTINAS).sort());
   for (const [k, v] of Object.entries(C.ROTINAS)) {
-    assert.deepEqual(json({ bot: R[k].bot, grupo: R[k].grupo, disparavel: R[k].disparavel, precisaId: R[k].precisaId, agenda: R[k].agenda, rotulo: R[k].rotulo }),
-      json({ bot: v.bot, grupo: v.grupo, disparavel: v.disparavel, precisaId: v.precisaId, agenda: v.agenda, rotulo: v.rotulo }), k);
+    assert.deepEqual(json({ bot: R[k].bot, grupo: R[k].grupo, disparavel: R[k].disparavel, precisaId: R[k].precisaId, agenda: R[k].agenda, rotulo: R[k].rotulo, soDecide: R[k].soDecide, travaPorId: R[k].travaPorId }),
+      json({ bot: v.bot, grupo: v.grupo, disparavel: v.disparavel, precisaId: v.precisaId, agenda: v.agenda, rotulo: v.rotulo, soDecide: v.soDecide, travaPorId: v.travaPorId }), k);
+    assert.equal(amb.pure('grupoDeTrava')(k, '2026-11-14-01'), C.grupoDeTrava(k, '2026-11-14-01'), k);
   }
   assert.deepEqual(json(amb.pure('COLUNAS_EXECUCOES')), C.COLUNAS_EXECUCOES);
   assert.deepEqual(json(amb.pure('STATUS_EXECUCAO')), C.STATUS_EXECUCAO);
   assert.deepEqual(json(amb.pure('MOTIVOS_ROTEIRO')), [...C.MOTIVOS_ROTEIRO]);
+  assert.equal(amb.pure('QUANTIDADE_MIN'), C.QUANTIDADE_MIN);
+  assert.equal(amb.pure('QUANTIDADE_MAX'), C.QUANTIDADE_MAX);
+  assert.equal(amb.pure('MAX_MOTIVO_CANDIDATO'), C.MAX_MOTIVO_CANDIDATO);
+  assert.deepEqual(json(amb.pure('DESTINOS_CANDIDATO')), Object.keys(C.DESTINOS_CANDIDATO));
+  assert.deepEqual(json(amb.pure('COLUNAS_DECISOES')), [...S.COLUNAS_DECISOES]);
+  assert.equal(String(amb.pure('ID_CANDIDATO_RE')), String(ID_CANDIDATO_RE));
+  for (const d of ['2026-11-18 10:00', '2026-01-01 00:30', '2026-12-31 23:50', '2027-01-03 12:00', '2026-11-15 23:59']) {
+    assert.equal(amb.pure('prefixoSemana')(sp(d)), prefixoSemana(sp(d)), d);
+    assert.equal(amb.pure('dataHoraPlanilha')(sp(d)), dataHoraPlanilha(sp(d)), d);
+  }
   assert.equal(amb.pure('TRAVA_MS'), C.TRAVA_MS);
   assert.equal(amb.pure('PROTECAO_ANTES_MS'), C.PROTECAO_ANTES_MS);
   assert.equal(amb.pure('PROTECAO_SEM_LINHA_MS'), C.PROTECAO_SEM_LINHA_MS);

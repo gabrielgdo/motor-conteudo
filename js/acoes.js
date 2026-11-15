@@ -415,7 +415,7 @@ export const ACOES = {
     if (!rotinaConhecida(rotina) || !ROTINAS[rotina].disparavel || rotina === 'roteirista-decisao' || rotina === 'radar-candidato') return;
     const extras = [];
     let idLote = '';
-    if (rotina === 'radar-diario') limparCampos('rd-quantidade'); // a janela abre sempre com o padrão (5)
+    if (rotina === 'radar-diario') { limparCampos('rd-quantidade'); delete estado.erros['rd-quantidade']; } // a janela abre sempre com o padrão (5)
     if (rotina === 'radar-selecao') {
       idLote = loteDaProximaSelecao({ execucoes: execucoesLidas().execucoes || [], selecao: pautasLidas().selecao, agora: new Date() });
       extras.push({ chave: 'lote', rotulo: 'Lote que vai nascer', texto: `${idLote}: as pautas entram na aba Seleção com ids novos e status “proposta”.` });

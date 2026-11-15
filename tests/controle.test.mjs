@@ -12,6 +12,7 @@ import {
   lerExecucoes, ROTINAS, ROTINAS_DISPARAVEIS, grupoDeTrava, avaliarTrava, textoTrava, avaliarProtecao, textoProtecao,
   avaliarDisparo, estatisticasTempo, janelaConfirmacao, proximaAgendada, textoProximaAgendada, novaChaveIdem,
   novoIdExecucao, idLote, podeDecidir, podeDisparar, campoTeste, novaExecucao, linhaExecucao, COLUNAS_EXECUCOES,
+  lerQuantidade, dadosDoRadarDiario, QUANTIDADE_PADRAO, planejarPedidoCandidato, chaveIdemCandidato, DESTINOS_CANDIDATO,
 } from '../js/controle.js';
 
 const ROBERTTA = ALLOWED[0];
@@ -115,9 +116,16 @@ test('lerExecucoes: aba sem cabeçalho reconhecível → lista vazia', () => {
 /* ------------------------------------------------------------- catálogo */
 
 test('catálogo fechado: grupos de trava, agenda, disparáveis; o motor é só leitura', () => {
-  assert.deepEqual(ROTINAS_DISPARAVEIS, ['radar-diario', 'radar-selecao', 'radar-enviar', 'roteirista-decisao', 'diretor-retrospectiva']);
+  assert.deepEqual(ROTINAS_DISPARAVEIS, ['radar-diario', 'radar-selecao', 'radar-enviar', 'radar-candidato', 'roteirista-decisao', 'diretor-retrospectiva']);
   for (const r of ['radar-diario', 'radar-selecao', 'radar-enviar']) assert.equal(grupoDeTrava(r), 'radar');
   assert.equal(grupoDeTrava('roteirista-decisao', 'S47-01'), 'roteirista|S47-01');
+  // radar-candidato: um grupo por candidato (um não trava o outro), sem agenda, só quem decide
+  assert.equal(grupoDeTrava('radar-candidato', '2026-11-14-01'), 'radar-candidato|2026-11-14-01');
+  assert.equal(ROTINAS['radar-candidato'].agenda, null);
+  assert.equal(ROTINAS['radar-candidato'].soDecide, true);
+  assert.equal(ROTINAS['radar-candidato'].precisaId, true);
+  assert.equal(ROTINAS['radar-candidato'].bot, 'radar');
+  assert.deepEqual(ROTINAS_DISPARAVEIS.filter((r) => ROTINAS[r].soDecide), ['radar-enviar', 'radar-candidato', 'roteirista-decisao']);
   assert.equal(grupoDeTrava('diretor-retrospectiva'), 'diretor|retrospectiva');
   for (const r of ['motor-checar-fontes', 'motor-editar', 'motor-revisar', 'motor-finalizar']) {
     assert.equal(ROTINAS[r].disparavel, false);
@@ -374,4 +382,65 @@ test('ponte desligada: disparar e decidirRoteiro lançam codigo ponte-desligada'
     await assert.rejects(chamada, (e) => e.codigo === 'ponte-desligada' && e.message === 'O disparo pelo app ainda não está ligado.');
   }
   } finally { FLAGS.ponte = antes; }
+});
+
+/* ---------------------------------------- Radar diário: quantidade; radar-candidato */
+
+test('radar-diario: quantidade padrão 5, só inteiros de 1 a 15, vai em dados.quantidade (número)', () => {
+  assert.equal(QUANTIDADE_PADRAO, 5);
+  assert.deepEqual(dadosDoRadarDiario(undefined), { ok: true, dados: { quantidade: 5 } }); // campo não tocado
+  assert.deepEqual(dadosDoRadarDiario('5'), { ok: true, dados: { quantidade: 5 } });
+  for (const [v, n] of [['1', 1], [' 15 ', 15], [7, 7]]) assert.deepEqual(lerQuantidade(v), { ok: true, valor: n }, String(v));
+  for (const v of ['', '0', '16', '-1', '2.5', '3,0', 'cinco', '1e1', 100]) {
+    const r = dadosDoRadarDiario(v);
+    assert.equal(r.ok, false, String(v));
+    assert.match(r.erro, /1 a 15|de 1 a 15|inteiro/, String(v));
+  }
+  assert.equal(typeof dadosDoRadarDiario('12').dados.quantidade, 'number');
+  // o texto da rotina explica a quantidade e que o diário das 7h não muda
+  assert.match(ROTINAS['radar-diario'].confirmacao.produz, /de 1 a 15; padrão 5/);
+  assert.match(ROTINAS['radar-diario'].confirmacao.semanal, /diário das 7h continua/);
+});
+
+test('radar-candidato: só quem decide; Gabriel recebe "Só a conta da Robertta decide."; id e destino conferidos', () => {
+  const agora = sp('2026-11-18 10:00');
+  const g = avaliarDisparo({ rotina: 'radar-candidato', idAlvo: '2026-11-14-01', email: GABRIEL, agora });
+  assert.equal(g.pode, false);
+  assert.equal(g.mensagem, 'Só a conta da Robertta decide.');
+  assert.equal(avaliarDisparo({ rotina: 'radar-candidato', idAlvo: '2026-11-14-01', email: ROBERTTA, agora }).pode, true);
+  assert.equal(avaliarDisparo({ rotina: 'radar-candidato', idAlvo: '', email: ROBERTTA, agora }).mensagem, 'Falta o id do candidato.');
+
+  assert.deepEqual(planejarPedidoCandidato({ id: ' 2026-11-14-01 ', destino: 'roteirista', motivo: 'tema\nforte  hoje', email: ROBERTTA }),
+    { ok: true, dados: { id_candidato: '2026-11-14-01', destino: 'roteirista', motivo: 'tema forte hoje' } });
+  // motivo vazio não vai (contrato: {id_candidato, destino, motivo?})
+  assert.deepEqual(planejarPedidoCandidato({ id: '2026-11-14-02', destino: 'decidir', email: ROBERTTA }).dados, { id_candidato: '2026-11-14-02', destino: 'decidir' });
+  assert.equal(planejarPedidoCandidato({ id: '2026-11-14-02', destino: 'decidir', motivo: 'x'.repeat(400), email: ROBERTTA }).dados.motivo.length, 300);
+  assert.equal(planejarPedidoCandidato({ id: '2026-11-14-01', destino: 'decidir', email: GABRIEL }).erros.permissao, 'Só a conta da Robertta decide.');
+  assert.match(planejarPedidoCandidato({ id: 'T2026-11-14-01', destino: 'decidir', email: ROBERTTA }).erros.id, /teste/);
+  assert.ok(planejarPedidoCandidato({ id: 'S47-01', destino: 'decidir', email: ROBERTTA }).erros.id);
+  assert.ok(planejarPedidoCandidato({ id: '2026-11-14-01', destino: 'publicar', email: ROBERTTA }).erros.destino);
+  assert.deepEqual(Object.keys(DESTINOS_CANDIDATO), ['decidir', 'roteirista']);
+  assert.match(DESTINOS_CANDIDATO.decidir.texto, /Para decidir/);
+  assert.match(DESTINOS_CANDIDATO.roteirista.texto, /Decisões/);
+});
+
+test('radar-candidato: chave_idem estável (mesma tela = mesma chave), muda depois de uma linha nova; id_alvo = id do candidato', () => {
+  const id = '2026-11-14-01';
+  const vazio = chaveIdemCandidato(id, 'roteirista', []);
+  assert.equal(vazio, 'radar-candidato-2026-11-14-01-roteirista-1');
+  assert.equal(chaveIdemCandidato(id, 'roteirista', []), vazio); // dois toques, dois aparelhos
+  assert.match(vazio, /^[A-Za-z0-9_-]{8,80}$/); // o formato que a ponte aceita
+  assert.notEqual(chaveIdemCandidato(id, 'decidir', []), vazio);
+  const comErro = execs({ id_execucao: 'EX-1', bot: 'radar', rotina: 'radar-candidato', id_alvo: id, inicio: '2026-11-18 09:00', status: 'erro' },
+    { id_execucao: 'EX-2', bot: 'radar', rotina: 'radar-candidato', id_alvo: '2026-11-14-02', inicio: '2026-11-18 09:00', status: 'rodando' });
+  assert.equal(chaveIdemCandidato(id, 'roteirista', comErro), 'radar-candidato-2026-11-14-01-roteirista-2');
+  // a trava é por candidato: o 02 rodando não segura o 01; o 02 não é pedido de novo
+  const agora = sp('2026-11-18 10:00');
+  assert.equal(avaliarTrava(comErro, 'radar-candidato', id, agora).livre, true);
+  assert.equal(avaliarTrava(comErro, 'radar-candidato', '2026-11-14-02', agora).livre, false);
+  assert.equal(avaliarTrava(comErro, 'radar-diario', '', agora).livre, true);
+  const r = novaExecucao({ rotina: 'radar-candidato', idAlvo: id, email: ROBERTTA, agora, chaveIdem: vazio, idExecucao: 'EX-9' });
+  assert.equal(r.id_alvo, id);
+  assert.equal(r.bot, 'radar');
+  assert.equal(r.teste, 'não');
 });
