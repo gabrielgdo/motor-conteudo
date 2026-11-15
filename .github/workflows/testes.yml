@@ -15,3 +15,5 @@ jobs:
         with:
           node-version: 22
       - run: node --test tests/
+      - name: Nome sem import (eslint no-undef)
+        run: npx -y eslint@9.15.0 js sw.js

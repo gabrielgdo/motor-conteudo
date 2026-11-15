@@ -12,7 +12,7 @@ import {
 import { textoDosAjustes, idCandidatoValido, ehCandidatoTeste } from './parse.js';
 import {
   novaChaveIdem, planejarDecisaoRoteiro, podeDecidir, avaliarDisparo, rotinaConhecida, ROTINAS,
-  dadosDoRadarDiario, planejarPedidoCandidato, chaveIdemCandidato, DESTINOS_CANDIDATO,
+  dadosDoRadarDiario, planejarPedidoCandidato, chaveIdemCandidato, DESTINOS_CANDIDATO, rotinaViaArquivo,
 } from './controle.js';
 import { estadoDasPautas } from './selecao.js';
 import { estadoDoCandidato, planejarEstadoCandidato, mesclarEstadosApp } from './candidatos.js';
