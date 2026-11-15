@@ -85,10 +85,11 @@ case "${1:-}" in
         PLANILHA_ID: planilha, CLIENT_ID: clientId,
         EMAILS_DECIDIR: allowed[0], EMAILS_DISPARAR: allowed.join(","),
         ABA_EXECUCOES: "Execuções", LIMITE_POR_HORA: "4",
-        WEBHOOK_RADAR_URL: env.radar_url, WEBHOOK_RADAR_KEY: env.radar_key,
-        WEBHOOK_ROTEIRISTA_URL: env.roteirista_url, WEBHOOK_ROTEIRISTA_KEY: env.roteirista_key,
         WEBHOOK_DIRETOR_URL: env.diretor_url, WEBHOOK_DIRETOR_KEY: env.diretor_key,
       };
+      // Radar e Roteirista saíram: só entra o que ainda existir no env (não aborta se faltar).
+      if (env.radar_url && env.radar_key) { props.WEBHOOK_RADAR_URL = env.radar_url; props.WEBHOOK_RADAR_KEY = env.radar_key; }
+      if (env.roteirista_url && env.roteirista_key) { props.WEBHOOK_ROTEIRISTA_URL = env.roteirista_url; props.WEBHOOK_ROTEIRISTA_KEY = env.roteirista_key; }
       const falta = Object.keys(props).filter((k) => !props[k]);
       if (falta.length) { console.log("Faltam valores para: " + falta.join(", ")); process.exit(1); }
       const corpo = JSON.stringify({ acao: "configurar", codigo: fs.readFileSync(process.env.CODIGO_ARQ, "utf8").trim(), propriedades: props });

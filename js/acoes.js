@@ -535,7 +535,19 @@ export const ACOES = {
     pintarJanela();
     try {
       let res;
-      if (j.acao === 'decidir-roteiro') {
+      const viaArquivo = rotinaViaArquivo(j.rotina);
+      if (viaArquivo && j.acao === 'decidir-roteiro') {
+        res = await Integra.drive.gravarDecisaoRoteiro({ ...j.payload });
+      } else if (viaArquivo) {
+        const tipo = j.rotina === 'radar-selecao' ? 'selecao'
+          : (j.rotina === 'radar-enviar' || j.acao === 'candidato') ? 'pauta-completa' : 'busca';
+        const ids = j.acao === 'candidato' ? [j.idAlvo]
+          : String(j.dados?.ids || '').split(/[,;\s]+/).filter(Boolean);
+        res = await Integra.drive.gravarPedidoBusca({
+          quantidade: j.rotina === 'radar-diario' ? j.dados?.quantidade : null,
+          tipo, ids, teste: false,
+        });
+      } else if (j.acao === 'decidir-roteiro') {
         res = await Integra.ponte.decidirRoteiro({ ...j.payload, chave_idem: j.chaveIdem });
       } else {
         const marcar = travada ? { marcar_travada: true, id_execucao_travada: String(d.trava?.linha?.id_execucao || '') } : {};
@@ -559,10 +571,11 @@ export const ACOES = {
         for (const id of String(j.dados?.ids || '').split(',').map((s) => s.trim()).filter(Boolean)) {
           estado.enviosLocais[id] = { desde, chave: j.chaveIdem };
         }
-        avisar('Pedido enviado ao Roteirista. O andamento aparece em Roteiros.');
+        avisar('Pedido gravado no Drive. O motor escreve os rascunhos na próxima passada do vigia (até 5 min).');
       } else {
         const q = j.rotina === 'radar-diario' && j.dados?.quantidade ? ` (${j.dados.quantidade} ${j.dados.quantidade === 1 ? 'candidato' : 'candidatos'})` : '';
-        avisar(`${ROTINAS[j.rotina].rotulo}${q}: pedido enviado. O andamento aparece na faixa.`);
+        const destino = viaArquivo ? 'Pedido gravado no Drive. O motor atende na próxima passada do vigia (até 5 min).' : 'pedido enviado. O andamento aparece na faixa.';
+        avisar(`${ROTINAS[j.rotina].rotulo}${q}: ${destino}`);
       }
       relerManual('execucoes');
       if (j.rotina === 'radar-enviar' || j.rotina === 'radar-selecao' || j.acao === 'candidato') relerManual('pautas');
@@ -721,7 +734,6 @@ export const ACOES = {
       chaveIdem: chaveIdemCandidato(id, destino, execucoes),
       titulo: def.titulo, rotuloConfirmar: def.botao,
       extras: extrasDoCandidato(c, destino),
-      notaDesligada: 'O pedido pelo app ainda não está ligado. Por enquanto, peça ao Radar no chat.',
     });
   },
 
@@ -767,7 +779,7 @@ export const ACOES = {
   },
   'candidatos-excluidos'() { estado.verExcluidos = !estado.verExcluidos; desenhar(); },
 
-  /* -- roteiros: decisão do rascunho (pela ponte, ao Roteirista) -- */
+  /* -- roteiros: decisão do rascunho (arquivo no Drive; o motor atende) -- */
   'roteiro-escolher'(el) {
     if (!podeDecidir(Integra.email())) return;
     const id = el.dataset.id;
@@ -826,7 +838,6 @@ export const ACOES = {
       rotina: 'roteirista-decisao', acao: 'decidir-roteiro', idAlvo: id, payload: plano.payload,
       chaveIdem: chaveIdemDecisao(plano.payload, execucoes),
       extras: extrasDaDecisao(plano, versoesDo(r)),
-      notaDesligada: 'O disparo pelo app ainda não está ligado. Por enquanto, responda ao Roteirista no chat.',
     });
   },
 

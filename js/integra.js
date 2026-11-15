@@ -28,6 +28,7 @@ import * as C from './controle.js';
 import * as S from './selecao.js';
 import { lerCandidatos, criarArquivosDoApp } from './candidatos.js';
 import { planejarArquivoRevisao } from './revisao.js';
+import * as PM from './pedidos-motor.js';
 // Envio do vídeo bruto (ponto 7): upload.js só é importado aqui; as regras ficam em envio-video.js.
 import { criarUpload } from './upload.js';
 import { criarEnviador, travaDoNavegador } from './envio-video.js';
@@ -250,6 +251,71 @@ export const Integra = {
       return { ok: true, arquivo, nome: plano.nome };
     },
 
+    /* Pedidos ao Motor Reels por arquivo (Radar e Roteirista foram desligados; nada passa pela ponte). */
+
+    /** Arquivo de texto por nome numa pasta (o mais recente), ou null. */
+    async _acharArquivo(pastaId, nome) {
+      const fs = (await drive.listar(pastaId)).filter((f) => f.mimeType !== 'application/vnd.google-apps.folder' && f.name.trim() === nome);
+      fs.sort((a, b) => String(b.modifiedTime || '').localeCompare(String(a.modifiedTime || '')));
+      return fs[0] || null;
+    },
+
+    /** 1-Radar/pedido-busca.md: cria ou mescla com o pedido que ainda não foi atendido. */
+    async gravarPedidoBusca({ quantidade = null, tipo = 'busca', ids = [], teste = false } = {}) {
+      const email = auth.emailAtual();
+      if (!C.podeDisparar(email)) throw new ErroIntegra('Esta conta não pode pedir rodadas.', 'sem-permissao');
+      const pasta = (await drive.pastas()).radar;
+      if (!pasta) throw new ErroIntegra('Não encontrei a pasta 1-Radar.', 'pasta-desconhecida');
+      const existente = await Integra.drive._acharArquivo(pasta, PM.NOME_PEDIDO_BUSCA);
+      const textoAntigo = existente ? await drive.baixarTexto({ id: existente.id, modifiedTime: `${existente.modifiedTime}-${Date.now()}` }) : '';
+      const plano = PM.planejarPedidoBusca({ quantidade, tipo, ids, teste, quem: email, existente: textoAntigo });
+      if (!plano.ok) throw new ErroIntegra(plano.mensagem, plano.erro);
+      try {
+        if (existente) await drive.substituirConteudo(existente.id, plano.texto, 'text/markdown');
+        else await drive.criarArquivoTexto(plano.nome, plano.texto, pasta);
+      } finally { drive.invalidarCache(); }
+      return { ok: true, nome: plano.nome, pedido: plano.pedido, mesclado: !!existente };
+    },
+
+    /** 1-Radar/decisoes <semana>.md (o motor roda /roteirizar com as aprovadas). */
+    async gravarDecisoesSemana({ semana, itens = [] } = {}) {
+      const email = auth.emailAtual();
+      if (!C.podeDecidir(email)) throw new ErroIntegra('Só a conta da Robertta decide.', 'sem-permissao');
+      if (!itens.length) return { ok: true, nome: '', gravado: 0 };
+      const pasta = (await drive.pastas()).radar;
+      if (!pasta) throw new ErroIntegra('Não encontrei a pasta 1-Radar.', 'pasta-desconhecida');
+      const nome = PM.nomeDecisoesSemana(semana);
+      const texto = PM.textoDecisoesSemana({ semana, itens, quem: email });
+      const existente = await Integra.drive._acharArquivo(pasta, nome);
+      try {
+        if (existente) await drive.substituirConteudo(existente.id, texto, 'text/markdown');
+        else await drive.criarArquivoTexto(nome, texto, pasta);
+      } finally { drive.invalidarCache(); }
+      return { ok: true, nome, gravado: itens.length };
+    },
+
+    /** 2-Roteiros/rascunhos/<id> decisao vN.md com quem (e-mail logado) e quando. */
+    async gravarDecisaoRoteiro({ id, versao, decisao, pedido = '', motivo = '' } = {}) {
+      const email = auth.emailAtual();
+      if (!C.podeDecidir(email)) throw new ErroIntegra('Só a conta da Robertta decide.', 'sem-permissao');
+      if (!idValido(id)) throw new ErroIntegra(`Id inválido: ${id}`, 'id-invalido');
+      const v = Number(versao);
+      if (!Number.isInteger(v) || v < 1) throw new ErroIntegra(`Versão inválida: ${versao}`, 'versao-invalida');
+      if (!['aprovar', 'mudar', 'recusar'].includes(decisao)) throw new ErroIntegra('A decisão precisa ser aprovar, mudar ou recusar.', 'decisao-invalida');
+      if (decisao === 'mudar' && !String(pedido || '').trim()) throw new ErroIntegra('Diga o que mudar.', 'falta-pedido');
+      const raiz = (await drive.pastas()).roteiros;
+      const pasta = (await drive.listar(raiz)).find((f) => f.mimeType === 'application/vnd.google-apps.folder' && f.name.trim().toLowerCase() === 'rascunhos');
+      if (!pasta) throw new ErroIntegra('Não encontrei 2-Roteiros/rascunhos.', 'pasta-desconhecida');
+      const nome = PM.nomeDecisaoRoteiro(id, v);
+      const texto = PM.textoDecisaoRoteiro({ id, versao: v, decisao, pedido, motivo, quem: email });
+      try {
+        const existente = await Integra.drive._acharArquivo(pasta.id, nome);
+        if (existente) await drive.substituirConteudo(existente.id, texto, 'text/markdown');
+        else await drive.criarArquivoTexto(nome, texto, pasta.id);
+      } finally { drive.invalidarCache(); }
+      return { ok: true, nome };
+    },
+
     /* INTEGRAÇÃO: envio retomável do vídeo, em pedaços (js/upload.js faz isto, ainda sem ser importado).
        1) POST https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable
           com { name, parents: [idDe3-Brutos] }: a resposta traz o endereço da sessão no cabeçalho Location.
@@ -328,7 +394,20 @@ export const Integra = {
           falhasSelecao.push({ id_pauta: a.id_pauta, erro });
         }
       }
-      return { ...plano, gravado: plano.linhas.length, falhasSelecao };
+      // Arquivo da semana no Drive: o motor lê 1-Radar/decisoes <semana>.md para /roteirizar.
+      const falhasArquivo = [];
+      const porSemana = new Map();
+      for (const r of plano.registros || []) {
+        const sem = r.semana || PM.semanaDeIdPauta(r.id_pauta);
+        if (!sem) continue;
+        if (!porSemana.has(sem)) porSemana.set(sem, []);
+        porSemana.get(sem).push({ id_pauta: r.id_pauta, decisao: r.decisao, motivo: r.motivo, id_candidato: r.id_candidato });
+      }
+      for (const [semana, itens] of porSemana) {
+        try { await Integra.drive.gravarDecisoesSemana({ semana, itens }); }
+        catch (erro) { falhasArquivo.push({ semana, erro }); }
+      }
+      return { ...plano, gravado: plano.linhas.length, falhasSelecao, falhasArquivo };
     },
   },
 

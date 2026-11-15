@@ -13,7 +13,7 @@
 
 import { esc, ic, quando, hrefSeguro } from '../util.js';
 import { FLAGS, PONTE_URL } from '../config.js';
-import { ROTINAS, rotinaConhecida, estatisticasTempo, janelaConfirmacao } from '../controle.js';
+import { ROTINAS, rotinaConhecida, rotinaViaArquivo, estatisticasTempo, janelaConfirmacao } from '../controle.js';
 import { lerDataHora } from '../parse.js';
 import { moldura } from './janelas.js';
 
@@ -210,9 +210,10 @@ export function itensDaJanela(rotina, { execucoes = [], semRegistro = '', idAlvo
  */
 export function janelaRodar({
   rotina, idAlvo = '', email = '', agora = new Date(), dados = {}, extras = [], etapa = 'confirmar', enviando = false,
-  erro = '', ligada = ponteLigada(), notaDesligada = NOTA_PONTE_DESLIGADA, acao = 'rodar-confirmar', podeTravar = true,
+  erro = '', ligada, notaDesligada = NOTA_PONTE_DESLIGADA, acao = 'rodar-confirmar', podeTravar = true,
   titulo = '', rotuloConfirmar: rotuloPedido = '', campos = '',
 } = {}) {
+  if (ligada === undefined) ligada = rotinaViaArquivo(rotina) || ponteLigada();
   const semRegistro = dados.abaAusente ? 'Sem a aba Execuções, o app não consegue ver se há uma rodada em andamento.'
     : !dados.execucoes ? 'O registro de Execuções não foi lido: o app não consegue ver se há uma rodada em andamento.' : '';
   const j = itensDaJanela(rotina, { execucoes: dados.execucoes || [], semRegistro, idAlvo, email, agora, extras });

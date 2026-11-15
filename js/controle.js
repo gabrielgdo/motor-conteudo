@@ -95,14 +95,20 @@ const TODO_DIA = [0, 1, 2, 3, 4, 5, 6];
  * `agenda`: {dias (0 = domingo), hora, minuto} no fuso de São Paulo, ou null.
  * Espelhado em ponte/Code.gs (ROTINAS); tests/ponte.test.mjs confere a paridade.
  */
+/** Radar e Roteirista saíram: o app grava um arquivo e o vigia roda /radar ou /roteirizar. Diretor continua pela ponte. */
+export function rotinaViaArquivo(rotina) {
+  const b = ROTINAS[rotina]?.bot;
+  return b === 'radar' || b === 'roteirista';
+}
+
 export const ROTINAS = Object.freeze({
   'radar-diario': {
     bot: 'radar', rotulo: 'Radar diário', grupo: 'radar', disparavel: true, precisaId: false, soDecide: false, travaPorId: false,
     agenda: { dias: TODO_DIA, hora: 7, minuto: 0 },
     confirmacao: {
-      oQue: 'Radar diário: pesquisa os temas ativos (sinais das últimas 48 h no X, nos perfis de referência do Instagram e do TikTok, Trends, estudos e CFP/CRP), verifica as fontes e faz a triagem.',
-      produz: 'Grava os candidatos na aba Candidatos da planilha Radar, no máximo a quantidade que você escolher abaixo (de 1 a 15; padrão 5). Não cria arquivo no Drive.',
-      custo: CUSTO_BOT,
+      oQue: 'Radar diário: o Motor pesquisa os temas ativos (sinais das últimas 48 h no X, nos perfis de referência, Trends, estudos e CFP/CRP), verifica as fontes e faz a triagem.',
+      produz: 'Grava o pedido em 1-Radar/pedido-busca.md (mescla se o arquivo já existir). O motor pesquisa e grava os candidatos na aba Candidatos, no máximo a quantidade que você escolher abaixo (de 1 a 15; padrão 5).',
+      custo: CUSTO_MOTOR,
       limites: [LIMITE_X, LIMITE_NAVEGADOR],
       semanal: 'Entra no mesmo dia do diário das 7h, sem repetir candidato (pelo id e pelo link). A quantidade vale só para esta rodada: o diário das 7h continua como está. Não muda a seleção de domingo.',
     },
@@ -111,9 +117,9 @@ export const ROTINAS = Object.freeze({
     bot: 'radar', rotulo: 'Seleção de pautas', grupo: 'radar', disparavel: true, precisaId: false, soDecide: false, travaPorId: false,
     agenda: { dias: [0], hora: 9, minuto: 0 },
     confirmacao: {
-      oQue: 'Seleção manual do Radar: escolhe pautas entre os candidatos, com as mesmas regras da seleção de domingo.',
-      produz: 'Grava as pautas na aba Seleção (status “proposta”), num lote próprio (S<semana>-manual-<n>), e manda os cartões no chat do Radar.',
-      custo: CUSTO_BOT,
+      oQue: 'Seleção manual: o Motor escolhe pautas entre os candidatos, com as mesmas regras da seleção de domingo.',
+      produz: 'Grava o pedido em 1-Radar/pedido-busca.md (tipo seleção). O motor grava as pautas na aba Seleção (status “proposta”), num lote próprio (S<semana>-manual-<n>).',
+      custo: CUSTO_MOTOR,
       limites: [LIMITE_X, LIMITE_NAVEGADOR],
       semanal: 'Não muda a seleção de domingo; o que você decidir agora não volta no domingo.',
     },
@@ -122,9 +128,9 @@ export const ROTINAS = Object.freeze({
     bot: 'radar', rotulo: 'Enviar ao Roteirista', grupo: 'radar', disparavel: true, precisaId: false, soDecide: true, travaPorId: false,
     agenda: null,
     confirmacao: {
-      oQue: 'O Radar lê as pautas aprovadas do lote e manda uma mensagem só ao Roteirista.',
-      produz: 'Marca essas pautas como “enviada ao Roteirista” na aba Seleção; o Roteirista grava os rascunhos em 2-Roteiros/rascunhos.',
-      custo: CUSTO_BOT,
+      oQue: 'Pede ao Motor que transforme as pautas aprovadas do lote em rascunhos de roteiro.',
+      produz: 'Grava o pedido em 1-Radar/pedido-busca.md (tipo pauta-completa, com os ids). O motor escreve os rascunhos em 2-Roteiros/rascunhos e marca as pautas como enviadas na aba Seleção.',
+      custo: CUSTO_MOTOR,
       limites: [LIMITE_NAVEGADOR],
       semanal: 'As pautas enviadas entram na fila de roteiros; a seleção de domingo já desconta a fila.',
     },
@@ -133,9 +139,9 @@ export const ROTINAS = Object.freeze({
     bot: 'radar', rotulo: 'Candidato do Radar', grupo: 'radar-candidato', disparavel: true, precisaId: true, soDecide: true, travaPorId: true,
     agenda: null,
     confirmacao: {
-      oQue: 'O Radar pega este candidato da aba Candidatos, transforma em pauta e verifica as fontes.',
-      produz: 'Uma pauta nova na aba Seleção, com o id do candidato. “Pedir pauta completa ao Radar”: ela aparece em Para decidir. “Mandar ao Roteirista”: a ponte grava a sua aprovação em Decisões e o Radar manda a pauta ao Roteirista.',
-      custo: CUSTO_BOT,
+      oQue: 'O Motor pega este candidato da aba Candidatos, transforma em pauta e verifica as fontes.',
+      produz: 'Grava o pedido em 1-Radar/pedido-busca.md (tipo pauta-completa, com o id). Uma pauta nova na aba Seleção. “Pedir pauta completa”: ela aparece em Para decidir. “Mandar ao Roteirista”: o motor também inicia o rascunho.',
+      custo: CUSTO_MOTOR,
       limites: ['O navegador do Radar faz uma tarefa por vez: se ele estiver ocupado, o pedido espera a vez.'],
       semanal: 'Não muda o Radar diário das 7h nem a seleção de domingo. Cada candidato é pedido uma vez (um não segura o outro).',
     },
@@ -144,9 +150,9 @@ export const ROTINAS = Object.freeze({
     bot: 'roteirista', rotulo: 'Decisão de roteiro', grupo: 'roteirista', disparavel: true, precisaId: true, soDecide: true, travaPorId: true,
     agenda: null,
     confirmacao: {
-      oQue: 'Leva ao Roteirista a sua decisão sobre esta versão do roteiro (aprovar, pedir mudança ou recusar).',
-      produz: 'Ao aprovar, o Roteirista grava “<id> - <título>.md” em 2-Roteiros; ao pedir mudança, um rascunho novo (vN+1) em 2-Roteiros/rascunhos.',
-      custo: CUSTO_BOT,
+      oQue: 'Grava a sua decisão sobre esta versão do roteiro (aprovar, pedir mudança ou recusar) para o Motor.',
+      produz: 'Grava “<id> decisao vN.md” em 2-Roteiros/rascunhos, com o seu e-mail e a hora. Ao aprovar, o motor grava “<id> - <título>.md” em 2-Roteiros; ao pedir mudança, um rascunho novo (vN+1); ao recusar, move para arquivo/.',
+      custo: CUSTO_MOTOR,
       limites: ['O Roteirista trabalha um pedido por vez.'],
       semanal: 'Não muda o fluxo da semana: vale igual à decisão que você daria no chat do Roteirista.',
     },

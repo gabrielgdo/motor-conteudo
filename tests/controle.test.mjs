@@ -12,7 +12,7 @@ import {
   lerExecucoes, ROTINAS, ROTINAS_DISPARAVEIS, grupoDeTrava, avaliarTrava, textoTrava, avaliarProtecao, textoProtecao,
   avaliarDisparo, estatisticasTempo, janelaConfirmacao, proximaAgendada, textoProximaAgendada, novaChaveIdem,
   novoIdExecucao, idLote, podeDecidir, podeDisparar, campoTeste, novaExecucao, linhaExecucao, COLUNAS_EXECUCOES,
-  lerQuantidade, dadosDoRadarDiario, QUANTIDADE_PADRAO, planejarPedidoCandidato, chaveIdemCandidato, DESTINOS_CANDIDATO,
+  lerQuantidade, dadosDoRadarDiario, QUANTIDADE_PADRAO, planejarPedidoCandidato, chaveIdemCandidato, DESTINOS_CANDIDATO, rotinaViaArquivo,
 } from '../js/controle.js';
 
 const ROBERTTA = ALLOWED[0];
@@ -139,8 +139,15 @@ test('catálogo fechado: grupos de trava, agenda, disparáveis; o motor é só l
   for (const r of ROTINAS_DISPARAVEIS) {
     const c = ROTINAS[r].confirmacao;
     assert.ok(c.oQue && c.produz && c.custo && c.semanal, r);
-    assert.equal(c.custo, 'Usa a cota do seu plano Grok Bot; custo por rodada não conhecido.');
+    if (ROTINAS[r].bot === 'diretor') {
+      assert.equal(c.custo, 'Usa a cota do seu plano Grok Bot; custo por rodada não conhecido.');
+    } else {
+      assert.match(c.custo, /Claude Code/);
+    }
   }
+  assert.equal(rotinaViaArquivo('radar-diario'), true);
+  assert.equal(rotinaViaArquivo('roteirista-decisao'), true);
+  assert.equal(rotinaViaArquivo('diretor-retrospectiva'), false);
   assert.ok(ROTINAS['radar-diario'].confirmacao.limites.includes('X: 30 leituras/min e 1000/dia.'));
   assert.ok(ROTINAS['radar-diario'].confirmacao.limites.includes('O navegador do Radar faz uma tarefa por vez.'));
   assert.equal(ROTINAS['radar-selecao'].confirmacao.semanal, 'Não muda a seleção de domingo; o que você decidir agora não volta no domingo.');

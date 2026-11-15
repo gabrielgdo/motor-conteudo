@@ -112,17 +112,17 @@ test('janela: textos do catálogo (o que roda, produz, tempo, custo, limites, se
   const h = janelaRodar({ rotina: 'radar-diario', email: GABRIEL, agora: AGORA, dados: dadosExec([]) });
   assert.match(h, /Radar diário: rodar agora\?/);
   assert.doesNotMatch(h, /undefined|\[object|NaN/);
-  assert.match(h, /<dt>O que vai rodar<\/dt><dd>Radar diário: pesquisa os temas ativos/);
-  assert.match(h, /<dt>O que vai produzir e onde<\/dt><dd>Grava os candidatos na aba Candidatos/);
+  assert.match(h, /<dt>O que vai rodar<\/dt><dd>Radar diário: o Motor pesquisa os temas ativos/);
+  assert.match(h, /<dt>O que vai produzir e onde<\/dt><dd>Grava o pedido em 1-Radar\/pedido-busca\.md/);
   assert.match(h, /<dt>Tempo<\/dt><dd>ainda sem medição<\/dd>/);
-  assert.match(h, /<dt>Custo<\/dt><dd>Usa a cota do seu plano Grok Bot/);
+  assert.match(h, /<dt>Custo<\/dt><dd>Usa o Claude Code/);
   assert.match(h, /X: 30 leituras\/min e 1000\/dia\./);
   assert.match(h, /A próxima rodada agendada é amanhã às 7h\./);
   assert.match(h, /<dt>Efeito no semanal<\/dt>/);
-  // No lugar do confirmar, a nota calma; nenhum botão de confirmar ativo.
-  assert.ok(h.includes(NOTA_PONTE_DESLIGADA));
-  assert.doesNotMatch(h, /data-acao="rodar-confirmar"/);
-  // A conta do Gabriel pode disparar (quando ligar): nada de "sem permissão".
+  // Pedido vai para o Drive: a ponte desligada não impede o confirmar.
+  assert.doesNotMatch(h, /peça ao bot no chat/);
+  assert.match(h, /data-acao="rodar-confirmar"/);
+  // A conta do Gabriel pode disparar: nada de "sem permissão".
   assert.doesNotMatch(h, /não pode disparar/);
 });
 
@@ -151,10 +151,11 @@ test('janela: "Parece travada" pede a segunda confirmação para marcar e rodar 
   const h2 = janelaRodar({ rotina: 'radar-diario', email: ROBERTTA, agora: AGORA, dados: dadosExec(lista), ligada: true, etapa: 'travada' });
   assert.match(h2, /Tem certeza\?/);
   assert.match(h2, /data-acao="rodar-confirmar" data-valor="travada">Sim, marcar como travada e rodar/);
-  // Ponte desligada: a opção aparece, mas desabilitada, e a nota calma no lugar do confirmar.
+  // Pedido via arquivo: mesmo com a ponte desligada, "marcar como travada" segue ativo.
   const h3 = janelaRodar({ rotina: 'radar-diario', email: ROBERTTA, agora: AGORA, dados: dadosExec(lista) });
-  assert.match(h3, /data-acao="rodar-travada" disabled/);
-  assert.ok(h3.includes(NOTA_PONTE_DESLIGADA));
+  assert.match(h3, /data-acao="rodar-travada"/);
+  assert.doesNotMatch(h3, /data-acao="rodar-travada" disabled/);
+  assert.doesNotMatch(h3, /peça ao bot no chat/);
 });
 
 test('janela: proteção perto da rodada agendada (o manual volta às 9h)', () => {
@@ -361,15 +362,23 @@ test('Roteiros: aside "Sua decisão" (faixa da rotina do id; desabilitado para a
   assert.doesNotMatch(g, /roteiro-confirmar/);
 });
 
-test('Roteiros: confirmação pela ponte desligada diz para responder ao Roteirista no chat', () => {
-  const nota = 'O disparo pelo app ainda não está ligado. Por enquanto, responda ao Roteirista no chat.';
+test('Roteiros: decisão vai para o Drive mesmo com a ponte desligada', () => {
+  assert.equal(ponteLigada(), false);
   const h = janelaRodar({
     rotina: 'roteirista-decisao', idAlvo: 'S47-04', email: ROBERTTA, agora: AGORA, dados: dadosExec([]),
-    extras: [{ chave: 'decisao', rotulo: 'Sua decisão', texto: 'Aprovar o rascunho v2' }], notaDesligada: nota, podeTravar: false,
+    extras: [{ chave: 'decisao', rotulo: 'Sua decisão', texto: 'Aprovar o rascunho v2' }], podeTravar: false,
   });
-  assert.ok(h.includes(nota));
+  assert.doesNotMatch(h, /responda ao Roteirista no chat/);
+  assert.doesNotMatch(h, /peça ao bot no chat/);
   assert.match(h, /<dt>Sua decisão<\/dt><dd>Aprovar o rascunho v2<\/dd>/);
-  assert.doesNotMatch(h, /rodar-confirmar/);
+  assert.match(h, /data-acao="rodar-confirmar"/);
+});
+
+test('janela: retrospectiva do Diretor ainda exige a ponte', () => {
+  assert.equal(ponteLigada(), false);
+  const h = janelaRodar({ rotina: 'diretor-retrospectiva', email: ROBERTTA, agora: AGORA, dados: dadosExec([]) });
+  assert.ok(h.includes(NOTA_PONTE_DESLIGADA));
+  assert.doesNotMatch(h, /data-acao="rodar-confirmar"/);
 });
 
 /* ------------------------------------------------------- vídeos e histórico */
