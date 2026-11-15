@@ -134,7 +134,7 @@ export const ROTINAS = Object.freeze({
     agenda: null,
     confirmacao: {
       oQue: 'O Radar pega este candidato da aba Candidatos, transforma em pauta e verifica as fontes.',
-      produz: 'Uma pauta nova na aba Seleção, com o id do candidato. “Passar para Para decidir”: ela aparece em Para decidir. “Mandar ao Roteirista”: a ponte grava a sua aprovação em Decisões e o Radar manda a pauta ao Roteirista.',
+      produz: 'Uma pauta nova na aba Seleção, com o id do candidato. “Pedir pauta completa ao Radar”: ela aparece em Para decidir. “Mandar ao Roteirista”: a ponte grava a sua aprovação em Decisões e o Radar manda a pauta ao Roteirista.',
       custo: CUSTO_BOT,
       limites: ['O navegador do Radar faz uma tarefa por vez: se ele estiver ocupado, o pedido espera a vez.'],
       semanal: 'Não muda o Radar diário das 7h nem a seleção de domingo. Cada candidato é pedido uma vez (um não segura o outro).',
@@ -586,9 +586,11 @@ export function dadosDoRadarDiario(valor) {
 /* -------------------------------------------- candidato → pauta (radar-candidato) */
 
 export const DESTINOS_CANDIDATO = Object.freeze({
+  // Enriquecimento opcional (aciona o Radar). "Passar para Para decidir" é só mudança de estado no
+  // app, sem o Radar (candidatos.js: planejarEstadoCandidato).
   decidir: {
-    botao: 'Passar para Para decidir',
-    titulo: 'Passar para Para decidir?',
+    botao: 'Pedir pauta completa ao Radar',
+    titulo: 'Pedir pauta completa ao Radar?',
     texto: 'O Radar transforma o candidato em pauta proposta na aba Seleção, verifica as fontes, e ela aparece em Para decidir. Nada vai ao Roteirista agora.',
   },
   roteirista: {
@@ -600,7 +602,7 @@ export const DESTINOS_CANDIDATO = Object.freeze({
 export const MAX_MOTIVO_CANDIDATO = 300;
 
 /**
- * Pedido de um candidato (botões "Mandar ao Roteirista" / "Passar para Para decidir") → o que vai
+ * Pedido de um candidato (botões "Mandar ao Roteirista" / "Pedir pauta completa ao Radar") → o que vai
  * em `dados` para a ponte: {ok:true, dados:{id_candidato, destino, motivo}} | {ok:false, erros}.
  * Só a conta que decide; id no formato de candidato e não de teste; motivo opcional, uma linha só,
  * até 300 caracteres.
@@ -611,7 +613,7 @@ export function planejarPedidoCandidato({ id, destino, motivo = '', email } = {}
   if (!podeDecidir(email)) erros.permissao = 'Só a conta da Robertta decide.';
   if (!idCandidatoValido(idc)) erros.id = `Id de candidato inválido: ${umaLinha(idc).slice(0, 30)}`;
   else if (ehCandidatoTeste(idc)) erros.id = 'Candidato de teste (T) não vira pauta pelo app.';
-  if (!Object.prototype.hasOwnProperty.call(DESTINOS_CANDIDATO, destino)) erros.destino = 'Escolha: Mandar ao Roteirista ou Passar para Para decidir.';
+  if (!Object.prototype.hasOwnProperty.call(DESTINOS_CANDIDATO, destino)) erros.destino = 'Escolha: Mandar ao Roteirista ou Pedir pauta completa ao Radar.';
   if (Object.keys(erros).length) return { ok: false, erros };
   const m = umaLinha(motivo).slice(0, MAX_MOTIVO_CANDIDATO).trimEnd();
   // Contrato com o Radar: exatamente {id_candidato, destino, motivo?}; motivo vazio não vai.

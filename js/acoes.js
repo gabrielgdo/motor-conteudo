@@ -15,13 +15,14 @@ import {
   dadosDoRadarDiario, planejarPedidoCandidato, chaveIdemCandidato, DESTINOS_CANDIDATO,
 } from './controle.js';
 import { estadoDasPautas } from './selecao.js';
-import { estadoDoCandidato } from './candidatos.js';
+import { estadoDoCandidato, planejarEstadoCandidato, mesclarEstadosApp } from './candidatos.js';
 import { janelaRodar, janelaDetalhes, NOTA_PONTE_DESLIGADA, classeJanelaRodar } from './componentes/execucao.js';
 import { pendentesDe, janelaPrevia } from './telas/videos.js';
 import {
   janelaDecisoes, pedidosDaTela, resultadosDaGravacao, aprovadasParaEnviar, loteDaProximaSelecao, bloqueioDeDecisao,
   bloqueioDeCandidato, bloqueioDeRoteirista, campoQuantidade, campoMotivoCandidato, extrasDoCandidato, textoDoPedidoCandidato,
-  LIMITE_CANDIDATOS, enviosDaTela,
+  LIMITE_CANDIDATOS, enviosDaTela, janelaExcluirCandidato, janelaRecusarCandidato, modeloRecusaCandidato, textoDoEstadoGravado,
+  bloqueioDoArquivoApp,
 } from './telas/pautas.js';
 import { chaveIdemEnvio, mapaDeEnvios } from './envios.js';
 import {
@@ -30,7 +31,7 @@ import {
 import { versaoVistaDe } from './telas/roteiros.js';
 import { arquivoDeLegenda } from './telas/prontos.js';
 import { desenhar, rotear } from './roteador.js';
-import { abrirJanela, fecharJanela, avisar, removerAviso, copiarTexto, janelaSobre, janelaSair } from './componentes/janelas.js';
+import { abrirJanela, fecharJanela, avisar, avisarComAcao, removerAviso, copiarTexto, janelaSobre, janelaSair } from './componentes/janelas.js';
 import { Paleta } from './componentes/paleta.js';
 import { Tele } from './componentes/tele.js';
 import { Players } from './componentes/players.js';
@@ -232,6 +233,10 @@ function pintarJanela() {
       id: j.id, versao: j.versao, decisao: j.decisao, ajustes: j.ajustes, teste: j.teste,
       execucoes: execucoesLidas().execucoes || [], enviando: j.enviando, erro: j.erro,
     });
+  } else if (j.tipo === 'cand-excluir') {
+    html = janelaExcluirCandidato({ c: j.c, situacao: j.situacao, enviando: j.enviando, erro: j.erro });
+  } else if (j.tipo === 'cand-recusar') {
+    html = janelaRecusarCandidato({ c: j.c, enviando: j.enviando, erro: j.erro, erroMotivo: j.erroMotivo });
   }
   if (html) abrirJanela(html, j.tipo === 'rodar' ? classeJanelaRodar(j.rotina) : 'janela');
 }
@@ -250,6 +255,70 @@ function abrirRodar(janela) {
 }
 
 const limparCampos = (...modelos) => { for (const m of modelos) delete rascunho[m]; };
+
+/**
+ * Candidato que a tela pode mudar agora (o botão pode estar velho): lido, não de teste, no formato,
+ * conta que decide, com internet e com o estado do Drive lido. → {c, situacao, atual} | null.
+ */
+function contextoDoCandidato(id) {
+  if (!idCandidatoValido(id) || ehCandidatoTeste(id)) return null;
+  const lidos = candidatosLidas();
+  if (bloqueioDeCandidato({ email: Integra.email(), offline: lidos.offline }) || bloqueioDoArquivoApp(lidos)) return null;
+  const c = (lidos.candidatos || []).find((x) => x.id === id);
+  if (!c) return null;
+  const pautas = pautasLidas();
+  const situacao = estadoDoCandidato(c, { selecao: pautas.selecao, decisoes: pautas.decisoes, execucoes: execucoesLidas().execucoes || [], agora: new Date() });
+  const atual = mesclarEstadosApp(lidos.app?.registros, estado.candidatosLocais).get(id) || null;
+  return { c, situacao, atual };
+}
+
+/**
+ * Muda o estado de um candidato no arquivo do app (só esse arquivo; nada em Seleção, Decisões ou na
+ * planilha). Sem janela (mover/voltar/restaurar/desfazer): estado otimista na hora, confirmado
+ * quando o Drive grava; se falhar, volta e o cartão mostra o erro com "Tentar de novo". Com janela
+ * (excluir/recusar): "Excluindo…" na janela e o erro dentro dela. Sucesso: aviso com "Desfazer".
+ */
+async function mudarEstadoCandidato(id, para, { janela = null, motivo = '', desfazer = false } = {}) {
+  const ctx = contextoDoCandidato(id);
+  if (!ctx) { desenhar(); return; }
+  if (ctx.atual?.pendente) return; // já gravando (toque repetido)
+  // Desfazer um "Restaurar" de recusado: a recusa volta com o motivo que tinha.
+  if (para === 'recusado' && !motivo) motivo = [...(ctx.atual?.historico || [])].reverse().find((h) => h.estado === 'recusado')?.motivo || '';
+  const email = Integra.email();
+  const quando = new Date().toISOString();
+  const plano = planejarEstadoCandidato({ id, para, email, atual: ctx.atual, situacao: ctx.situacao, motivo, quando });
+  if (!plano.ok) {
+    if (janela) { janela.erro = plano.mensagem; pintarJanela(); } else { avisar(plano.mensagem); desenhar(); }
+    return;
+  }
+  const anterior = estado.candidatosLocais[id];
+  delete estado.errosCandidato[id];
+  if (janela) { janela.enviando = true; janela.erro = ''; pintarJanela(); } else { estado.candidatosLocais[id] = { ...plano.registro, pendente: true }; desenhar(); }
+  try {
+    const res = await Integra.app.candidatos.gravar({ id, para, email, situacao: ctx.situacao, motivo, quando });
+    if (!estado.logada) return;
+    estado.candidatosLocais[id] = res.registro;
+    if (janela && estado.janela === janela) fecharJanela();
+    if (janela) limparCampos(modeloRecusaCandidato(id));
+    const texto = textoDoEstadoGravado(res);
+    if (desfazer || !res.de || res.de === para) avisar(texto);
+    else avisarComAcao(texto, { rotulo: 'Desfazer', acao: 'candidato-desfazer', id, valor: res.de });
+    desenhar();
+  } catch (e) {
+    if (!estado.logada) return;
+    if (anterior) estado.candidatosLocais[id] = anterior; else delete estado.candidatosLocais[id];
+    const mensagem = e?.message || 'O Drive não respondeu agora.';
+    if (janela) {
+      janela.enviando = false;
+      janela.erro = `Não gravei no Drive: ${mensagem} Nada mudou; dá para tentar de novo.`;
+      if (estado.janela === janela) pintarJanela();
+    } else {
+      estado.errosCandidato[id] = { mensagem, para };
+      avisar(`Não gravei no Drive: ${mensagem}`);
+    }
+    desenhar();
+  }
+}
 
 /** Conta e planilha permitem decidir pautas agora? (o motivo aparece na tela) */
 function podeDecidirPautas() {
@@ -655,6 +724,48 @@ export const ACOES = {
       notaDesligada: 'O pedido pelo app ainda não está ligado. Por enquanto, peça ao Radar no chat.',
     });
   },
+
+  /* -- pautas: estado do candidato no app (_motor/app/candidatos/<id>.json; sem o Radar) -- */
+  // "Passar para Para decidir" / "Voltar para Candidatos" / "Restaurar": gravação direta, otimista.
+  'candidato-mover'(el) {
+    const para = el.dataset.valor;
+    if (para !== 'para-decidir' && para !== 'candidato') return undefined;
+    return mudarEstadoCandidato(String(el.dataset.id || ''), para);
+  },
+  // "Desfazer" do aviso: volta ao estado de antes (o aviso some no toque).
+  'candidato-desfazer'(el) {
+    el.closest?.('.aviso')?.remove();
+    const para = el.dataset.valor;
+    if (!['candidato', 'para-decidir', 'excluido', 'recusado'].includes(para)) return undefined;
+    return mudarEstadoCandidato(String(el.dataset.id || ''), para, { desfazer: true });
+  },
+  'candidato-excluir'(el) {
+    const ctx = contextoDoCandidato(String(el.dataset.id || ''));
+    if (!ctx) return;
+    estado.janela = { tipo: 'cand-excluir', id: ctx.c.id, c: ctx.c, situacao: ctx.situacao, enviando: false, erro: '' };
+    pintarJanela();
+  },
+  'candidato-excluir-confirmar'(el) {
+    const j = estado.janela;
+    if (j?.tipo !== 'cand-excluir' || j.enviando || el.disabled || j.id !== el.dataset.id) return undefined;
+    return mudarEstadoCandidato(j.id, 'excluido', { janela: j });
+  },
+  'candidato-recusar'(el) {
+    const ctx = contextoDoCandidato(String(el.dataset.id || ''));
+    if (!ctx) return;
+    limparCampos(modeloRecusaCandidato(ctx.c.id));
+    estado.janela = { tipo: 'cand-recusar', id: ctx.c.id, c: ctx.c, enviando: false, erro: '', erroMotivo: '' };
+    pintarJanela();
+  },
+  'candidato-recusar-confirmar'(el) {
+    const j = estado.janela;
+    if (j?.tipo !== 'cand-recusar' || j.enviando || el.disabled || j.id !== el.dataset.id) return undefined;
+    const motivo = String(rascunho[modeloRecusaCandidato(j.id)] || '').trim();
+    if (!motivo) { j.erroMotivo = 'Escolha o motivo da recusa.'; pintarJanela(); return undefined; }
+    j.erroMotivo = '';
+    return mudarEstadoCandidato(j.id, 'recusado', { janela: j, motivo });
+  },
+  'candidatos-excluidos'() { estado.verExcluidos = !estado.verExcluidos; desenhar(); },
 
   /* -- roteiros: decisão do rascunho (pela ponte, ao Roteirista) -- */
   'roteiro-escolher'(el) {

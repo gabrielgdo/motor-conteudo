@@ -240,7 +240,9 @@ test('estados do cartão: livre, pedido em andamento, erro, virou pauta, aprovad
   const botoes = (x) => (x.match(/data-acao="candidato-pedir"[^>]*>/g) || []);
   assert.equal(botoes(c[ids[0]]).length, 2);
   assert.ok(botoes(c[ids[0]]).every((b) => !b.includes('disabled')));
-  assert.match(c[ids[0]], /type="button" class="botao primario" data-acao="candidato-pedir" data-id="2026-11-17-01" data-valor="decidir"[^>]*>Passar para Para decidir</);
+  // o principal só MOVE (estado no app, sem o Radar); o pedido ao Radar é ação secundária
+  assert.match(c[ids[0]], /type="button" class="botao primario" data-acao="candidato-mover" data-id="2026-11-17-01" data-valor="para-decidir">Passar para Para decidir</);
+  assert.match(c[ids[0]], /class="botao calmo" data-acao="candidato-pedir" data-id="2026-11-17-01" data-valor="decidir">Pedir pauta completa ao Radar</);
   assert.match(c[ids[0]], /class="botao contorno" [^>]*data-valor="roteirista"[^>]*>Mandar ao Roteirista</);
   assert.match(c[ids[1]], /Pedido em andamento \(rodando/);
   assert.equal(botoes(c[ids[1]]).length, 0);

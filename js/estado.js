@@ -30,6 +30,12 @@ const inicial = () => ({
   // Envio ao Roteirista aceito pela ponte e ainda não visto em Execuções (registro otimista, só em
   // memória): id_pauta -> {desde: ms}. Some quando a releitura mostra a linha (js/envios.js).
   enviosLocais: {},
+  // Estado do candidato no app (`_motor/app/candidatos/<id>.json`) gravado nesta sessão (registro
+  // otimista: id -> {id, estado, motivo, historico, quando, pendente?}); o lido do Drive vale quando
+  // for mais novo (js/candidatos.js: mesclarEstadosApp).
+  candidatosLocais: {},
+  errosCandidato: {}, // id -> {mensagem, para}: a gravação falhou (o cartão mostra "Tentar de novo")
+  verExcluidos: false, // chip Candidatos: a lista "Excluídos (n)" aberta
 });
 
 export const estado = inicial();

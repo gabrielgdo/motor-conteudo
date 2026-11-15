@@ -9,9 +9,14 @@
 //
 // Chip "Candidatos" (antes de Para decidir / Decididas / Todas): os candidatos da aba Candidatos
 // (Radar diário), do mais recente para o mais antigo, com os da última rodada em destaque ("Nova
-// rodada"). Cada um tem "Passar para Para decidir" e "Mandar ao Roteirista" (rotina radar-candidato
-// pela ponte, só a conta da Robertta); o estado do cartão vem de Execuções, Seleção e Decisões, para
-// o mesmo candidato não ser pedido duas vezes. "Para decidir" continua vindo só da aba Seleção.
+// rodada"). Cada um tem "Passar para Para decidir" (só muda o estado no arquivo do app
+// `_motor/app/candidatos/<id>.json`, sem o Radar), "Mandar ao Roteirista" e "Pedir pauta completa ao
+// Radar" (rotina radar-candidato pela ponte) e "Excluir" (o mesmo arquivo; nada mais é tocado). Só a
+// conta da Robertta muda alguma coisa; o estado do cartão vem de Execuções, Seleção e Decisões, para
+// o mesmo candidato não ser pedido duas vezes. As pautas de "Para decidir" vêm da aba Seleção; os
+// candidatos passados para lá pelo app ficam no bloco "Candidatos para decidir (sem verificação do
+// Radar)", com Aprovar e mandar ao Roteirista, Pedir pauta completa, Recusar e Voltar. Excluídos e
+// recusados ficam atrás do chip discreto "Excluídos (n)", com Restaurar.
 //
 // htmlPautas(...) é puro (recebe os dados): testado em tests/telas.test.mjs e candidatos.test.mjs.
 
@@ -26,7 +31,10 @@ import {
 } from '../controle.js';
 import { paraDecidir, estadoDasPautas, aprovacaoDoCandidato, MOTIVOS_RECUSA, MENSAGEM_COLUNAS_DECISOES, STATUS_PAUTA } from '../selecao.js';
 import { ehTeste, prefixoSemana, lerDataHora, formatarData, horaCurta, hojeISO, dataCurta } from '../parse.js';
-import { candidatosDaTela, contarCandidatos, ultimaRodada, estadoDoCandidato, rotuloOrigem } from '../candidatos.js';
+import {
+  candidatosDaTela, ultimaRodada, estadoDoCandidato, rotuloOrigem, mesclarEstadosApp, separarCandidatos,
+  contarCandidatosParaDecidir, MOTIVOS_RECUSA_CANDIDATO, caminhoArquivoCandidato,
+} from '../candidatos.js';
 import { faixaExecucao } from '../componentes/execucao.js';
 import { moldura } from '../componentes/janelas.js';
 import { cab, selo, chipFiltro, vazio, campo, segmento, painelCarregando } from './pecas.js';
@@ -47,10 +55,13 @@ export function pautasParaDecidir(selecao, decisoes) {
   return paraDecidir(selecao, decisoes).filter((p) => !ehIdTeste(p.id_pauta));
 }
 
-/** Contador da navegação e do Início: pautas para decidir (0 enquanto a planilha não respondeu). */
-export function contarParaDecidir(dados = pautasLidas()) {
-  if (!dados?.selecao) return 0;
-  return pautasParaDecidir(dados.selecao, dados.decisoes).length;
+/**
+ * Contador da navegação e do Início: pautas para decidir (0 enquanto a planilha não respondeu) mais
+ * os candidatos passados para Para decidir no app, sem o Radar (bloco "Candidatos para decidir").
+ */
+export function contarParaDecidir(dados = pautasLidas(), candidatos = candidatosLidas(), locais = estado.candidatosLocais) {
+  const pautas = dados?.selecao ? pautasParaDecidir(dados.selecao, dados.decisoes).length : 0;
+  return pautas + contarCandidatosParaDecidir(candidatos, { locais: locais || {}, selecao: dados?.selecao || null });
 }
 
 /**
@@ -239,30 +250,38 @@ function faixas(exec, dados, agora) {
  */
 export function htmlPautas({
   dados = {}, exec = {}, candidatos = {}, email = '', filtro = 'decidir', pendentes = {}, mudando = {}, resultados = {}, erros = {},
-  visiveis = LIMITE_CANDIDATOS, agora = new Date(), projetos = [], enviosLocais = {},
+  visiveis = LIMITE_CANDIDATOS, agora = new Date(), projetos = [], enviosLocais = {}, candidatosLocais = {}, verExcluidos = false,
+  errosCandidato = {},
 } = {}) {
   const topo = `${cab('Pautas', 'As sugestões do Radar para a semana, da maior nota para a menor.')}${faixas(exec, dados, agora)}`;
   const largura = 'style="max-width:58.75rem;margin-top:1rem"';
-  const nCandidatos = contarCandidatos(candidatos);
+  const grupos = gruposDeCandidatos({ candidatos, dados, locais: candidatosLocais });
+  const nCandidatos = grupos ? grupos.candidatos.length : null;
+  const nCandDecidir = grupos ? grupos.paraDecidir.length : 0;
+  const opcoesCand = { candidatos, dados, exec, email, agora, locais: candidatosLocais, errosCandidato };
 
   if (filtro === 'candidatos') {
     const contas = dados.selecao ? contagemDasPautas(dados.selecao, dados.decisoes) : {};
+    if (Number.isInteger(contas.decidir)) contas.decidir += nCandDecidir;
     const so = !podeDecidir(email);
-    const nota = so ? `<p class="nota calma" ${largura}>${ic('info')}<span>${esc(NOTA_SO_ROBERTTA)} Esta conta vê os candidatos, mas não manda ao Roteirista nem passa para Para decidir.</span></p>` : '';
-    return `${topo}${nota}${filtrosPautas(filtro, { candidatos: nCandidatos, ...contas })}${htmlCandidatos({ candidatos, dados, exec, email, visiveis, agora })}`;
+    const nota = so ? `<p class="nota calma" ${largura}>${ic('info')}<span>${esc(NOTA_SO_ROBERTTA)} Esta conta vê os candidatos, mas não manda ao Roteirista, não passa para Para decidir e não exclui.</span></p>` : '';
+    return `${topo}${nota}${filtrosPautas(filtro, { candidatos: nCandidatos, ...contas })}${htmlCandidatos({ ...opcoesCand, visiveis, verExcluidos })}`;
   }
+
+  // Para decidir: os candidatos passados para cá pelo app (sem o Radar), num bloco antes das pautas.
+  const blocoCand = filtro === 'decidir' && nCandDecidir ? blocoCandidatosParaDecidir({ ...opcoesCand, lista: grupos.paraDecidir }) : '';
 
   if (!dados.selecao) {
     const chips = filtrosPautas(filtro, { candidatos: nCandidatos });
     if (dados.fase === 'carregando' || dados.fase === 'vazio' || dados.fase === undefined) {
-      if (dados.offline) return `${topo}${chips}<div class="painel" ${largura}>${vazio('Sem internet', 'Assim que a conexão voltar, as pautas da aba Seleção aparecem aqui.')}</div>`;
+      if (dados.offline) return `${topo}${chips}${blocoCand}<div class="painel" ${largura}>${vazio('Sem internet', 'Assim que a conexão voltar, as pautas da aba Seleção aparecem aqui.')}</div>`;
       return `${topo}${chips}<div ${largura}>${painelCarregando('Lendo a planilha Radar…')}</div>`;
     }
     const e = dados.erro;
-    if (e?.codigo === 'aba-ausente') return `${topo}${chips}<div class="painel" ${largura}>${vazio('Ainda sem a aba Seleção', esc(MENSAGEM_SELECAO_AUSENTE))}</div>`;
+    if (e?.codigo === 'aba-ausente') return `${topo}${chips}${blocoCand}<div class="painel" ${largura}>${vazio('Ainda sem a aba Seleção', esc(MENSAGEM_SELECAO_AUSENTE))}</div>`;
     const texto = dados.offline ? 'Sem internet. Assim que a conexão voltar, toque em “Tentar de novo”.'
       : esc(e?.message || 'A planilha Radar não respondeu agora.');
-    return `${topo}${chips}<div class="painel" role="alert" ${largura}>${vazio('Não consegui ler a planilha Radar', texto, `<button type="button" class="botao contorno" data-acao="pautas-recarregar">${ic('atualizar', 18)} Tentar de novo</button>`)}</div>`;
+    return `${topo}${chips}${blocoCand}<div class="painel" role="alert" ${largura}>${vazio('Não consegui ler a planilha Radar', texto, `<button type="button" class="botao contorno" data-acao="pautas-recarregar">${ic('atualizar', 18)} Tentar de novo</button>`)}</div>`;
   }
 
   const { selecao, decisoes } = dados;
@@ -282,14 +301,15 @@ export function htmlPautas({
   const estrutural = !bloqueio ? ''
     : notaNoTopo ? `<p class="nota calma" ${largura}>${ic('info')}<span>${esc(NOTA_SO_ROBERTTA)} Esta conta vê as pautas e pode pedir rodadas, mas não aprova nem recusa.</span></p>`
       : `<p class="nota atencao" ${largura}>${ic('alerta')}<span>${esc(bloqueio)}</span></p>`;
-  const filtros = filtrosPautas(filtro, { candidatos: nCandidatos, decidir: nDecidir, decididas: todas.length - nDecidir, todas: todas.length });
+  const filtros = filtrosPautas(filtro, { candidatos: nCandidatos, decidir: nDecidir + nCandDecidir, decididas: todas.length - nDecidir, todas: todas.length });
   const vazioLista = filtro === 'decididas' ? vazio('Nenhuma pauta decidida ainda', 'As pautas que você aprovar ou recusar ficam aqui.')
     : todas.length ? vazio('Nada para decidir agora', 'O Radar grava as próximas pautas na seleção de domingo, ou quando você pedir uma seleção agora.')
       : vazio('Nenhuma pauta na aba Seleção', 'O Radar grava as pautas aqui na seleção de domingo, ou quando você pedir uma seleção agora.');
-  const corpo = lista.length ? `<div class="pautas">${lista.map((p) => cartao(p, ctx)).join('')}</div>` : `<div class="painel" ${largura}>${vazioLista}</div>`;
+  const corpo = lista.length ? `<div class="pautas">${lista.map((p) => cartao(p, ctx)).join('')}</div>`
+    : blocoCand ? '' : `<div class="painel" ${largura}>${vazioLista}</div>`;
 
   const envios = enviosAoRoteirista({ selecao, decisoes, execucoes: exec?.execucoes || [], projetos, agora, locais: enviosLocais || {} });
-  return `${topo}${estrutural}${filtros}${corpo}${bandeja({ selecao, decisoes, pendentes, bloqueio, est, envios })}`;
+  return `${topo}${estrutural}${filtros}${blocoCand}${corpo}${bandeja({ selecao, decisoes, pendentes, bloqueio, est, envios })}`;
 }
 
 /** Contagens dos chips de pautas (as mesmas de sempre: o teste aparece em Para decidir, mas não se decide). */
@@ -472,21 +492,11 @@ function cartaoCandidato(c, ctx) {
   const numeros = linhaDosNumeros(c);
   const estadoSelo = seloDoCandidato(est, nova);
   const detalhes = [item('Status na planilha', c.status), item('Execução', c.id_execucao)].join('');
-
-  let acoes = '';
-  if (!c.idOk) {
-    acoes = `<p class="pequeno apagado">${ic('info', 16)} Id fora do formato AAAA-MM-DD-NN: o app não pede nada para este candidato.</p>`;
-  } else if (est.podePedir) {
-    const dis = ctx.bloqueio ? ' disabled' : '';
-    const disR = dis || (ctx.bloqueioRoteirista ? ' disabled' : '');
-    const nota = ctx.bloqueio ? (ctx.notaNoTopo ? '' : ctx.bloqueio) : ctx.bloqueioRoteirista;
-    // Hierarquia: o caminho normal (Para decidir) em destaque; o atalho ao Roteirista em contorno.
-    acoes = `<div class="decisao" role="group" aria-label="Pedir ao Radar: ${esc(titulo)}">
-      <button type="button" class="botao primario" data-acao="candidato-pedir" data-id="${esc(id)}" data-valor="decidir"${dis}>${esc(DESTINOS_CANDIDATO.decidir.botao)}</button>
-      <button type="button" class="botao contorno" data-acao="candidato-pedir" data-id="${esc(id)}" data-valor="roteirista"${disR}>${esc(DESTINOS_CANDIDATO.roteirista.botao)}</button>
-      ${nota ? `<span class="pequeno apagado">${esc(nota)}</span>` : ''}
-    </div>`;
-  }
+  const acoes = acoesDoCandidato(c, est, ctx, titulo);
+  const falha = ctx.errosCandidato?.[id];
+  const notaFalha = falha
+    ? `<p class="nota atencao pequeno" role="alert">${ic('alerta', 18)}<span>${esc(`Não gravei no Drive: ${falha.mensagem}`)} <button type="button" class="botao calmo menor" data-acao="candidato-mover" data-id="${esc(id)}" data-valor="${esc(falha.para)}">Tentar de novo</button></span></p>`
+    : '';
 
   return `<article class="painel pauta candidato${nova ? ' nova' : ''}" aria-labelledby="cand-${esc(id)}">
     <div class="pauta-topo">
@@ -502,8 +512,133 @@ function cartaoCandidato(c, ctx) {
     ${linhaDoEstado(est, ctx)}
     ${rodape ? `<p class="linha-id pequeno">${rodape}</p>` : ''}
     ${detalhes ? `<details><summary>Detalhes</summary><dl>${detalhes}</dl></details>` : ''}
+    ${notaFalha}
     ${acoes}
   </article>`;
+}
+
+/**
+ * Botões do cartão de candidato (todos <button>, com data-id escapado).
+ *   modo 'candidatos': Passar para Para decidir (primário: só o estado no app, sem o Radar) · Mandar
+ *     ao Roteirista (contorno) · Pedir pauta completa ao Radar (calmo) · Excluir (discreto, no fim)
+ *   modo 'decidir' (bloco "Candidatos para decidir"): Aprovar e mandar ao Roteirista (primário) ·
+ *     Pedir pauta completa ao Radar (contorno) · Recusar (calmo) · Voltar para Candidatos (discreto)
+ * Com pedido ao Radar aberto, nada de mover/excluir/recusar (só Voltar, no bloco). Gravando: a nota.
+ */
+function acoesDoCandidato(c, est, ctx, titulo) {
+  const id = c.id;
+  if (!c.idOk) return `<p class="pequeno apagado">${ic('info', 16)} Id fora do formato AAAA-MM-DD-NN: o app não pede nada para este candidato.</p>`;
+  if (ctx.estados?.get(id)?.pendente) return `<p class="nota calma pequeno" role="status">${ic('info', 18)}<span>Gravando no Drive…</span></p>`;
+  const emAndamento = est.tipo === 'andamento' || est.tipo === 'parece-travada';
+  const dis = ctx.bloqueio ? ' disabled' : '';
+  const disApp = dis || (ctx.bloqueioApp ? ' disabled' : '');
+  const disR = dis || (ctx.bloqueioRoteirista ? ' disabled' : '');
+  const did = esc(id);
+  const botao = (classe, acao, valor, texto, d) => `<button type="button" class="${classe}" data-acao="${acao}" data-id="${did}"${valor ? ` data-valor="${esc(valor)}"` : ''}${d}>${esc(texto)}</button>`;
+  const b = [];
+  if (ctx.modo === 'decidir') {
+    if (est.podePedir) {
+      b.push(botao('botao primario', 'candidato-pedir', 'roteirista', 'Aprovar e mandar ao Roteirista', disR));
+      b.push(botao('botao contorno', 'candidato-pedir', 'decidir', DESTINOS_CANDIDATO.decidir.botao, dis));
+    }
+    if (!emAndamento && est.tipo !== 'aprovado') b.push(botao('botao calmo nao', 'candidato-recusar', '', 'Recusar', disApp));
+    b.push(botao('discreto', 'candidato-mover', 'candidato', 'Voltar para Candidatos', disApp));
+  } else {
+    if (est.podePedir && est.tipo !== 'parece-travada') b.push(botao('botao primario', 'candidato-mover', 'para-decidir', 'Passar para Para decidir', disApp));
+    if (est.podePedir) {
+      b.push(botao('botao contorno', 'candidato-pedir', 'roteirista', DESTINOS_CANDIDATO.roteirista.botao, disR));
+      b.push(botao('botao calmo', 'candidato-pedir', 'decidir', DESTINOS_CANDIDATO.decidir.botao, dis));
+    }
+    if (!emAndamento) b.push(botao('discreto excluir', 'candidato-excluir', '', 'Excluir', disApp));
+  }
+  if (!b.length) return '';
+  const nota = ctx.bloqueio ? (ctx.notaNoTopo ? '' : ctx.bloqueio)
+    : [est.podePedir ? ctx.bloqueioRoteirista : '', ctx.bloqueioApp].filter(Boolean).join(' ');
+  return `<div class="decisao" role="group" aria-label="${esc(`Ações do candidato: ${titulo}`)}">
+      ${b.join('\n      ')}
+      ${nota ? `<span class="pequeno apagado">${esc(nota)}</span>` : ''}
+    </div>`;
+}
+
+/**
+ * Candidatos da tela em grupos, pelo estado no app (o lido do Drive + o otimista da tela):
+ * {candidatos, paraDecidir, excluidos, estados} ou null enquanto a aba não foi lida. Os "para
+ * decidir" que já viraram pauta na Seleção saem do bloco (a pauta aparece pela Seleção).
+ */
+export function gruposDeCandidatos({ candidatos = {}, dados = {}, locais = {} } = {}) {
+  if (!candidatos?.candidatos) return null;
+  const estados = mesclarEstadosApp(candidatos.app?.registros, locais || {});
+  const comPauta = new Set((dados?.selecao?.pautas || []).map((p) => p.id_candidato).filter(Boolean));
+  return { ...separarCandidatos(candidatosDaTela(candidatos), estados, (c) => (comPauta.has(c.id) ? 'pauta' : '')), estados };
+}
+
+/** Por que mover/excluir/recusar esperam: o estado dos candidatos no Drive não foi lido ('' = pode). */
+export function bloqueioDoArquivoApp(candidatos) {
+  return candidatos?.app?.erro ? 'O estado dos candidatos no Drive não foi lido: mover, excluir e recusar esperam o “Atualizar”.' : '';
+}
+
+/** O contexto comum dos cartões de candidato (chip Candidatos e bloco de Para decidir). */
+function contextoDosCandidatos({ candidatos = {}, dados = {}, exec = {}, email = '', agora = new Date(), locais = {}, errosCandidato = {}, modo = 'candidatos', lista = [] }) {
+  const execucoes = exec.execucoes || [];
+  const bloqueio = bloqueioDeCandidato({ email, offline: candidatos.offline });
+  const rodada = ultimaRodada({ candidatos: lista, temIdExecucao: !!candidatos.temIdExecucao, execucoes });
+  return {
+    modo,
+    rodada,
+    nova: modo === 'candidatos' ? rodada.ids : new Set(),
+    fontes: { selecao: dados.selecao || null, decisoes: dados.decisoes || null, execucoes, agora, estadoPautas: dados.selecao ? estadoDasPautas(dados.selecao, dados.decisoes) : new Map() },
+    bloqueio,
+    bloqueioRoteirista: bloqueioDeRoteirista(dados),
+    bloqueioApp: bloqueioDoArquivoApp(candidatos),
+    notaNoTopo: bloqueio === NOTA_SO_ROBERTTA,
+    estados: mesclarEstadosApp(candidatos.app?.registros, locais || {}),
+    errosCandidato: errosCandidato || {},
+    agora,
+  };
+}
+
+/** "excluído hoje às 10h12" / "recusado em 14/11 às 9h · motivo" a partir do registro do app (texto puro). */
+function textoDoRegistro(r, agora) {
+  const q = r?.quando ? new Date(r.quando) : null;
+  const ok = q && Number.isFinite(q.getTime());
+  const quandoTxt = ok ? ` ${hojeISO(q) === hojeISO(agora) ? 'hoje' : `em ${formatarData(q)}`} às ${horaCurta(q)}` : '';
+  if (r?.estado === 'recusado') return `Recusado${quandoTxt}${r.motivo ? ` · ${r.motivo}` : ''}`;
+  return `Excluído${quandoTxt}`;
+}
+
+/** Cartão curto de um excluído/recusado, com "Restaurar" (volta para Candidatos). */
+function cartaoExcluido(c, ctx) {
+  const id = c.id;
+  const r = ctx.estados.get(id);
+  const titulo = c.angulo || c.tema || `Candidato ${id}`;
+  const dis = ctx.bloqueio || ctx.bloqueioApp ? ' disabled' : '';
+  const acao = r?.pendente ? `<p class="nota calma pequeno" role="status">${ic('info', 18)}<span>Gravando no Drive…</span></p>`
+    : `<div class="decisao"><button type="button" class="botao contorno" data-acao="candidato-mover" data-id="${esc(id)}" data-valor="candidato"${dis}>Restaurar</button></div>`;
+  const falha = ctx.errosCandidato?.[id];
+  return `<article class="painel pauta candidato excluido" aria-labelledby="cand-x-${esc(id)}">
+    <div class="pilha leitura" style="gap:.375rem">
+      <h2 id="cand-x-${esc(id)}">${esc(titulo)}</h2>
+      ${c.tema && c.angulo ? `<p class="subtitulo">${esc(c.tema)}</p>` : ''}
+    </div>
+    <p class="linha-id pequeno">${[id, textoDoRegistro(r, ctx.agora)].map(esc).join(' · ')}</p>
+    ${falha ? `<p class="nota atencao pequeno" role="alert">${ic('alerta', 18)}<span>${esc(`Não gravei no Drive: ${falha.mensagem}`)}</span></p>` : ''}
+    ${acao}
+  </article>`;
+}
+
+/**
+ * Bloco "Candidatos para decidir (sem verificação do Radar)" no chip Para decidir (puro): os
+ * candidatos passados para cá pelo app, no estilo do cartão, com as ações do modo 'decidir'.
+ */
+export function blocoCandidatosParaDecidir({ lista = [], ...o } = {}) {
+  if (!lista.length) return '';
+  const ctx = contextoDosCandidatos({ ...o, modo: 'decidir', lista });
+  const n = lista.length;
+  return `<section class="bloco-candidatos" aria-labelledby="cand-decidir-titulo">
+    <h2 id="cand-decidir-titulo" class="bloco-titulo">Candidatos para decidir (sem verificação do Radar)</h2>
+    <p class="pequeno apagado candidatos-intro">${esc(`${n === 1 ? 'Este candidato veio' : `Estes ${n} candidatos vieram`} de Candidatos sem passar pelo Radar: as fontes ainda não foram verificadas. “Aprovar e mandar ao Roteirista” pede ao Radar que verifique e mande; “Pedir pauta completa ao Radar” só verifica e cria a pauta.`)}</p>
+    <div class="pautas">${lista.map((c) => cartaoCandidato(c, ctx)).join('')}</div>
+  </section>`;
 }
 
 /**
@@ -511,7 +646,9 @@ function cartaoCandidato(c, ctx) {
  *   candidatos  candidatosLidas()   dados  pautasLidas()   exec  execucoesLidas()
  *   email, visiveis (quantos antes do "Mostrar mais"), agora
  */
-export function htmlCandidatos({ candidatos = {}, dados = {}, exec = {}, email = '', visiveis = LIMITE_CANDIDATOS, agora = new Date() } = {}) {
+export function htmlCandidatos({
+  candidatos = {}, dados = {}, exec = {}, email = '', visiveis = LIMITE_CANDIDATOS, agora = new Date(), locais = {}, verExcluidos = false, errosCandidato = {},
+} = {}) {
   const largura = 'style="max-width:58.75rem;margin-top:1rem"';
   if (!candidatos.candidatos) {
     if (candidatos.fase === 'erro') {
@@ -524,37 +661,99 @@ export function htmlCandidatos({ candidatos = {}, dados = {}, exec = {}, email =
   }
   if (candidatos.abaAusente) return `<div class="painel" ${largura}>${vazio('Ainda sem a aba Candidatos', esc(MENSAGEM_CANDIDATOS_AUSENTE))}</div>`;
 
-  const lista = candidatosDaTela(candidatos);
+  const grupos = gruposDeCandidatos({ candidatos, dados, locais });
+  const lista = grupos.candidatos;
+  const ctx = contextoDosCandidatos({ candidatos, dados, exec, email, agora, locais, errosCandidato, modo: 'candidatos', lista });
+  const { bloqueio } = ctx;
+  const nExcl = grupos.excluidos.length;
+  const nDec = grupos.paraDecidir.length;
+  // Chip discreto "Excluídos (n)" (abre a lista com Restaurar); some quando não há nenhum.
+  const chipExcl = nExcl
+    ? `<div class="excluidos-candidatos"><button type="button" class="discreto" data-acao="candidatos-excluidos" aria-expanded="${verExcluidos ? 'true' : 'false'}" aria-controls="cand-excluidos">${esc(`Excluídos (${nExcl})`)}</button></div>`
+    : '';
+  const ctxX = { ...ctx, modo: 'excluidos' };
+  const listaExcl = nExcl && verExcluidos
+    ? `<section id="cand-excluidos" class="bloco-candidatos" aria-label="Candidatos excluídos e recusados"><p class="pequeno apagado candidatos-intro">Excluídos e recusados no app. Restaurar devolve o cartão para Candidatos; nada foi apagado da planilha nem do Drive.</p><div class="pautas">${grupos.excluidos.map((c) => cartaoExcluido(c, ctxX)).join('')}</div></section>`
+    : '';
+  const notaApp = ctx.bloqueioApp ? `<p class="nota atencao" ${largura}>${ic('alerta')}<span>${esc(`${candidatos.app.erro} ${ctx.bloqueioApp}`)}</span></p>` : '';
+  const emDecidir = nDec ? ` ${nDec === 1 ? '1 candidato está' : `${nDec} candidatos estão`} em Para decidir.` : '';
+
   if (!lista.length) {
-    const soTestes = candidatos.candidatos.length > 0;
-    return `<div class="painel" ${largura}>${vazio('Nenhum candidato na aba Candidatos', soTestes
-      ? 'Só há candidatos de teste (T), e eles ficam fora daqui.'
-      : 'O Radar diário grava os candidatos aqui: todo dia às 7h, ou quando você pedir “Rodar agora”.')}</div>`;
+    const soTestes = candidatos.candidatos.length > 0 && !nExcl && !nDec;
+    const titulo = nExcl || nDec ? 'Nenhum candidato esperando aqui' : 'Nenhum candidato na aba Candidatos';
+    const texto = soTestes ? 'Só há candidatos de teste (T), e eles ficam fora daqui.'
+      : nExcl || nDec ? esc(`Os outros já foram passados para Para decidir ou excluídos.${emDecidir}`)
+        : 'O Radar diário grava os candidatos aqui: todo dia às 7h, ou quando você pedir “Rodar agora”.';
+    return `${notaApp}<div class="painel" ${largura}>${vazio(titulo, texto)}</div>${chipExcl}${listaExcl}`;
   }
 
-  const execucoes = exec.execucoes || [];
-  const rodada = ultimaRodada({ candidatos: lista, temIdExecucao: !!candidatos.temIdExecucao, execucoes });
-  const textoRodada = textoDaRodada(rodada, { agora, execucoesLidas: !!exec.execucoes });
-  const bloqueio = bloqueioDeCandidato({ email, offline: candidatos.offline });
-  const ctx = {
-    nova: rodada.ids,
-    fontes: { selecao: dados.selecao || null, decisoes: dados.decisoes || null, execucoes, agora, estadoPautas: null },
-    bloqueio,
-    bloqueioRoteirista: bloqueioDeRoteirista(dados),
-    notaNoTopo: bloqueio === NOTA_SO_ROBERTTA,
-    agora,
-  };
-  ctx.fontes.estadoPautas = dados.selecao ? estadoDasPautas(dados.selecao, dados.decisoes) : new Map();
+  const textoRodada = textoDaRodada(ctx.rodada, { agora, execucoesLidas: !!exec.execucoes });
   const limite = Math.max(1, Number(visiveis) || LIMITE_CANDIDATOS);
   const mostrar = lista.slice(0, limite);
   const resto = lista.length - mostrar.length;
   const aviso = bloqueio && bloqueio !== NOTA_SO_ROBERTTA ? `<p class="nota atencao" ${largura}>${ic('alerta')}<span>${esc(bloqueio)}</span></p>` : '';
   const total = lista.length === 1 ? '1 candidato' : `${lista.length} candidatos`;
-  const intro = `<p class="pequeno apagado candidatos-intro">Candidatos do Radar diário, do mais recente para o mais antigo (${total}). Um candidato só entra em Para decidir depois que o Radar o transforma em pauta.${textoRodada ? ` ${esc(textoRodada)}` : ''}</p>`;
+  const intro = `<p class="pequeno apagado candidatos-intro">Candidatos do Radar diário, do mais recente para o mais antigo (${total}). “Passar para Para decidir” só muda o estado no app, sem chamar o Radar; “Pedir pauta completa ao Radar” pede a pauta verificada.${esc(emDecidir)}${textoRodada ? ` ${esc(textoRodada)}` : ''}</p>`;
   const mais = resto > 0
     ? `<div class="mais-candidatos"><button type="button" class="botao calmo" data-acao="candidatos-mais">Mostrar mais (${resto === 1 ? 'falta 1' : `faltam ${resto}`})</button></div>`
     : '';
-  return `${aviso}${intro}<div class="pautas">${mostrar.map((c) => cartaoCandidato(c, ctx)).join('')}</div>${mais}`;
+  return `${aviso}${notaApp}${intro}<div class="pautas">${mostrar.map((c) => cartaoCandidato(c, ctx)).join('')}</div>${mais}${chipExcl}${listaExcl}`;
+}
+
+/* -------------------------------------------- janelas do estado do candidato */
+
+/** Resumo do candidato no topo das janelas (título, tema, id · plataforma). Tudo escapado. */
+function resumoDoCandidato(c) {
+  const titulo = c?.angulo || c?.tema || `Candidato ${c?.id || ''}`;
+  return `<div class="resumo-candidato">
+      <p class="titulo-resumo">${esc(titulo)}</p>
+      ${c?.tema && c?.angulo ? `<p class="subtitulo">${esc(c.tema)}</p>` : ''}
+      <p class="linha-id pequeno">${[c?.id, c?.plataforma].filter(Boolean).map(esc).join(' · ')}</p>
+    </div>`;
+}
+
+const notaErroJanela = (erro) => (erro ? `<p class="nota atencao" role="alert">${ic('alerta')}<span>${esc(erro)}</span></p>` : '');
+
+/**
+ * Janela "Excluir este candidato?" (pura). `situacao`: estadoDoCandidato (para avisar que a pauta
+ * continua). Grava só `_motor/app/candidatos/<id>.json`.
+ */
+export function janelaExcluirCandidato({ c, situacao = null, enviando = false, erro = '' } = {}) {
+  const id = c?.id || '';
+  const pauta = situacao?.tipo === 'pauta' ? situacao.pauta?.id_pauta : '';
+  const corpo = `${resumoDoCandidato(c)}
+    <p>O cartão sai de Candidatos e fica em “Excluídos”, onde dá para restaurar.</p>
+    ${pauta ? `<p class="nota calma" role="status">${ic('info')}<span>${esc(`A pauta ${pauta} continua na Seleção: excluir o candidato não muda a pauta.`)}</span></p>` : ''}
+    <p class="pequeno apagado">${esc(`Onde grava: só o arquivo do app ${caminhoArquivoCandidato(id)} no Drive. Nada em Seleção, Decisões, na planilha ou em outras pastas do Drive é apagado ou alterado. O Radar ainda não lê esse arquivo: ele pode sugerir este candidato de novo.`)}</p>
+    ${notaErroJanela(erro)}`;
+  const rodape = `<button type="button" class="botao calmo" data-acao="fechar-janela">Voltar</button><button type="button" class="botao primario" data-acao="candidato-excluir-confirmar" data-id="${esc(id)}"${enviando ? ' disabled aria-busy="true"' : ''}>${enviando ? 'Excluindo…' : (erro ? 'Tentar de novo' : 'Excluir')}</button>`;
+  return moldura('Excluir este candidato?', corpo, rodape);
+}
+
+/** Modelo (rascunho) do motivo da recusa de um candidato. */
+export const modeloRecusaCandidato = (id) => `rcr-${id}`;
+
+/**
+ * Janela "Recusar este candidato?" (pura): o motivo (os mesmos da recusa de pauta) e onde grava
+ * (só o arquivo do app; nada vai para Decisões nem para o Radar).
+ */
+export function janelaRecusarCandidato({ c, enviando = false, erro = '', erroMotivo = '' } = {}) {
+  const id = c?.id || '';
+  const modelo = modeloRecusaCandidato(id);
+  const corpo = `${resumoDoCandidato(c)}
+    <div class="pilha campos-janela">
+      ${segmento(modelo, 'Por que recusar?', MOTIVOS_RECUSA_CANDIDATO.map((m) => [m, m.charAt(0).toUpperCase() + m.slice(1)]), '')}
+      ${erroMotivo ? `<p class="erro" role="alert">${esc(erroMotivo)}</p>` : ''}
+    </div>
+    <p class="pequeno apagado">${esc(`Onde grava: só o arquivo do app ${caminhoArquivoCandidato(id)} no Drive, com o motivo. Nada vai para Decisões nem para o Radar; o cartão fica em “Excluídos”, onde dá para restaurar.`)}</p>
+    ${notaErroJanela(erro)}`;
+  const rodape = `<button type="button" class="botao calmo" data-acao="fechar-janela">Voltar</button><button type="button" class="botao primario" data-acao="candidato-recusar-confirmar" data-id="${esc(id)}"${enviando ? ' disabled aria-busy="true"' : ''}>${enviando ? 'Recusando…' : (erro ? 'Tentar de novo' : 'Recusar')}</button>`;
+  return moldura('Recusar este candidato?', corpo, rodape);
+}
+
+/** Aviso depois de gravar o estado de um candidato (texto puro): o texto do plano + o aviso da pauta. */
+export function textoDoEstadoGravado(res = {}) {
+  return [res.texto, res.aviso].filter(Boolean).join(' ');
 }
 
 /** Campo "Quantos candidatos" da janela do Radar diário (rascunho `rd-quantidade`, padrão 5). */
@@ -677,6 +876,9 @@ export function vPautas() {
     agora: new Date(),
     projetos: roteiros(),
     enviosLocais: estado.enviosLocais,
+    candidatosLocais: estado.candidatosLocais,
+    verExcluidos: !!estado.verExcluidos,
+    errosCandidato: estado.errosCandidato,
   });
 }
 

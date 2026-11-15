@@ -36,6 +36,33 @@ export function avisar(texto) {
 }
 
 /**
+ * Aviso rápido com um botão de verdade (ex.: "Desfazer"): data-acao/data-id/data-valor no botão,
+ * texto por textContent (nunca HTML). Fica um pouco mais (8 s) para dar tempo de tocar.
+ */
+export function avisarComAcao(texto, { rotulo, acao, id = '', valor = '' } = {}, ms = 8000) {
+  const pilha = $('#avisos');
+  if (!pilha) return null;
+  const a = document.createElement('div');
+  a.className = 'aviso com-acao';
+  a.setAttribute('role', 'status');
+  const s = document.createElement('span');
+  s.textContent = texto;
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'botao-aviso';
+  b.dataset.acao = acao;
+  if (id) b.dataset.id = id;
+  if (valor) b.dataset.valor = valor;
+  b.textContent = rotulo;
+  a.append(s, b);
+  const rapidos = [...pilha.querySelectorAll('.aviso:not(.fixo)')];
+  while (rapidos.length > 1) rapidos.shift().remove();
+  pilha.appendChild(a);
+  setTimeout(() => a.remove(), ms);
+  return a;
+}
+
+/**
  * Aviso que fica até ser resolvido. Com `acao`, vira um botão (data-acao) que a pessoa toca.
  * Uma chave por assunto: chamar de novo só troca o texto.
  */

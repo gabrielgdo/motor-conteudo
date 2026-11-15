@@ -235,6 +235,15 @@ export async function substituirConteudo(id, dados, mime) {
   });
 }
 
+/** Cria uma pasta (só metadados) dentro de `paiId` e devolve {id, name}. Usada pelas pastas do app em _motor. */
+export async function criarPasta(nome, paiId) {
+  return json(`${API}/files?supportsAllDrives=true&fields=id,name`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json; charset=UTF-8' },
+    body: JSON.stringify({ name: nome, parents: [paiId], mimeType: 'application/vnd.google-apps.folder' }),
+  });
+}
+
 /** Link do Drive para a pasta/arquivo (fallback quando webViewLink não vier). */
 export function linkDrive(arquivo) {
   if (arquivo?.webViewLink) return arquivo.webViewLink;

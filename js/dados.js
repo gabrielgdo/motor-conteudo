@@ -354,6 +354,7 @@ export function limparDados() {
   anexos.clear();
   filaAnexos.length = 0;
   for (const k of Object.keys(manual)) manual[k] = novaLeitura();
+  Integra.app?.candidatos?.esquecer?.(); // pastas e estados dos candidatos lidos do Drive
 }
 
 /* ------------------------------- controle manual: Execuções e Pautas (planilha Radar) */

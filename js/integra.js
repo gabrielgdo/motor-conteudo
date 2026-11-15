@@ -22,11 +22,11 @@
 import * as auth from './auth.js';
 import * as drive from './drive.js';
 import * as sheet from './sheet.js';
-import { CONFIG, FLAGS, PONTE_URL, REVISAO_FOLDER, PASTAS } from './config.js';
+import { CONFIG, FLAGS, PONTE_URL, REVISAO_FOLDER, PASTAS, ROOT_FOLDER } from './config.js';
 import { idValido, idCandidatoValido } from './parse.js';
 import * as C from './controle.js';
 import * as S from './selecao.js';
-import { lerCandidatos } from './candidatos.js';
+import { lerCandidatos, criarArquivosDoApp } from './candidatos.js';
 import { planejarArquivoRevisao } from './revisao.js';
 // Envio do vídeo bruto (ponto 7): upload.js só é importado aqui; as regras ficam em envio-video.js.
 import { criarUpload } from './upload.js';
@@ -336,15 +336,33 @@ export const Integra = {
     /** Aba Candidatos (gravada pelo Radar diário) → {candidatos, temIdExecucao, cabecalho, abaAusente}.
         Sem a aba: lista vazia e abaAusente: true (a tela explica; o resto de Pautas segue igual). */
     async ler(forcar = false) {
+      // Junto com a aba, o estado de cada candidato no app (_motor/app/candidatos). Se o Drive
+      // falhar, a aba aparece do mesmo jeito e `app.erro` explica (os botões de estado esperam).
+      const app = Integra.app.candidatos.ler().catch((e) => ({ registros: {}, erro: e?.message || 'Não consegui ler o estado dos candidatos no Drive.' }));
       try {
         const aba = await sheet.lerAba(nomeDaAba('candidatos'), { forcar });
         const t = lerCandidatos(aba.linhas);
-        return { candidatos: t.candidatos, temIdExecucao: t.temIdExecucao, cabecalho: t.cabecalho, abaAusente: false };
+        return { candidatos: t.candidatos, temIdExecucao: t.temIdExecucao, cabecalho: t.cabecalho, abaAusente: false, app: await app };
       } catch (e) {
-        if (e?.codigo === 'aba-ausente') return { candidatos: [], temIdExecucao: false, cabecalho: [], abaAusente: true };
+        if (e?.codigo === 'aba-ausente') return { candidatos: [], temIdExecucao: false, cabecalho: [], abaAusente: true, app: await app };
         throw e;
       }
     },
+  },
+
+  /* Arquivos próprios do app no Drive (nunca a planilha): `_motor/app/candidatos/<id>.json` dentro de
+     ROOT_FOLDER, com o estado do candidato (candidato | para-decidir | excluido | recusado). As regras
+     e a leitura/gravação ficam em candidatos.js (criarArquivosDoApp); aqui só entram as funções do
+     drive.js. Excluir ou recusar não toca Seleção, Decisões nem outras pastas. */
+  app: {
+    candidatos: criarArquivosDoApp({
+      raiz: async () => ROOT_FOLDER,
+      listar: (pastaId) => drive.listar(pastaId),
+      baixarTexto: (arquivo) => drive.baixarTexto(arquivo),
+      criarPasta: (nome, paiId) => drive.criarPasta(nome, paiId),
+      criarArquivoTexto: (nome, texto, pastaId, mime) => drive.criarArquivoTexto(nome, texto, pastaId, mime),
+      substituirConteudo: (id, texto, mime) => drive.substituirConteudo(id, texto, mime),
+    }),
   },
 
   execucoes: {

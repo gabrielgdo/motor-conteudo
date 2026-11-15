@@ -741,6 +741,18 @@ button.aviso.fixo:hover{filter:brightness(1.06)}
 .candidatos-intro{max-width:58.75rem;margin:0 0 .875rem;overflow-wrap:break-word}
 .mais-candidatos{max-width:58.75rem;margin-top:1rem;display:flex;justify-content:center}
 .campos-janela{gap:.875rem;margin-top:1.125rem}
+/* Estado do candidato no app: Excluir/Voltar discretos (alvo de toque de 44px), chip "Excluídos (n)"
+   e o bloco "Candidatos para decidir" no mesmo estilo de cartão */
+.pauta.candidato .decisao .discreto{align-self:center;min-height:2.75rem;padding:0 .5rem}
+.pauta.candidato .decisao .discreto.excluir{margin-left:auto}
+.excluidos-candidatos{max-width:58.75rem;margin-top:1rem;display:flex;justify-content:flex-end}
+.excluidos-candidatos .discreto{min-height:2.75rem;padding:0 .5rem}
+.bloco-candidatos{max-width:58.75rem;margin:1.25rem 0 1.5rem}
+.bloco-titulo{margin:0 0 .375rem;font-family:var(--titulo);font-size:1.125rem;line-height:1.35}
+.pauta.candidato.excluido .linha-id{margin-top:.25rem}
+/* Aviso com ação ("Desfazer"): o botão recebe o toque (a pilha não) */
+.aviso.com-acao{pointer-events:auto;display:inline-flex;align-items:center;gap:.75rem}
+.botao-aviso{min-height:2.75rem;padding:0 .375rem;background:none;border:0;color:inherit;font:inherit;font-weight:700;text-decoration:underline;text-underline-offset:.1875rem;cursor:pointer}
 @media (max-width:559px){
   .pauta.candidato .decisao .botao,.mais-candidatos .botao{flex:1 1 100%}
   .filtros{border-radius:1.375rem} /* com o chip Candidatos, os chips podem ir para duas linhas */
