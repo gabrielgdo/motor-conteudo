@@ -456,7 +456,14 @@ export const Integra = {
         bruto do id (nunca sobrescreve), trava por id (navigator.locks + reserva no localStorage) e só
         diz concluído depois de conferir tamanho, pasta e lixeira nos metadados. Ver envio-video.js.
         → {promessa, nome, pausar(), continuar(), cancelar()}. */
-    enviarVideo(opcoes) { return enviador()(opcoes); },
+    enviarVideo(opcoes) {
+      const envio = enviador()(opcoes);
+      // bruto no Drive: acorda o motor na Modal na hora (sem esperar o relógio de 15 min). Falhar aqui não muda nada.
+      envio.promessa?.then(() => {
+        if (FLAGS.central && CENTRAL.acordar) fetch(CENTRAL.acordar, { method: 'POST', mode: 'no-cors', body: '' }).catch(() => {});
+      }, () => {});
+      return envio;
+    },
   },
 
   planilha: {

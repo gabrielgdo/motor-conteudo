@@ -71,6 +71,8 @@ export const FLAGS = { ponte: true, decisoesPeloApp: true, revisaoPeloApp: true,
 export const CENTRAL = {
   url: 'https://jlknjytaiyjqmgfpsntb.supabase.co',
   chave: 'sb_publishable_DV3gXV4H9AVoPpZtNgiRcA_dY935tA-',
+  // Motor na Modal: este endereço só agenda uma passada (não recebe dado). O app chama depois de enviar um bruto.
+  acordar: 'https://gabrielgomesdeoliveira17--motor-reels-acordar.us-east.modal.run',
 };
 
 export const PONTE_URL = 'https://script.google.com/macros/s/AKfycbxJLR-qE9FeD167wx533b6wc8kNlbQYeDV2X0Euad2_wTmUabntp5-mo3PVCQ38o1j6/exec';
