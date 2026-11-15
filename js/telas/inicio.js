@@ -6,8 +6,49 @@ import { Integra } from '../integra.js';
 import { porEtapa, semPostar, ultima, daSemana, semana, estadoDados, temDados, postouTudo } from '../dados.js';
 import { selo, vt, passoDe, destinoDe, painelErro, vazio, rodapeAtualizado } from './pecas.js';
 import { contarParaDecidir } from './pautas.js';
+import { resumirSaude, htmlSaude } from '../saude.js';
+import { estado } from '../estado.js';
 
 const enc = encodeURIComponent;
+
+/* ---- Sinal de vida do motor (_motor/saude.json, via Integra.motor.saude) ----
+   Lido ao desenhar o Início e relido de 2 em 2 min enquanto o Início está aberto e visível
+   (o motor publica a cada ~5 min). Fora do navegador (testes) não lê nada. */
+const RELER_SAUDE_MS = 2 * 60 * 1000;
+const saude = { fase: 'carregando', dados: null, lendo: false, lidoEm: 0 };
+const temNavegador = () => typeof window !== 'undefined' && typeof document !== 'undefined';
+const avisarTela = () => window.dispatchEvent(new CustomEvent('motor:anexo')); // main.js redesenha a tela
+
+function lerSaude() {
+  if (saude.lendo) return;
+  saude.lendo = true;
+  Promise.resolve().then(() => Integra.motor.saude())
+    .catch((e) => ({ estado: 'indisponivel', erro: e?.message || '' }))
+    .then((r) => {
+      saude.lendo = false; saude.lidoEm = Date.now();
+      if (r?.estado === 'ok') { saude.fase = 'ok'; saude.dados = r.dados; }
+      else if (r?.estado === 'sem-arquivo') { saude.fase = 'sem-arquivo'; saude.dados = null; }
+      else { saude.fase = 'indisponivel'; saude.dados = null; }
+      avisarTela();
+    });
+}
+
+if (temNavegador()) {
+  setInterval(() => {
+    if (estado.rota?.nome === 'inicio' && document.visibilityState === 'visible') lerSaude();
+  }, RELER_SAUDE_MS);
+  window.addEventListener('motor:conta-trocada', () => { saude.fase = 'carregando'; saude.dados = null; saude.lidoEm = 0; });
+}
+
+/** Faixa do motor para o Início → {html, alerta}. Dispara a leitura se nunca leu ou se a última passou de 2 min.
+    Com alerta (sem sinal, parado, pausado à mão), a faixa sobe para logo depois da saudação. */
+function saudeNaTela() {
+  if (!temNavegador() || !Integra.motor?.saude) return { html: '', alerta: false };
+  if (!saude.lendo && Date.now() - saude.lidoEm > RELER_SAUDE_MS) lerSaude();
+  if (saude.fase !== 'ok') return { html: htmlSaude({ fase: saude.fase }), alerta: false };
+  const r = resumirSaude(saude.dados, new Date());
+  return { html: htmlSaude({ fase: 'ok', saude: r }), alerta: r.tom === 'alerta' };
+}
 const comTeste = (tipo, r) => (r.teste ? `${tipo} · teste` : tipo);
 
 function pendencias() {
@@ -121,8 +162,10 @@ export function vInicio() {
   const urgente = gravar.find((r) => validade(r).perto);
   const lista = daSemana();
   const { numero } = semana();
+  const { html: motor, alerta: motorAlerta } = saudeNaTela();
   return `
   ${hero(frase)}
+  ${motorAlerta ? motor : ''}
   ${fila.length ? `<section aria-label="Esperando você"><div class="cartas">${fila.map((p, i) => `
     <a class="carta luz ${i === 0 ? 'primeira' : ''}" href="${p.href}" style="--i:${i}">
       <span class="carta-topo">${esc(p.tipo)}<span class="carta-icone">${ic(p.icone, 20)}</span></span>
@@ -150,5 +193,6 @@ export function vInicio() {
         : vazio(`Nenhum roteiro da semana ${numero} ainda`, 'Quando o Radar e o Roteirista começarem a semana, cada roteiro aparece aqui, etapa por etapa.')}
     </section>
   </div>
+  ${motorAlerta ? '' : motor}
   ${rodapeAtualizado()}`;
 }

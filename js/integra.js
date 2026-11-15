@@ -504,6 +504,7 @@ export const Integra = {
     const PASTA_DRIVE = 'application/vnd.google-apps.folder';
     let pastasAndamento = null; // ids das pastas "andamento" dentro de _motor (o Drive aceita nome repetido)
     const lidos = new Map(); // id do vídeo → {chave: `${fileId}:${modifiedTime}`, dados}
+    let saudeLida = null; // {chave: `${fileId}:${modifiedTime}`, dados} do _motor/saude.json
     return {
       /** → {estado:'ok', dados} | {estado:'sem-arquivo'} | {estado:'indisponivel', erro}. `dados` já
           validado (validarAndamento). Cache por modifiedTime: arquivo igual não é baixado de novo. */
@@ -537,8 +538,30 @@ export const Integra = {
           return { estado: 'indisponivel', erro: e?.message || 'Não consegui ler o andamento.' };
         }
       },
+      /** Sinal de vida do motor: `_motor/saude.json` (bin/saude.py). → {estado:'ok', dados} |
+          {estado:'sem-arquivo'} | {estado:'indisponivel', erro}. Cache por modifiedTime. */
+      async saude() {
+        try {
+          const ids = await drive.pastas();
+          if (!ids.motor) return { estado: 'sem-arquivo' };
+          const arquivos = (await drive.listar(ids.motor))
+            .filter((f) => f.mimeType !== PASTA_DRIVE && f.name.trim() === 'saude.json')
+            .sort((a, b) => String(b.modifiedTime || '').localeCompare(String(a.modifiedTime || '')));
+          if (!arquivos.length) return { estado: 'sem-arquivo' };
+          const arquivo = arquivos[0];
+          const chave = `${arquivo.id}:${arquivo.modifiedTime || ''}`;
+          if (saudeLida?.chave === chave) return { estado: 'ok', dados: saudeLida.dados };
+          const [{ validarSaude }, conteudo] = await Promise.all([import('./saude.js'), drive.baixarTexto(arquivo)]);
+          const v = validarSaude(String(conteudo || ''));
+          if (!v.ok) return { estado: 'indisponivel', erro: `O sinal de vida do motor não está no formato esperado (${v.motivo}).` };
+          saudeLida = { chave, dados: v.dados };
+          return { estado: 'ok', dados: v.dados };
+        } catch (e) {
+          return { estado: 'indisponivel', erro: e?.message || 'Não consegui ler o sinal de vida do motor.' };
+        }
+      },
       /** Ao sair da conta: esquece o que foi lido. */
-      esquecer() { pastasAndamento = null; lidos.clear(); },
+      esquecer() { pastasAndamento = null; lidos.clear(); saudeLida = null; },
     };
   })(),
 };

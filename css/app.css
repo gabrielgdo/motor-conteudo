@@ -837,6 +837,9 @@ dialog.janela.larga .campos-janela{margin-top:0}
 .andamento-lista+.andamento-lista{margin-top:.75rem}
 .andamento-lista li{display:flex;gap:.625rem;min-width:0;overflow-wrap:anywhere}
 .andamento-hora{flex:none;min-width:3.25rem;color:var(--tinta-3);font-variant-numeric:tabular-nums}
+/* Início: sinal de vida do motor (_motor/saude.json) */
+.saude{margin-top:1rem}
+.saude .andamento-lista li{align-items:baseline}
 
 /* ===== Envio do vídeo pelo app (ponto 7) ===== */
 .envio-nome{overflow-wrap:anywhere;font-variant-numeric:tabular-nums}

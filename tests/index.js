@@ -18,6 +18,7 @@ import('./sessao.test.mjs');
 import('./versao.test.mjs');
 import('./ponte.test.mjs');
 import('./andamento.test.mjs');
+import('./saude.test.mjs');
 import('./envios.test.mjs');
 import('./tele.test.mjs');
 import('./decisoes-roteiro.test.mjs');
