@@ -427,6 +427,12 @@ export function numeroCompacto(v) {
   return n === null ? String(v ?? '').trim() : COMPACTO.format(n);
 }
 
+/** Nome de usuário solto ("thomytalks") ganha @; com @, endereço ou frase fica como está (texto puro). */
+export function comArroba(criador) {
+  const t = String(criador ?? '').trim();
+  return /^[\p{L}\p{N}._]+$/u.test(t) ? `@${t}` : t;
+}
+
 /** "120 mil visualizações · mediana 15 mil · 8× a mediana · @criador" (texto puro, partes vazias somem). */
 export function linhaDosNumeros(c) {
   const vis = String(c?.visualizacoes ?? '').trim();
@@ -437,7 +443,7 @@ export function linhaDosNumeros(c) {
     vis ? (numeroDaPlanilha(vis) === null ? `Visualizações: ${vis}` : `${numeroCompacto(vis)} visualizações`) : '',
     med ? `mediana ${numeroCompacto(med)}` : '',
     out ? (nOut === null ? `outlier ${comX(out)}` : `${COMPACTO.format(nOut)}× a mediana`) : '',
-    String(c?.criador ?? '').trim(),
+    comArroba(c?.criador),
   ].filter(Boolean);
 }
 
@@ -516,7 +522,7 @@ function cartaoCandidato(c, ctx) {
   const rodape = [id, data || '', origem ? `rodada ${origem}` : '']
     .filter(Boolean).map(esc).join(' · ');
   const numerosLivres = numerosDoTexto(c.visualizacoes);
-  const criadorCurto = String(c.criador || '').trim();
+  const criadorCurto = comArroba(c.criador);
   const linhaNumeros = numerosLivres.length
     ? [...numerosLivres.map((n) => `<b>${esc(n.valor)}</b> ${esc(n.rotulo)}`),
       // mediana e outlier só quando são número (o "N/D …" fica na seção Números e origem)
@@ -817,7 +823,7 @@ export function campoMotivoCandidato() {
 
 /** Itens a mais da janela de um candidato: quem é e o que vai acontecer (texto puro; a janela escapa). */
 export function extrasDoCandidato(c, destino) {
-  const quem = [c?.id, c?.angulo || c?.tema, c?.criador ? `de ${c.criador}` : ''].filter(Boolean).join(' · ');
+  const quem = [c?.id, c?.angulo || c?.tema, c?.criador ? `de ${comArroba(c.criador)}` : ''].filter(Boolean).join(' · ');
   const resumo = {
     titulo: c?.angulo || c?.tema || (c?.id ? `Candidato ${c.id}` : ''),
     tema: c?.angulo && c?.tema ? c.tema : '',

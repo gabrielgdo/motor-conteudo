@@ -528,3 +528,17 @@ test('ficha: com visualizações em frase, mediana e outlier numéricos continua
   const linha = c.match(/<p class="candidato-numeros">([\s\S]*?)<\/p>/)[1].replace(/ /g, ' ').replace(/<[^>]+>/g, '');
   assert.equal(linha, '230,1 mil impressões · mediana 15 mil · 8× a mediana · @a');
 });
+
+test('criador com @: nome de usuário solto ganha @; com @, URL ou frase fica como está', async () => {
+  const { comArroba } = await import('../js/telas/pautas.js');
+  assert.equal(comArroba('thomytalks'), '@thomytalks');
+  assert.equal(comArroba(' perfil.ficticio_2 '), '@perfil.ficticio_2');
+  assert.equal(comArroba('@ja.tem'), '@ja.tem');
+  assert.equal(comArroba(''), '');
+  assert.equal(comArroba('https://x.com/a'), 'https://x.com/a');
+  assert.equal(comArroba('post no X publicado em 12/11'), 'post no X publicado em 12/11');
+  assert.deepEqual(linhaDosNumeros({ visualizacoes: '120000', criador: 'thomytalks' }).map(sp), ['120 mil visualizações', '@thomytalks']);
+  const lidos = aba([{ id: '2026-11-17-01', criador: 'thomytalks', visualizacoes: '230.111 impressões' }]);
+  const c = cartoes(htmlPautas({ dados: dadosPautas(), exec: dadosExec([]), candidatos: lidos, email: ROBERTTA, filtro: 'candidatos', agora: AGORA }))['2026-11-17-01'];
+  assert.match(c.match(/<p class="candidato-numeros">[\s\S]*?<\/p>/)[0], /@thomytalks/);
+});
