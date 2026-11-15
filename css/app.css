@@ -559,7 +559,10 @@ dialog.paleta{width:calc(100vw - 1.5rem);max-width:37.5rem;max-height:min(35rem,
 dialog::backdrop{background:rgba(8,4,5,.6);backdrop-filter:blur(.1875rem);-webkit-backdrop-filter:blur(.1875rem)}
 dialog[open]{animation:abre .22s cubic-bezier(.2,.7,.2,1)}
 @keyframes abre{from{opacity:0;transform:translateY(.625rem) scale(.985)}}
-.dlg{display:flex;flex-direction:column;max-height:inherit;height:100%}
+/* Sem height:100% aqui: no Safari (WebKit) a porcentagem contra a altura automática do dialog dava 0 e a
+   janela abria só com a borda (2 px), parecendo travada. Só a gaveta, que tem altura fixa, usa 100%. */
+.dlg{display:flex;flex-direction:column;max-height:inherit}
+dialog.gaveta .dlg,dialog.telacheia .dlg{height:100%}
 .dlg-cab{display:flex;align-items:flex-start;justify-content:space-between;gap:.75rem;padding:1.375rem 1.25rem 0 1.625rem}
 .dlg-cab h2{padding-top:.4375rem}
 .dlg-corpo{padding:.875rem 1.625rem 1.625rem;overflow-y:auto;display:grid;gap:.875rem;align-content:start}
