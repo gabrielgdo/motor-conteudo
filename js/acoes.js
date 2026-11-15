@@ -24,6 +24,10 @@ import {
   LIMITE_CANDIDATOS, enviosDaTela,
 } from './telas/pautas.js';
 import { chaveIdemEnvio, mapaDeEnvios } from './envios.js';
+import {
+  estadoDaDecisaoRoteiro, bloqueioDaDecisao, chaveIdemDecisao, versoesDo, extrasDaDecisao, textoDaDecisaoAceita,
+} from './decisoes-roteiro.js';
+import { versaoVistaDe } from './telas/roteiros.js';
 import { arquivoDeLegenda } from './telas/prontos.js';
 import { desenhar, rotear } from './roteador.js';
 import { abrirJanela, fecharJanela, avisar, removerAviso, copiarTexto, janelaSobre, janelaSair } from './componentes/janelas.js';
@@ -470,7 +474,10 @@ export const ACOES = {
       if (j.acao === 'decidir-roteiro') {
         delete estado.decisaoRoteiro[j.idAlvo];
         limparCampos(`rp-${j.idAlvo}`, `rm-${j.idAlvo}`, `ro-${j.idAlvo}`);
-        avisar('Decisão enviada ao Roteirista. O andamento aparece na faixa.');
+        // Registro otimista até a releitura de Execuções mostrar a linha (js/decisoes-roteiro.js).
+        estado.decisoesEnviadas[j.idAlvo] = { desde: Date.now(), chave: j.chaveIdem, decisao: j.payload.decisao, versao: j.payload.versao };
+        estado.filtroRoteiros = 'todos';
+        avisar(textoDaDecisaoAceita(j.idAlvo, j.payload));
       } else if (j.acao === 'candidato') {
         limparCampos('rc-motivo');
         avisar(textoDoPedidoCandidato(j.destino, res));
@@ -489,7 +496,9 @@ export const ACOES = {
       if (j.rotina === 'radar-enviar' || j.rotina === 'radar-selecao' || j.acao === 'candidato') relerManual('pautas');
       if (j.rotina === 'radar-diario' || j.acao === 'candidato') relerManual('candidatos');
       // Envio aceito: vai para Roteiros (seção "Com o Roteirista"); o hashchange redesenha.
-      if (j.rotina === 'radar-enviar' && j.acao === 'disparar' && location.hash !== '#/roteiros') location.hash = '#/roteiros';
+      // Decisão de roteiro aceita: também vai para Roteiros ("Em revisão" / "Aprovado" no cartão).
+      const irParaRoteiros = (j.rotina === 'radar-enviar' && j.acao === 'disparar') || j.acao === 'decidir-roteiro';
+      if (irParaRoteiros && location.hash !== '#/roteiros') location.hash = '#/roteiros';
       else desenhar();
     } catch (e) {
       if (estado.janela !== j || !estado.logada) return;
@@ -653,12 +662,43 @@ export const ACOES = {
     estado.erros = {};
     desenhar();
   },
+  // Abas v1 · v2 · v3 do rascunho: a versão vista é a que recebe a decisão.
+  'roteiro-versao'(el) {
+    const id = el.dataset.id;
+    const r = rot(id);
+    const v = Number(el.dataset.valor);
+    if (!r || !versoesDo(r).includes(v)) return;
+    estado.versaoRoteiroVista[id] = v;
+    desenhar();
+  },
+  // "Pedir de novo" (decisão que falhou ou mudança cuja versão nova não chegou): volta a escolha e a
+  // versão; a confirmação abre com uma chave nova (a linha a mais muda o n de chaveIdemDecisao).
+  'roteiro-repetir'(el) {
+    if (!podeDecidir(Integra.email())) return;
+    const id = el.dataset.id;
+    const r = rot(id);
+    if (!r || !['aprovar', 'mudar', 'recusar'].includes(el.dataset.valor)) return;
+    const v = Number(el.dataset.versao);
+    if (versoesDo(r).includes(v)) estado.versaoRoteiroVista[id] = v;
+    estado.decisaoRoteiro[id] = el.dataset.valor;
+    estado.erros = {};
+    desenhar();
+  },
   'roteiro-confirmar'(el) {
     const id = el.dataset.id;
     const r = rot(id);
     if (!r || r.etapa !== 'rascunho' || !podeDecidir(Integra.email())) return;
+    // Confere de novo com as Execuções da vez (o botão pode estar velho, ou foi o segundo toque).
+    const execucoes = execucoesLidas().execucoes || [];
+    const agora = new Date();
+    const est = estadoDaDecisaoRoteiro({ execucoes, projeto: r, agora, local: estado.decisoesEnviadas[id] || null });
+    if (est.bloqueia) { avisar(est.explicacao || est.texto); desenhar(); return; }
+    const versao = versaoVistaDe(r, estado.versaoRoteiroVista);
+    const decisao = estado.decisaoRoteiro[id];
+    const rep = bloqueioDaDecisao(execucoes, { id, decisao, versao, agora });
+    if (!rep.livre) { avisar(rep.mensagem); desenhar(); return; }
     const plano = planejarDecisaoRoteiro({
-      id, versao: r.versaoRoteiro, decisao: estado.decisaoRoteiro[id], pedido: rascunho[`rp-${id}`], motivo: rascunho[`rm-${id}`], observacao: rascunho[`ro-${id}`],
+      id, versao, decisao, pedido: rascunho[`rp-${id}`], motivo: rascunho[`rm-${id}`], observacao: rascunho[`ro-${id}`],
     });
     if (!plano.ok) {
       estado.erros = {};
@@ -670,7 +710,8 @@ export const ACOES = {
     }
     abrirRodar({
       rotina: 'roteirista-decisao', acao: 'decidir-roteiro', idAlvo: id, payload: plano.payload,
-      extras: [{ chave: 'decisao', rotulo: 'Sua decisão', texto: plano.resumo }],
+      chaveIdem: chaveIdemDecisao(plano.payload, execucoes),
+      extras: extrasDaDecisao(plano, versoesDo(r)),
       notaDesligada: 'O disparo pelo app ainda não está ligado. Por enquanto, responda ao Roteirista no chat.',
     });
   },

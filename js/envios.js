@@ -42,6 +42,20 @@ export function idsNoTexto(t) {
   return [...new Set(String(t ?? '').toUpperCase().match(RE_ID_PAUTA) || [])];
 }
 
+/**
+ * Ids que uma linha `parcial` dá como ENVIADOS: os que aparecem num trecho (separado por ";", ponto
+ * ou quebra de linha) que diz "enviada(s)" sem "não", "falhou" ou "erro". O "enviar S46-01, …" da
+ * ponte não conta (ninguém confirmou o envio). Espelhado em ponte/Code.gs (paridade testada).
+ */
+export function idsEnviadosNoTexto(t) {
+  const ids = [];
+  for (const trecho of String(t ?? '').split(/[;\n]|\.(?:\s|$)/)) {
+    if (!/enviad[ao]s?\b/i.test(trecho) || /\bn[aã]o\b|falh|erro/i.test(trecho)) continue;
+    for (const id of idsNoTexto(trecho)) if (!ids.includes(id)) ids.push(id);
+  }
+  return ids;
+}
+
 /** Linhas radar-enviar de verdade (sem teste). */
 const linhasEnviar = (execucoes) => (execucoes || []).filter((e) => e && e.rotina === 'radar-enviar' && !e.teste);
 
@@ -108,7 +122,8 @@ export function enviosAoRoteirista({ selecao = null, decisoes = null, execucoes 
     const linhas = (porId.get(id) || []).slice().sort(maisNovaPrimeiro);
     const p = pauta.get(id);
     const base = { id_pauta: id, titulo: texto(p?.titulo), desde: null, texto: '', linha: null };
-    const ok = linhas.find((l) => l.status === 'ok');
+    // `parcial` que dá este id como enviado conta como `ok` (a ponte também recusa reenviar: ja-enviada).
+    const ok = linhas.find((l) => l.status === 'ok' || (l.status === 'parcial' && idsEnviadosNoTexto(l.resumo).includes(id)));
     const aberta = linhas.find((l) => ABERTOS.has(l.status));
     const falha = linhas.find((l) => FALHAS.has(l.status));
     const ultima = linhas[0] || null;

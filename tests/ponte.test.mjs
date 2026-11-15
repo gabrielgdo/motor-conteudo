@@ -11,6 +11,8 @@ import vm from 'node:vm';
 import { lerDataHora as lerDataHoraApp, prefixoSemana, dataHoraPlanilha, ID_CANDIDATO_RE } from '../js/parse.js';
 import * as C from '../js/controle.js';
 import * as S from '../js/selecao.js';
+import * as E from '../js/envios.js';
+import * as D from '../js/decisoes-roteiro.js';
 
 const CODIGO = readFileSync(new URL('../ponte/Code.gs', import.meta.url), 'utf8');
 const INTEGRA = readFileSync(new URL('../js/integra.js', import.meta.url), 'utf8');
@@ -1368,4 +1370,144 @@ test('contrato: toda recusa tem codigo curto e mensagem em português que o app 
     assert.ok(lido.lanca && lido.mensagem);
     assert.ok(lido.lanca in M);
   }
+});
+
+/* ----------------------------------------------------------------- lote 2: repetições */
+
+const enviar = (id, resumo, status, o = {}) => linha({
+  id_execucao: `EX-${id}`, chave_idem: `chave-${id}-xxxxxxxx`, bot: 'radar', rotina: 'radar-enviar', origem: 'manual-app', quem: ROBERTTA,
+  inicio: '2026-11-18 07:30', fim: status === 'pedido' || status === 'rodando' ? '' : '2026-11-18 07:50', status, resumo, teste: 'não', ...o,
+});
+const decidiu = (id, resumo, status, o = {}) => linha({
+  id_execucao: `EX-${id}`, chave_idem: `chave-${id}-xxxxxxxx`, bot: 'roteirista', rotina: 'roteirista-decisao', origem: 'manual-app', quem: ROBERTTA,
+  id_alvo: 'S47-04', inicio: '2026-11-18 09:30', fim: status === 'pedido' || status === 'rodando' ? '' : '2026-11-18 09:40', status, resumo, teste: 'não', ...o,
+});
+const pedirEnvio = (ids, dados = {}) => disparo('tok-falso-robertta', 'radar-enviar', { id_lote: 'S47-manual-1', dados: { ids, ...dados } });
+const linhasNovas = (amb, antes) => amb.aba.linhas.length - antes;
+
+test('ponte: radar-enviar recusa id já enviado (ok) — ja-enviada lista os ids, nada é gravado nem repassado; a travada marcada libera', () => {
+  for (const resumo of ['enviar S47-01, S47-02', 'pauta S47-01 (lote S47-manual-1) enviada ao Roteirista; aprovação confirmada em Decisões (x)']) {
+    const amb = criarAmbiente({ linhas: [CAB, enviar('a', resumo, 'ok')] });
+    const antes = amb.aba.linhas.length;
+    const r = amb.post(pedirEnvio('S47-03,S47-01'));
+    assert.equal(r.ok, false);
+    assert.equal(r.codigo, 'ja-enviada');
+    assert.deepEqual(json(r.ids), ['S47-01']);
+    assert.match(r.mensagem, /Já foi enviada ao Roteirista \(ou está indo\): S47-01\./);
+    assert.equal(linhasNovas(amb, antes), 0, 'nada gravado');
+    assert.equal(amb.webhooksChamados().length, 0, 'nada repassado');
+    assert.equal(comoOAppLe(r).lanca, 'ja-enviada');
+  }
+  const dois = criarAmbiente({ linhas: [CAB, enviar('b', 'enviar S47-01, S47-02', 'ok')] }).post(pedirEnvio('S47-02,S47-01'));
+  assert.match(dois.mensagem, /Já foram enviadas ao Roteirista \(ou estão indo\): S47-01, S47-02\./);
+  // outra pauta passa
+  const outra = criarAmbiente({ linhas: [CAB, enviar('c', 'enviar S47-01', 'ok')] });
+  const antes = outra.aba.linhas.length;
+  assert.notEqual(outra.post(pedirEnvio('S47-05')).codigo, 'ja-enviada');
+  assert.equal(linhasNovas(outra, antes), 1);
+  // aberta há mais de 2 h com o id: sem marcar, parece-travada; marcando como travada, libera
+  const ambV = criarAmbiente({ linhas: [CAB, enviar('d', 'enviar S47-01', 'rodando', { inicio: '2026-11-18 07:00' })] });
+  assert.equal(ambV.post(pedirEnvio('S47-01')).codigo, 'parece-travada');
+  const marcada = ambV.post(pedirEnvio('S47-01', { marcar_travada: true, id_execucao_travada: 'EX-d' }));
+  assert.notEqual(marcada.codigo, 'ja-enviada');
+  assert.equal(C.lerExecucoes(ambV.aba.linhas).execucoes.find((e) => e.id_execucao === 'EX-d').status, 'travada');
+  // a pedido/rodando recente segura pela trava do grupo (rodando) antes de chegar aqui
+  assert.equal(criarAmbiente({ linhas: [CAB, enviar('r', 'enviar S47-01', 'pedido', { inicio: '2026-11-18 09:50' })] }).post(pedirEnvio('S47-01')).codigo, 'rodando');
+  // e a regra pura também conta a aberta (pedido/rodando/aguardando)
+  for (const status of ['pedido', 'rodando', 'aguardando']) {
+    const execs = criarAmbiente().pure('lerExecucoes')([CAB, enviar('z', 'enviar S47-01', status)]).execucoes;
+    assert.equal(criarAmbiente().pure('envioRepetido')(execs, 'S47-01').codigo, 'ja-enviada', status);
+  }
+});
+
+test('ponte: radar-enviar com erro / travada / recusado-pela-trava libera; parcial libera só os ids que não aparecem como enviados; teste não conta', () => {
+  for (const status of ['erro', 'travada', 'recusado-pela-trava']) {
+    const amb = criarAmbiente({ linhas: [CAB, enviar('e', 'enviar S47-01', status)] });
+    const antes = amb.aba.linhas.length;
+    assert.notEqual(amb.post(pedirEnvio('S47-01')).codigo, 'ja-enviada', status);
+    assert.equal(linhasNovas(amb, antes), 1, status);
+  }
+  const parcial = () => criarAmbiente({ linhas: [CAB, enviar('p', 'S47-01 enviada ao Roteirista; S47-02 falhou', 'parcial')] });
+  const r1 = parcial().post(pedirEnvio('S47-01,S47-02'));
+  assert.equal(r1.codigo, 'ja-enviada');
+  assert.deepEqual(json(r1.ids), ['S47-01']);
+  assert.notEqual(parcial().post(pedirEnvio('S47-02')).codigo, 'ja-enviada');
+  // parcial com o resumo da ponte (ninguém confirmou o envio): libera tudo
+  assert.notEqual(criarAmbiente({ linhas: [CAB, enviar('q', 'enviar S47-01, S47-02', 'parcial')] }).post(pedirEnvio('S47-01')).codigo, 'ja-enviada');
+  // linha de teste não segura pauta de verdade (como em js/envios.js)
+  assert.notEqual(criarAmbiente({ linhas: [CAB, enviar('t', 'enviar S47-01', 'ok', { teste: 'sim' })] }).post(pedirEnvio('S47-01')).codigo, 'ja-enviada');
+});
+
+test('ponte: roteirista-decisao recusa "mudar vN" repetido (ok recente) e qualquer decisão depois de aprovar/recusar concluído; erro e 2 h liberam', () => {
+  const mudar = (versao) => decisao('tok-falso-robertta', 'S47-04', { decisao: 'mudar', versao, pedido: 'trocar o fim' });
+  const amb = criarAmbiente({ linhas: [CAB, decidiu('m', 'mudar v2', 'ok')] });
+  const antes = amb.aba.linhas.length;
+  const r = amb.post(mudar(2));
+  assert.equal(r.codigo, 'ja-pedida');
+  assert.match(r.mensagem, /A mudança na v2 do S47-04 já foi pedida\. Espere a v3 chegar \(ou 2 h\)/);
+  assert.equal(linhasNovas(amb, antes), 0);
+  assert.equal(amb.webhooksChamados().length, 0);
+  assert.notEqual(amb.post(mudar(3)).codigo, 'ja-pedida');
+  // resumo sobrescrito pelo Roteirista ("S47-04 v3 gravado") = mudar v2
+  assert.equal(criarAmbiente({ linhas: [CAB, decidiu('g', 'S47-04 v3 gravado: abertura nova', 'ok')] }).post(mudar(2)).codigo, 'ja-pedida');
+  // 2 h depois do fim sem a v3: pode pedir de novo (o app desbloqueia igual)
+  assert.notEqual(criarAmbiente({ agora: '2026-11-18 11:45', linhas: [CAB, decidiu('t', 'mudar v2', 'ok')] }).post(mudar(2)).codigo, 'ja-pedida');
+  for (const status of ['erro', 'parcial', 'travada']) {
+    assert.notEqual(criarAmbiente({ linhas: [CAB, decidiu('x', 'mudar v2', status)] }).post(mudar(2)).codigo, 'ja-pedida', status);
+  }
+  for (const resumo of ['aprovar v2', 'S47-04 v2 aprovada: gravado S47-04 - Título.md', 'recusar v2 (ética)']) {
+    const a = criarAmbiente({ linhas: [CAB, decidiu('d', resumo, 'ok')] });
+    for (const d of [mudar(2), decisao('tok-falso-robertta', 'S47-04', { versao: 3 }), decisao('tok-falso-robertta', 'S47-04', { decisao: 'recusar', motivo: 'tom' })]) {
+      const res = a.post(d);
+      assert.equal(res.codigo, 'ja-decidido', resumo);
+      assert.match(res.mensagem, /O roteiro S47-04 já foi (aprovado|recusado) \(v2\)/);
+    }
+    assert.notEqual(a.post(decisao('tok-falso-robertta', 'S47-05', {})).codigo, 'ja-decidido');
+  }
+  assert.notEqual(criarAmbiente({ linhas: [CAB, decidiu('f', 'aprovar v2', 'erro')] }).post(decisao('tok-falso-robertta', 'S47-04', {})).codigo, 'ja-decidido');
+});
+
+test('ponte: cliques repetidos com a chave estável do app = um pedido só; outra janela (chave nova) cai na trava por id', () => {
+  const amb = criarAmbiente();
+  const plano = C.planejarDecisaoRoteiro({ id: 'S47-04', versao: 2, decisao: 'mudar', pedido: 'trocar o fim' });
+  const chaveApp = D.chaveIdemDecisao(plano.payload, C.lerExecucoes(amb.aba.linhas).execucoes);
+  const corpo = corpoDoApp(corpoDecidir({ ...plano.payload, chave_idem: chaveApp }), 'tok-falso-robertta');
+  amb.post(corpo);
+  assert.equal(amb.post(corpo).repetido, true);
+  assert.equal(C.lerExecucoes(amb.aba.linhas).execucoes.length, 1);
+  const outra = corpoDoApp(corpoDecidir({ ...plano.payload, chave_idem: 'outra-chave-123456' }), 'tok-falso-robertta');
+  assert.equal(amb.post(outra).codigo, 'rodando');
+  const execs = C.lerExecucoes(amb.aba.linhas).execucoes;
+  assert.equal(execs.length, 1);
+  assert.equal(execs[0].resumo, 'mudar v2');
+  assert.equal(execs[0].chave_idem, chaveApp);
+});
+
+test('paridade lote 2: leitura do resumo, ids enviados e recusas de decisão iguais no app e na ponte', () => {
+  const amb = criarAmbiente();
+  const resumos = ['mudar v2', 'aprovar v3', 'recusar v1 (ética)', 'S46-01 v2 gravado: x', 'S46-01 v2 aprovada: gravado y', 'rodar de novo; EX-1 marcada como travada; mudar v4', '', 'qualquer coisa', 'v1 gravado'];
+  for (const s of resumos) assert.deepEqual(json(amb.pure('lerDecisaoDoResumo')(s)), json(D.lerDecisaoDoResumo(s)), s);
+  const textos = ['pauta S46-01 (lote S46-manual-1) enviada ao Roteirista; ok', 'S46-01, S46-02 enviadas. S46-03 falhou', 'enviar S46-01', 'S46-04 não enviada', 's46-05 enviada\nS46-06 erro'];
+  for (const t of textos) {
+    assert.deepEqual(json(amb.pure('idsEnviadosNoTexto')(t)), E.idsEnviadosNoTexto(t), t);
+    assert.deepEqual(json(amb.pure('idsNoTexto')(t)), E.idsNoTexto(t), t);
+  }
+  const cenarios = [
+    [decidiu('1', 'mudar v2', 'ok')], [decidiu('2', 'mudar v2', 'rodando')], [decidiu('3', 'mudar v2', 'erro')],
+    [decidiu('4', 'aprovar v2', 'ok')], [decidiu('5', 'recusar v1 (tom)', 'ok')], [decidiu('6', 'S47-04 v3 gravado: z', 'ok')],
+    [decidiu('7', 'mudar v2', 'ok', { inicio: '2026-11-18 06:00', fim: '2026-11-18 06:30' })], [decidiu('8', 'mudar v2', 'ok', { id_alvo: 'S47-09' })], [],
+  ];
+  const agora = sp('2026-11-18 10:00');
+  for (const ls of cenarios) {
+    const app = C.lerExecucoes([CAB, ...ls]).execucoes;
+    const ponte = amb.pure('lerExecucoes')([CAB, ...ls]).execucoes;
+    for (const [qual, versao] of [['mudar', 2], ['mudar', 3], ['aprovar', 2], ['recusar', 2]]) {
+      const a = D.bloqueioDaDecisao(app, { id: 'S47-04', decisao: qual, versao, agora });
+      const p = amb.pure('decisaoRepetida')(ponte, 'S47-04', { decisao: qual, versao }, agora);
+      assert.equal(p ? p.codigo : 'livre', a.livre ? 'livre' : a.codigo, `${ls[0]?.[12]} ${ls[0]?.[11]} ${qual} v${versao}`);
+      if (p) assert.equal(p.mensagem, a.mensagem);
+    }
+  }
+  const M = amb.pure('MENSAGENS');
+  for (const c of ['ja-enviada', 'ja-pedida', 'ja-decidido']) assert.ok(c in M, c);
 });

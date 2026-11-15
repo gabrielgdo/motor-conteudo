@@ -21,6 +21,10 @@ const inicial = () => ({
   mudandoPauta: {}, // id_pauta -> true: pauta já decidida aberta para mudar a decisão
   resultadoPautas: {}, // id_pauta -> {acao, mensagem} da última gravação
   decisaoRoteiro: {}, // id do roteiro -> 'aprovar' | 'mudar' | 'recusar' (ainda não enviada)
+  versaoRoteiroVista: {}, // id do roteiro -> número da versão do RASCUNHO que está na tela (abas v1 · v2)
+  // Decisão de roteiro aceita pela ponte e ainda não vista em Execuções (registro otimista, só em
+  // memória): id -> {desde: ms, chave, decisao, versao} (js/decisoes-roteiro.js).
+  decisoesEnviadas: {},
   candidatosVisiveis: 30, // chip Candidatos: quantos cartões aparecem antes do "Mostrar mais"
   janela: null, // janela de confirmação aberta: {tipo, ...} (js/acoes.js)
   // Envio ao Roteirista aceito pela ponte e ainda não visto em Execuções (registro otimista, só em

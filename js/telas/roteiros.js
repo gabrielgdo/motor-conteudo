@@ -7,8 +7,10 @@
 import { esc, ic, NOME_REDE, validade } from '../util.js';
 import { estado } from '../estado.js';
 import { Integra } from '../integra.js';
-import { ativos, rot, falasDe, execucoesLidas, pautasLidas, roteiros } from '../dados.js';
+import { ativos, rot, falasDe, execucoesLidas, pautasLidas, roteiros, anexo, camposDoLido } from '../dados.js';
+import { lerRoteiro } from '../roteiro.js';
 import { enviosAoRoteirista, textoDoEnvio } from '../envios.js';
+import { estadoDaDecisaoRoteiro, bloqueioDaDecisao, versoesDo, TOM_DECISAO } from '../decisoes-roteiro.js';
 import { podeDecidir, DECISOES_ROTEIRO, MOTIVOS_ROTEIRO } from '../controle.js';
 import { faixaExecucao, historicoComExecucoes, blocoHistorico } from '../componentes/execucao.js';
 import { cab, selo, vt, chipFiltro, passoDe, destinoDe, naoAchei, comDados, linkDoDrive, vazio, rodapeAtualizado, voltar, campo, segmento } from './pecas.js';
@@ -57,7 +59,61 @@ export function htmlComRoteirista(envios = [], { decide = false } = {}) {
   </section>`;
 }
 
+/* ---- Decisão e versões do rascunho (puro, com as Execuções e o registro otimista) ---- */
+
+/** Estado da decisão do roteiro (js/decisoes-roteiro.js); fora do rascunho, só aprovado/recusado contam. */
+export function decisaoDe(r, { execucoes = [], agora = new Date(), locais = {} } = {}) {
+  return estadoDaDecisaoRoteiro({ execucoes, projeto: r, agora, local: locais?.[r.id] || null });
+}
+
+/** Selo do estado da decisão (vazio quando não há nada a dizer). Texto da planilha: esc() no selo. */
+export function seloDaDecisao(d) {
+  if (!d || d.estado === 'livre' || !d.texto) return '';
+  return selo(d.texto, TOM_DECISAO[d.estado] || 'neutro');
+}
+
+/** A versão do rascunho que está na tela: a escolhida nas abas (se existir) ou a mais nova. */
+export function versaoVistaDe(r, vistas = {}) {
+  const versoes = versoesDo(r);
+  const n = Number(vistas?.[r.id]);
+  if (Number.isInteger(n) && versoes.includes(n)) return n;
+  return versoes.length ? versoes[versoes.length - 1] : (r.versaoRoteiro || 1);
+}
+
+/** Abas "v1 · v2 · v3" do rascunho (só com mais de uma versão). <button> de verdade. */
+export function abasDeVersao(r, vista) {
+  const versoes = versoesDo(r);
+  if (r.etapa !== 'rascunho' || versoes.length < 2) return '';
+  const ultima = versoes[versoes.length - 1];
+  return `<div class="filtros" role="group" aria-label="Versões do rascunho" style="margin-bottom:1rem">${versoes.map((v) => `<button type="button" class="chip" data-acao="roteiro-versao" data-id="${esc(r.id)}" data-valor="${v}" aria-pressed="${v === vista}">${esc(`v${v}${v === ultima ? ' (mais nova)' : ''}`)}</button>`).join('')}</div>`;
+}
+
+const lidosPorAnexo = new WeakMap();
+
+/**
+ * O roteiro com o TEXTO da versão vista: a mais nova é o próprio `r`; uma anterior é baixada com o
+ * download de sempre (anexo) e lida por lerRoteiro. → {r, fase:'pronto'|'carregando'|'erro'}.
+ * `opcoes.anexoDe`: troca o anexo (testes).
+ */
+export function roteiroDaVersao(r, vista, { anexoDe = anexo } = {}) {
+  if (vista === r.versaoRoteiro) return { r, fase: 'pronto' };
+  const arq = (r.arquivosRascunho || []).find((x) => x.v === vista)?.file;
+  if (!arq) return { r, fase: 'pronto' };
+  const a = anexoDe(arq);
+  if (!a || a.fase === 'carregando') return { r, fase: 'carregando' };
+  if (a.fase === 'erro') return { r, fase: 'erro' };
+  let lido = lidosPorAnexo.get(a);
+  if (lido === undefined) {
+    try { lido = lerRoteiro(a.texto, arq.name || ''); } catch { lido = null; }
+    lidosPorAnexo.set(a, lido);
+  }
+  if (!lido) return { r, fase: 'erro' };
+  return { r: { ...r, ...camposDoLido(lido), versaoVista: vista }, fase: 'pronto' };
+}
+
 export function vRoteiros() {
+  const execs = execucoesLidas().execucoes || [];
+  const agoraLista = new Date();
   const envios = enviosAoRoteirista({
     selecao: pautasLidas().selecao || null, decisoes: pautasLidas().decisoes || null,
     execucoes: execucoesLidas().execucoes || [], projetos: roteiros(), agora: new Date(), locais: estado.enviosLocais || {},
@@ -72,9 +128,10 @@ export function vRoteiros() {
   <div class="filtros" role="group" aria-label="Filtrar roteiros">
     ${chipFiltro('filtroRoteiros', 'aprovar', `Para aprovar (${nAprovar})`, f)}${chipFiltro('filtroRoteiros', 'gravar', `Para gravar (${nGravar})`, f)}${chipFiltro('filtroRoteiros', 'todos', 'Todos', f)}
   </div>
-  ${lista.length ? `<ul class="folhas">${lista.map((r) => { const [texto, tom] = passoDe(r); const v = validade(r); const abertura = r.ganchos.ig[0]; const fontes = resumoFontes(r); return `
+  ${lista.length ? `<ul class="folhas">${lista.map((r) => { const [texto, tom] = passoDe(r); const v = validade(r); const abertura = r.ganchos.ig[0]; const fontes = resumoFontes(r);
+    const dec = r.etapa === 'rascunho' ? seloDaDecisao(decisaoDe(r, { execucoes: execs, agora: agoraLista, locais: estado.decisoesEnviadas })) : ''; return `
     <li><a class="painel folha luz" href="#/roteiros/${enc(r.id)}">
-      <span class="meta"><span class="id">${esc(r.id)}</span>${selo(texto, tom)}${r.teste ? selo('Teste') : ''}</span>
+      <span class="meta"><span class="id">${esc(r.id)}</span>${selo(texto, tom)}${dec}${r.teste ? selo('Teste') : ''}</span>
       <h3 ${vt(r.id)}>${esc(r.titulo)}</h3>
       ${abertura ? `<blockquote>${esc(abertura)}</blockquote>` : r.erroTexto ? '<p class="apagado pequeno">Não consegui ler o texto deste roteiro agora.</p>' : ''}
       <span class="meta">${v.perto && r.lido ? selo(v.texto, 'alerta') : ''}${fontes ? `<span class="apagado pequeno">${esc(fontes)}</span>` : ''}</span>
@@ -98,7 +155,7 @@ function linhaPalavras(r, falas) {
   return `<p class="apagado pequeno" style="margin-bottom:1.375rem">${esc(tamanho)} ${destaque}</p>`;
 }
 
-function painelFalas(r, rede) {
+export function painelFalas(r, rede) {
   const falas = falasDe(r, rede);
   const outros = r.ganchos[rede].slice(1);
   const legenda = r.legendas[rede];
@@ -147,39 +204,61 @@ function painelFontes(r) {
  * Aprovar / Pedir mudança (campo do pedido) / Recusar (motivo da lista curta + observação) e o
  * botão que abre a confirmação. A conta que não decide vê tudo desabilitado, com a nota.
  */
-export function decisaoDoRascunho(r, { email = '', escolha = '', exec = {}, erros = {}, agora = new Date() } = {}) {
+export function decisaoDoRascunho(r, { email = '', escolha = '', exec = {}, erros = {}, agora = new Date(), vista = 0, locais = {} } = {}) {
   const fontes = resumoFontes(r);
   const decide = podeDecidir(email);
-  const dis = decide ? '' : ' disabled';
   const id = esc(r.id);
+  const versoes = versoesDo(r);
+  const ultima = versoes.length ? versoes[versoes.length - 1] : (r.versaoRoteiro || 1);
+  const v = versoes.includes(Number(vista)) ? Number(vista) : ultima;
+  const execucoes = exec?.execucoes || [];
+  const d = decisaoDe(r, { execucoes, agora, locais });
+  // Revisão em andamento, aprovação a caminho ou roteiro já decidido: os três botões desligam (com a explicação).
+  const travado = decide && d.bloqueia;
+  // A mesma regra da ponte para a escolha na versão vista (ja-pedida / ja-decidido).
+  const repetida = (valor) => (decide && !travado ? bloqueioDaDecisao(execucoes, { id: r.id, decisao: valor, versao: v, agora }) : { livre: true });
+  const repMudar = repetida('mudar');
+  const desligado = (valor) => !decide || travado || !(valor === 'mudar' ? repMudar : repetida(valor)).livre;
+  const esc_ = escolha && !desligado(escolha) ? escolha : '';
   // Como no desenho aprovado: três botões largos, um embaixo do outro (aprovar, pedir mudança, recusar).
   const CLASSE = { aprovar: 'contorno sim', mudar: 'contorno mudar', recusar: 'calmo nao' };
-  const botao = (valor, extra = '') => `<button type="button" class="botao ${CLASSE[valor]} cheio" data-acao="roteiro-escolher" data-id="${id}" data-valor="${valor}" aria-pressed="${escolha === valor}"${dis}>${extra}${esc(DECISOES_ROTEIRO[valor])}</button>`;
+  const ROTULO = { aprovar: `Aprovar a v${v}`, mudar: DECISOES_ROTEIRO.mudar, recusar: DECISOES_ROTEIRO.recusar };
+  const botao = (valor, extra = '') => `<button type="button" class="botao ${CLASSE[valor]} cheio" data-acao="roteiro-escolher" data-id="${id}" data-valor="${valor}" aria-pressed="${esc_ === valor}"${desligado(valor) ? ' disabled' : ''}>${extra}${esc(ROTULO[valor])}</button>`;
   let detalhe = '';
-  if (decide && escolha === 'mudar') {
-    detalhe = campo({ modelo: `rp-${r.id}`, rotulo: 'O que mudar', tipo: 'textarea', linhas: 3, exemplo: 'Ex.: abrir com a pergunta, sem o dado' });
-  } else if (decide && escolha === 'recusar') {
+  if (esc_ === 'mudar') {
+    detalhe = campo({ modelo: `rp-${r.id}`, rotulo: `O que mudar na v${v}`, tipo: 'textarea', linhas: 3, exemplo: 'Ex.: abrir com a pergunta, sem o dado' });
+  } else if (esc_ === 'recusar') {
     detalhe = `${segmento(`rm-${r.id}`, 'Por que recusar?', MOTIVOS_ROTEIRO.map((m) => [m, m.charAt(0).toUpperCase() + m.slice(1)]), '')}
       ${erros[`rm-${r.id}`] ? `<p class="erro">${esc(erros[`rm-${r.id}`])}</p>` : ''}
       ${campo({ modelo: `ro-${r.id}`, rotulo: 'Observação', opcional: true, exemplo: 'Ex.: a tese não se sustenta' })}`;
   }
+  // Explicação visível do estado (e do porquê de um botão estar desligado).
+  const notas = [];
+  if (d.estado !== 'livre' && d.explicacao) notas.push(d.explicacao);
+  if (decide && !travado && !repMudar.livre) notas.push(repMudar.mensagem);
+  const pedirDeNovo = decide && (d.estado === 'falhou' || d.estado === 'sem-versao-nova') && d.decisao
+    ? `<button type="button" class="botao contorno menor" data-acao="roteiro-repetir" data-id="${id}" data-valor="${esc(d.decisao)}" data-versao="${Number(d.versao) || v}">${ic('atualizar', 16)} Pedir de novo</button>` : '';
+  const antiga = v !== ultima;
   return `
     <h2>Sua decisão</h2>
-    <p class="apagado pequeno">Rascunho v${r.versaoRoteiro}.${fontes ? ` ${esc(fontes)}.` : ''}</p>
+    <p class="apagado pequeno">Rascunho v${v}${antiga ? ` (a mais nova é a v${ultima})` : ''}.${fontes ? ` ${esc(fontes)}${antiga ? ` (na v${ultima})` : ''}.` : ''}</p>
     ${r.fontesConferidas ? '' : `<p class="meta">${selo('Em checagem de fontes', 'espera')}</p>`}
+    ${d.estado !== 'livre' && d.texto ? `<p class="meta">${seloDaDecisao(d)}</p>` : ''}
     ${faixaExecucao({ rotina: 'roteirista-decisao', rotulo: 'Decisão pelo app', idAlvo: r.id, dados: exec, agora })}
-    <div class="decisao empilhada" role="group" aria-label="Decisão sobre o rascunho v${r.versaoRoteiro}">
+    ${notas.length || pedirDeNovo ? `<div class="pilha" style="gap:.5rem" role="status">${notas.map((n) => `<p class="pequeno apagado">${esc(n)}</p>`).join('')}${pedirDeNovo ? `<p>${pedirDeNovo}</p>` : ''}</div>` : ''}
+    <div class="decisao empilhada" role="group" aria-label="Decisão sobre o rascunho v${v}">
       ${botao('aprovar', ic('check', 18))}${botao('mudar')}${botao('recusar')}
     </div>
     ${decide ? '' : `<p class="pequeno apagado">${esc('Só a conta da Robertta decide.')}</p>`}
     ${detalhe}
-    ${decide && escolha ? `<button type="button" class="botao primario cheio" data-acao="roteiro-confirmar" data-id="${id}">${esc(escolha === 'aprovar' ? `Aprovar a v${r.versaoRoteiro}` : escolha === 'mudar' ? 'Pedir a mudança' : 'Recusar o rascunho')}</button>` : ''}`;
+    ${esc_ ? `<button type="button" class="botao primario cheio" data-acao="roteiro-confirmar" data-id="${id}">${esc(esc_ === 'aprovar' ? `Aprovar a v${v}` : esc_ === 'mudar' ? `Pedir a mudança na v${v}` : `Recusar o rascunho v${v}`)}</button>` : ''}`;
 }
 
 function acoesDe(r) {
   if (r.etapa === 'rascunho') {
     return decisaoDoRascunho(r, {
       email: Integra.email(), escolha: estado.decisaoRoteiro[r.id] || '', exec: execucoesLidas(), erros: estado.erros, agora: new Date(),
+      vista: versaoVistaDe(r, estado.versaoRoteiroVista), locais: estado.decisoesEnviadas,
     });
   }
   const aprovado = r.etapa === 'aprovado';
@@ -202,8 +281,20 @@ export function vRoteiro(id) {
     const abas = [['ig', 'Instagram'], ['tt', 'TikTok'], ['extras', 'Extras'], ['fontes', 'Fontes']];
     const aba = abas.some(([valor]) => valor === estado.abaRoteiro) ? estado.abaRoteiro : 'ig';
     const v = validade(r); const [texto, tom] = passoDe(r);
+    const vista = r.etapa === 'rascunho' ? versaoVistaDe(r, estado.versaoRoteiroVista) : r.versaoRoteiro;
+    const doTexto = r.etapa === 'rascunho' ? roteiroDaVersao(r, vista) : { r, fase: 'pronto' };
+    const dec = r.etapa === 'rascunho' ? seloDaDecisao(decisaoDe(r, { execucoes: execucoesLidas().execucoes || [], agora: new Date(), locais: estado.decisoesEnviadas })) : '';
     let painel;
-    if (!r.lido) {
+    if (doTexto.fase === 'carregando') {
+      painel = vazio(`Baixando a v${vista}`, 'O texto desta versão está vindo do Google Drive.');
+    } else if (doTexto.fase === 'erro') {
+      painel = vazio(`Não consegui ler a v${vista}`, 'O Google Drive não entregou o arquivo desta versão agora.', `<button type="button" class="botao contorno" data-acao="anexo-tentar">${ic('atualizar', 18)} Tentar de novo</button>`);
+    } else if (doTexto.r !== r) {
+      const rv = doTexto.r;
+      painel = aba === 'extras' ? painelExtras(rv) : aba === 'fontes' ? painelFontes(rv) : painelFalas(rv, aba);
+      // O relatório de fontes é um arquivo só: a checagem é a da versão mais nova.
+      if (aba === 'fontes') painel = `<p class="meta">${selo(r.fontesConferidas ? `Fontes conferidas na v${r.versaoRoteiro}` : `Fontes em checagem na v${r.versaoRoteiro}`, 'espera')}</p>${painel}`;
+    } else if (!r.lido) {
       painel = r.erroTexto
         ? vazio('Não consegui ler o texto deste roteiro', `O Google Drive não entregou o arquivo agora.${linkDoDrive(r.arquivoRoteiro) ? ` Você pode ${linkDoDrive(r.arquivoRoteiro, 'abrir o roteiro no Drive')}.` : ''}`, `<button type="button" class="botao contorno" data-acao="atualizar">${ic('atualizar', 18)} Tentar de novo</button>`)
         : vazio('O texto deste roteiro não está no Drive', 'O arquivo do roteiro não apareceu em 2-Roteiros.');
@@ -211,9 +302,10 @@ export function vRoteiro(id) {
     return `
   ${voltar('roteiros', 'Roteiros')}
   ${cab(r.titulo, '', r.id)}
-  <div class="meta" style="margin:-.875rem 0 1.625rem">${selo(texto, tom)}${r.lido ? selo(v.texto, v.tom) : ''}${r.formato ? selo(r.formato) : ''}${r.teste ? selo('Teste') : ''}</div>
+  <div class="meta" style="margin:-.875rem 0 1.625rem">${selo(texto, tom)}${dec}${r.lido ? selo(v.texto, v.tom) : ''}${r.formato ? selo(r.formato) : ''}${r.teste ? selo('Teste') : ''}</div>
   <div class="roteiro-grade">
     <section class="painel" aria-label="Conteúdo do roteiro">
+      ${abasDeVersao(r, vista)}
       <div class="abas" role="tablist" aria-label="Partes do roteiro">${abas.map(([valor, nome]) => `<button type="button" class="aba" role="tab" id="aba-${valor}" aria-selected="${aba === valor}" aria-controls="painel-roteiro" tabindex="${aba === valor ? 0 : -1}" data-acao="aba" data-valor="${valor}">${nome}</button>`).join('')}</div>
       <div role="tabpanel" id="painel-roteiro" aria-labelledby="aba-${aba}">${painel}</div>
     </section>

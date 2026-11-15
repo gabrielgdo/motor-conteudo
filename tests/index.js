@@ -20,3 +20,4 @@ import('./ponte.test.mjs');
 import('./andamento.test.mjs');
 import('./envios.test.mjs');
 import('./tele.test.mjs');
+import('./decisoes-roteiro.test.mjs');

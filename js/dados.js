@@ -153,25 +153,13 @@ export function montarRoteiro(p, lido, agora = new Date(), { postadosLidos = tru
     teste: !!p.teste,
     arquivado: etapa === 'arquivado' || (etapa === 'pronto' && !new RegExp(`^${sem.codigo}-\\d{2}$`).test(p.id)),
     versaoRoteiro: p.ultimoRascunho?.v ?? 1,
+    // Todas as versões do rascunho (abas v1 · v2 · v3 no detalhe) e se o roteiro final já existe.
+    versoesRoteiro: (p.rascunhos || []).map((x) => x.v),
+    arquivosRascunho: (p.rascunhos || []).map((x) => ({ v: x.v, file: x.file })),
+    temFinal: !!p.roteiro,
     fontesConferidas: checagemConcluida(p),
     arquivoRoteiro: arquivoDoRoteiro(p),
-    lido: !!lido,
-    valido_ate: lido?.valido_ate || '',
-    formato: lido?.formato || '',
-    formatoRoteiro: lido?.formato_roteiro || '',
-    ganchos: lido ? ganchosDoRoteiro(lido) : { ig: [], tt: [] },
-    falas: lido ? falasDoRoteiro(lido) : [],
-    notas: lido ? (lido.apoio_visual?.length ? [...lido.apoio_visual] : linhas(lido.notas_intencao)) : [],
-    entrega: lido?.entrega || '',
-    // Formato com etiquetas: a "Versão teleprompter" (se houver). No novo, o teleprompter são as falas.
-    teleprompter: lido && lido.formato_roteiro !== 'novo' ? String(lido.teleprompter || '').trim() : '',
-    duracaoEstimada: lido?.duracao_estimada || '',
-    legendas: { ig: lido?.legendas?.instagram || '', tt: lido?.legendas?.tiktok || '' },
-    carrossel: lido?.carrossel ? [...lido.carrossel] : [],
-    threads: lido?.threads || '',
-    stories: (lido?.stories_detalhe || []).map((s) => [maiuscula(s.tipo) || 'Story', s.texto]),
-    fontes: (lido?.fontes_detalhe || []).map((f) => ({ ref: f.ref, checagem: CHECAGENS.has(f.checagem) ? f.checagem : '' })),
-    checklist: (lido?.checklist_cfp || []).map((c) => ({ ...c })),
+    ...camposDoLido(lido),
     video: {
       versoes: p.previas.versoes.map((x) => ({
         n: x.v,
@@ -204,6 +192,33 @@ export function montarRoteiro(p, lido, agora = new Date(), { postadosLidos = tru
     };
   }
   return r;
+}
+
+/**
+ * Os campos de TEXTO do roteiro (falas, ganchos, legendas, extras, fontes) a partir do roteiro
+ * lido (lerRoteiro) ou null. montarRoteiro usa para a versão da vez; a tela usa para mostrar uma
+ * versão anterior do rascunho (abas v1 · v2 · v3).
+ */
+export function camposDoLido(lido) {
+  return {
+    lido: !!lido,
+    valido_ate: lido?.valido_ate || '',
+    formato: lido?.formato || '',
+    formatoRoteiro: lido?.formato_roteiro || '',
+    ganchos: lido ? ganchosDoRoteiro(lido) : { ig: [], tt: [] },
+    falas: lido ? falasDoRoteiro(lido) : [],
+    notas: lido ? (lido.apoio_visual?.length ? [...lido.apoio_visual] : linhas(lido.notas_intencao)) : [],
+    entrega: lido?.entrega || '',
+    // Formato com etiquetas: a "Versão teleprompter" (se houver). No novo, o teleprompter são as falas.
+    teleprompter: lido && lido.formato_roteiro !== 'novo' ? String(lido.teleprompter || '').trim() : '',
+    duracaoEstimada: lido?.duracao_estimada || '',
+    legendas: { ig: lido?.legendas?.instagram || '', tt: lido?.legendas?.tiktok || '' },
+    carrossel: lido?.carrossel ? [...lido.carrossel] : [],
+    threads: lido?.threads || '',
+    stories: (lido?.stories_detalhe || []).map((s) => [maiuscula(s.tipo) || 'Story', s.texto]),
+    fontes: (lido?.fontes_detalhe || []).map((f) => ({ ref: f.ref, checagem: CHECAGENS.has(f.checagem) ? f.checagem : '' })),
+    checklist: (lido?.checklist_cfp || []).map((c) => ({ ...c })),
+  };
 }
 
 /** Ordem das listas: semanas mais novas primeiro (S47 antes de S46), dentro da semana pelo número; depois T e R. */
