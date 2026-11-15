@@ -11,7 +11,8 @@
 // conta da Robertta decide; a do Gabriel só pede busca.
 
 export const CHAVE_SESSAO = 'motor.central.sessao';
-export const MOTOR_OUVINDO_MS = 3 * 60 * 1000; // o motor grava o sinal de vida a cada ~60 s
+export const MOTOR_OUVINDO_MS = 3 * 60 * 1000; // no Grok, o motor grava o sinal de vida a cada ~60 s
+export const MOTOR_OUVINDO_MODAL_MS = 15 * 60 * 1000; // na Modal, a cada passada (a central acorda; relógio de 5 min)
 const FOLGA_TOKEN_MS = 2 * 60 * 1000;
 
 /** Os mesmos formatos da regra arquivo_do_tipo no banco e do bin/central.py. */
@@ -42,7 +43,8 @@ export function arquivoDoPedido(tipo, nome) {
 /** O motor está ouvindo a central? (linha de motor_estado com sinal de vida recente) */
 export function motorOuvindo(estado, agora = Date.now()) {
   const t = Date.parse(estado?.atualizado_em || '');
-  return Number.isFinite(t) && agora - t < MOTOR_OUVINDO_MS && agora - t > -MOTOR_OUVINDO_MS;
+  const limite = estado?.dados?.central?.modo === 'modal' ? MOTOR_OUVINDO_MODAL_MS : MOTOR_OUVINDO_MS;
+  return Number.isFinite(t) && agora - t < limite && agora - t > -MOTOR_OUVINDO_MS;
 }
 
 /** Sessão guardada válida para este e-mail? (o token se renova sozinho; aqui basta haver refresh_token) */

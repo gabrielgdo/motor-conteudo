@@ -38,6 +38,9 @@ test('motorOuvindo: só com sinal de vida recente', () => {
   assert.equal(motorOuvindo({ atualizado_em: new Date(agora - MOTOR_OUVINDO_MS - 1000).toISOString() }, agora), false);
   assert.equal(motorOuvindo(null, agora), false);
   assert.equal(motorOuvindo({ atualizado_em: 'lixo' }, agora), false);
+  const dezMin = new Date(agora - 10 * 60 * 1000).toISOString();
+  assert.equal(motorOuvindo({ atualizado_em: dezMin, dados: { central: { modo: 'grok' } } }, agora), false);
+  assert.equal(motorOuvindo({ atualizado_em: dezMin, dados: { central: { modo: 'modal' } } }, agora), true);
 });
 
 test('sessaoDe: confere o e-mail e ignora lixo', () => {
