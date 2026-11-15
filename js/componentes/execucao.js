@@ -137,6 +137,44 @@ const itemHTML = (it) => `<div><dt>${esc(it.rotulo)}</dt><dd>${it.lista
   ? `<ul class="mudancas">${it.lista.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>`
   : esc(it.texto)}</dd></div>`;
 
+/** Classe do <dialog> da janela "rodar": a do candidato é larga (~42rem) para o texto não virar coluna. */
+export function classeJanelaRodar(rotina) {
+  return rotina === 'radar-candidato' ? 'janela larga' : 'janela';
+}
+
+/** Resumo do candidato no topo da janela (título, tema, números); sem `resumo`, o texto do item. */
+function resumoHTML(it) {
+  const r = it.resumo;
+  if (!r) return `<div class="resumo-candidato"><p class="pequeno apagado">${esc(it.rotulo)}</p><p>${esc(it.texto)}</p></div>`;
+  return `<div class="resumo-candidato">
+    <p class="titulo-resumo">${esc(r.titulo || it.texto)}</p>
+    ${r.tema ? `<p class="subtitulo">${esc(r.tema)}</p>` : ''}
+    ${r.numeros ? `<p class="pequeno">${esc(r.numeros)}</p>` : ''}
+    ${r.id ? `<p class="linha-id pequeno">${esc(r.id)}</p>` : ''}
+  </div>`;
+}
+
+/**
+ * Corpo da janela de um candidato, na ordem de leitura: resumo → o que vai acontecer (e conflitos)
+ * → Motivo → "Como funciona" (o que roda e produz; tempo e custo lado a lado; limites e semanal em
+ * letra menor). Tudo continua visível: custo e limites são obrigatórios na confirmação.
+ */
+function corpoDoCandidato(itens, htmlCampos) {
+  const por = (k) => itens.filter((x) => x.chave === k);
+  const conhecidas = ['candidato', 'destino', 'conflitos', 'oque', 'produz', 'tempo', 'custo', 'limites', 'semanal'];
+  const outros = itens.filter((x) => !conhecidas.includes(x.chave));
+  const dl = (lista, classe = 'confirmacao') => (lista.length ? `<dl class="${classe}">${lista.map(itemHTML).join('')}</dl>` : '');
+  return `${por('candidato').map(resumoHTML).join('')}
+    ${dl([...por('destino'), ...outros, ...por('conflitos')])}
+    ${htmlCampos}
+    <section class="como-funciona" aria-label="Como funciona">
+      <h3>Como funciona</h3>
+      ${dl([...por('oque'), ...por('produz')])}
+      ${dl([...por('tempo'), ...por('custo')], 'confirmacao lado-a-lado')}
+      ${dl([...por('limites'), ...por('semanal')], 'confirmacao letra-menor')}
+    </section>`;
+}
+
 /**
  * Itens da janela "Rodar agora?" (controle.janelaConfirmacao) mais os extras da tela (o lote que
  * vai nascer, as pautas que vão…), e o aviso de quando a aba Execuções não existe.
@@ -218,7 +256,10 @@ export function janelaRodar({
   // As notas (o que segura o botão, a ponte desligada) vêm antes dos detalhes: no celular a janela
   // rola, e o motivo de não haver botão ativo precisa estar à vista.
   const comCampos = campos && ligada && (d.pode || d.motivo === 'parece-travada');
-  const corpo = `${notas.join('')}<dl class="confirmacao">${j.itens.map(itemHTML).join('')}</dl>${comCampos ? `<div class="pilha campos-janela">${campos}</div>` : ''}`;
+  const htmlCampos = comCampos ? `<div class="pilha campos-janela">${campos}</div>` : '';
+  const corpo = rotina === 'radar-candidato'
+    ? `${notas.join('')}${corpoDoCandidato(j.itens, htmlCampos)}`
+    : `${notas.join('')}<dl class="confirmacao">${j.itens.map(itemHTML).join('')}</dl>${htmlCampos}`;
   return moldura(esc(titulo || j.titulo), corpo, `<button type="button" class="botao calmo" data-acao="fechar-janela">${confirmar ? 'Cancelar' : 'Fechar'}</button>${confirmar}`);
 }
 

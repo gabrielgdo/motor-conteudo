@@ -126,6 +126,25 @@ function notaAprovadoSemEnvio(p, est, ctx) {
 
 const TOM_RESULTADO = { gravar: 'ok', nada: 'calma', recusado: 'atencao', erro: 'atencao' };
 
+/** Tom do selo de verificação: reprovada/pendente pesam na decisão (alerta); aprovada = ok. */
+export function tomDaVerificacao(v) {
+  const s = String(v || '').trim().toLowerCase();
+  if (!s) return 'neutro';
+  if (/reprov|pendent|falh|n[aã]o passou|erro|incomplet|aguard/.test(s)) return 'alerta';
+  if (/aprov|verificad|^ok$|passou|confirmad/.test(s)) return 'ok';
+  return 'neutro';
+}
+
+/** "Prazo: … · Verificação [selo] · Lote …" do cartão de Para decidir (legível, não apagado). */
+function linhaPrazo(p) {
+  const partes = [
+    p.prazo ? esc(`Prazo: ${p.prazo}`) : '',
+    p.estado_verificacao ? `<span class="verif">Verificação ${selo(p.estado_verificacao, tomDaVerificacao(p.estado_verificacao))}</span>` : '',
+    p.id_lote ? esc(`Lote ${p.id_lote}`) : '',
+  ].filter(Boolean);
+  return partes.length ? `<p class="linha-id pequeno">${partes.join('<span aria-hidden="true"> · </span>')}</p>` : '';
+}
+
 function cartao(p, ctx) {
   const id = p.id_pauta;
   const teste = ehIdTeste(id);
@@ -165,9 +184,10 @@ function cartao(p, ctx) {
   return `<article class="painel pauta ${classe}" aria-labelledby="p-${esc(id)}">
     <div class="pauta-topo">
       ${anelNota(p.nota_v2)}
-      <div class="pilha" style="gap:.5rem">
+      <div class="pilha leitura" style="gap:.375rem">
         <h2 id="p-${esc(id)}">${esc(titulo)}</h2>
-        <div class="meta"><span class="id">${esc(id)}</span>${ctx.filtro === 'decidir' && est.status === STATUS_PAUTA.proposta ? '' : selo(rotuloEstado, tom)}${p.rede ? selo(nomeRede(p.rede), 'espera') : ''}${p.tema ? selo(p.tema) : ''}${teste ? selo('Teste') : ''}</div>
+        ${p.tema ? `<p class="subtitulo">${esc(p.tema)}</p>` : ''}
+        <div class="meta selos"><span class="id">${esc(id)}</span>${ctx.filtro === 'decidir' && est.status === STATUS_PAUTA.proposta ? '' : selo(rotuloEstado, tom)}${p.rede ? selo(nomeRede(p.rede), 'neutro') : ''}${teste ? selo('Teste') : ''}</div>
       </div>
     </div>
     <dl>
@@ -176,7 +196,7 @@ function cartao(p, ctx) {
       ${item('Fundamentação', p.fundamentacao)}
       ${item('Restrição principal', p.restricao_principal)}
     </dl>
-    <p class="meta pequeno apagado">${[p.prazo ? `Prazo: ${p.prazo}` : '', p.estado_verificacao ? `Verificação: ${p.estado_verificacao}` : '', p.id_lote ? `Lote ${p.id_lote}` : ''].filter(Boolean).map(esc).join(' · ')}</p>
+    ${linhaPrazo(p)}
     ${est.decisao && decidida ? `<p class="pequeno apagado">${esc(linhaDaDecisao(est.decisao, ctx.agora))}</p>` : ''}
     ${notaAprovadoSemEnvio(p, est, ctx)}
     <details><summary>Mais sobre esta pauta</summary><dl>
@@ -351,22 +371,69 @@ const comX = (v) => {
   return s && !/x$/i.test(s) ? `${s}x` : s;
 };
 
+const COMPACTO = new Intl.NumberFormat('pt-BR', { notation: 'compact', maximumFractionDigits: 1 });
+
+/**
+ * Lê um número da planilha ("120000", "120.000", "1,5", "8x") ou devolve null quando o texto não é
+ * só um número (aí o cartão mostra o texto original, escapado).
+ */
+export function numeroDaPlanilha(v) {
+  let s = String(v ?? '').trim().replace(/\s+/g, '').replace(/[x×]$/i, '');
+  if (!s) return null;
+  if (/^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '');
+  else if (/^\d+,\d+$/.test(s)) s = s.replace(',', '.');
+  if (!/^\d+(\.\d+)?$/.test(s)) return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** "120 mil", "1,5 mi" quando é número; senão o texto original (texto puro: quem monta o HTML escapa). */
+export function numeroCompacto(v) {
+  const n = numeroDaPlanilha(v);
+  return n === null ? String(v ?? '').trim() : COMPACTO.format(n);
+}
+
+/** "120 mil visualizações · mediana 15 mil · 8× a mediana · @criador" (texto puro, partes vazias somem). */
+export function linhaDosNumeros(c) {
+  const vis = String(c?.visualizacoes ?? '').trim();
+  const med = String(c?.mediana_do_criador ?? '').trim();
+  const out = String(c?.outlier_x ?? '').trim();
+  const nOut = numeroDaPlanilha(out);
+  return [
+    vis ? (numeroDaPlanilha(vis) === null ? `Visualizações: ${vis}` : `${numeroCompacto(vis)} visualizações`) : '',
+    med ? `mediana ${numeroCompacto(med)}` : '',
+    out ? (nOut === null ? `outlier ${comX(out)}` : `${COMPACTO.format(nOut)}× a mediana`) : '',
+    String(c?.criador ?? '').trim(),
+  ].filter(Boolean);
+}
+
+/** O selo de estado do cartão de candidato (um só): [rótulo, tom] ou null. */
+function seloDoCandidato(est, nova) {
+  switch (est.tipo) {
+    case 'pauta': return [`Virou pauta ${est.pauta.id_pauta}`, 'ok'];
+    case 'andamento': return ['Em andamento', 'espera'];
+    case 'parece-travada': return ['Parece travado', 'alerta'];
+    case 'erro': return ['Erro', 'alerta'];
+    case 'aprovado': return ['Aprovado', 'ok'];
+    default: return nova ? ['Nova rodada', 'acao'] : null;
+  }
+}
+
 /** A linha de estado do cartão (todo dado passa por esc). */
 function linhaDoEstado(est, ctx) {
   switch (est.tipo) {
     case 'pauta': {
       const p = est.pauta;
-      const virou = selo(`Virou pauta ${p.id_pauta}`, 'ok');
-      if (est.enviada) return `<p class="meta">${virou}${selo('Enviado ao Roteirista', 'espera')}</p>`;
+      // O selo "Virou pauta Sxx" fica no topo do cartão; aqui o resto do estado vai em texto.
+      if (est.enviada) return `<p class="pequeno estado-candidato">${esc(`A pauta ${p.id_pauta} foi enviada ao Roteirista.`)}</p>`;
       if (est.ficouParaDecidir) {
         // "Mandar ao Roteirista" pedido, mas o Radar deixou a pauta como proposta.
         const det = est.detalhe ? ` O Radar disse: ${est.detalhe}` : '';
-        return `<p class="meta">${virou}${selo('Aprovado', 'ok')}${selo('Para decidir', 'acao')}</p>
-    <p class="nota atencao pequeno" role="status">${ic('alerta', 18)}<span>${esc(`Aprovado, mas a pauta ${p.id_pauta} ficou para decidir: a verificação das fontes não passou e ela não foi ao Roteirista.${det}`)} Decida a pauta em Para decidir.</span></p>`;
+        return `<p class="nota atencao pequeno" role="status">${ic('alerta', 18)}<span>${esc(`Aprovado, mas a pauta ${p.id_pauta} ficou para decidir: a verificação das fontes não passou e ela não foi ao Roteirista.${det}`)} Decida a pauta em Para decidir.</span></p>`;
       }
-      const [rotulo, tom] = SELO_ESTADO[est.status] || [p.statusOriginal || est.status || 'sem status', 'neutro'];
-      const ainda = est.aberto ? `<span class="pequeno apagado">${esc('O Radar ainda está terminando o pedido.')}</span>` : '';
-      return `<p class="meta">${virou}${selo(rotulo, tom)}${ainda}</p>`;
+      const [rotulo] = SELO_ESTADO[est.status] || [p.statusOriginal || est.status || 'sem status'];
+      const ainda = est.aberto ? ' O Radar ainda está terminando o pedido.' : '';
+      return `<p class="pequeno estado-candidato">${esc(`A pauta ${p.id_pauta} está como: ${rotulo}.${ainda}`)}</p>`;
     }
     case 'andamento': {
       const l = est.linha;
@@ -378,7 +445,7 @@ function linhaDoEstado(est, ctx) {
     case 'erro':
       return `<p class="nota atencao pequeno" role="status">${ic('alerta', 18)}<span>${esc(`O último pedido deu erro${est.erro ? `: ${est.erro}` : ''}.`)} Dá para tentar de novo${est.aprovacao ? ' (a aprovação já está em Decisões e não é gravada outra vez)' : ''}.</span></p>`;
     case 'aprovado':
-      return `<p class="meta">${selo('Aprovado', 'ok')}<span class="pequeno apagado">A aprovação está em Decisões; a pauta ainda não apareceu na aba Seleção.</span></p>`;
+      return '<p class="pequeno estado-candidato">A aprovação está em Decisões; a pauta ainda não apareceu na aba Seleção.</p>';
     case 'concluido':
       return `<p class="nota calma pequeno" role="status">${ic('info', 18)}<span>O Radar terminou o pedido, mas a pauta ainda não apareceu na aba Seleção. Toque em Atualizar daqui a pouco.</span></p>`;
     default:
@@ -399,8 +466,12 @@ function cartaoCandidato(c, ctx) {
     : (c.link ? '<p class="pequeno apagado">O link não é http nem https: o app não abre.</p>' : '');
   const data = c.dataData ? formatarData(c.dataData) : c.data;
   const origem = rotuloOrigem(c.origem);
-  const rodape = [data ? `Data: ${data}` : '', origem ? `Rodada ${origem}` : '', c.id_execucao ? c.id_execucao : '']
+  // Linha discreta: id · data · origem. O id_execucao (longo, técnico) fica nos Detalhes.
+  const rodape = [id, data || '', origem ? `rodada ${origem}` : '']
     .filter(Boolean).map(esc).join(' · ');
+  const numeros = linhaDosNumeros(c);
+  const estadoSelo = seloDoCandidato(est, nova);
+  const detalhes = [item('Status na planilha', c.status), item('Execução', c.id_execucao)].join('');
 
   let acoes = '';
   if (!c.idOk) {
@@ -409,9 +480,10 @@ function cartaoCandidato(c, ctx) {
     const dis = ctx.bloqueio ? ' disabled' : '';
     const disR = dis || (ctx.bloqueioRoteirista ? ' disabled' : '');
     const nota = ctx.bloqueio ? (ctx.notaNoTopo ? '' : ctx.bloqueio) : ctx.bloqueioRoteirista;
+    // Hierarquia: o caminho normal (Para decidir) em destaque; o atalho ao Roteirista em contorno.
     acoes = `<div class="decisao" role="group" aria-label="Pedir ao Radar: ${esc(titulo)}">
-      <button type="button" class="botao calmo" data-acao="candidato-pedir" data-id="${esc(id)}" data-valor="decidir"${dis}>${esc(DESTINOS_CANDIDATO.decidir.botao)}</button>
-      <button type="button" class="botao calmo" data-acao="candidato-pedir" data-id="${esc(id)}" data-valor="roteirista"${disR}>${esc(DESTINOS_CANDIDATO.roteirista.botao)}</button>
+      <button type="button" class="botao primario" data-acao="candidato-pedir" data-id="${esc(id)}" data-valor="decidir"${dis}>${esc(DESTINOS_CANDIDATO.decidir.botao)}</button>
+      <button type="button" class="botao contorno" data-acao="candidato-pedir" data-id="${esc(id)}" data-valor="roteirista"${disR}>${esc(DESTINOS_CANDIDATO.roteirista.botao)}</button>
       ${nota ? `<span class="pequeno apagado">${esc(nota)}</span>` : ''}
     </div>`;
   }
@@ -419,20 +491,17 @@ function cartaoCandidato(c, ctx) {
   return `<article class="painel pauta candidato${nova ? ' nova' : ''}" aria-labelledby="cand-${esc(id)}">
     <div class="pauta-topo">
       ${anelNota(c.nota)}
-      <div class="pilha" style="gap:.5rem">
+      <div class="pilha leitura" style="gap:.375rem">
         <h2 id="cand-${esc(id)}">${esc(titulo)}</h2>
-        <div class="meta"><span class="id">${esc(id)}</span>${nova ? selo('Nova rodada', 'acao') : ''}${c.plataforma ? selo(c.plataforma, 'espera') : ''}${c.tema && c.angulo ? selo(c.tema) : ''}${c.status ? selo(c.status) : ''}</div>
+        ${c.tema && c.angulo ? `<p class="subtitulo">${esc(c.tema)}</p>` : ''}
+        ${estadoSelo || c.plataforma ? `<div class="meta selos">${estadoSelo ? selo(estadoSelo[0], estadoSelo[1]) : ''}${c.plataforma ? selo(c.plataforma, 'neutro') : ''}</div>` : ''}
       </div>
     </div>
-    <dl class="candidato-numeros">
-      ${item('Criador', c.criador)}
-      ${item('Visualizações', c.visualizacoes)}
-      ${item('Mediana do criador', c.mediana_do_criador)}
-      ${item('Outlier', comX(c.outlier_x))}
-    </dl>
+    ${numeros.length ? `<p class="candidato-numeros">${numeros.map((n) => `<span>${esc(n)}</span>`).join('<span aria-hidden="true"> · </span>')}</p>` : ''}
     ${link}
-    ${rodape ? `<p class="meta pequeno apagado">${rodape}</p>` : ''}
     ${linhaDoEstado(est, ctx)}
+    ${rodape ? `<p class="linha-id pequeno">${rodape}</p>` : ''}
+    ${detalhes ? `<details><summary>Detalhes</summary><dl>${detalhes}</dl></details>` : ''}
     ${acoes}
   </article>`;
 }
@@ -509,8 +578,14 @@ export function campoMotivoCandidato() {
 /** Itens a mais da janela de um candidato: quem é e o que vai acontecer (texto puro; a janela escapa). */
 export function extrasDoCandidato(c, destino) {
   const quem = [c?.id, c?.angulo || c?.tema, c?.criador ? `de ${c.criador}` : ''].filter(Boolean).join(' · ');
+  const resumo = {
+    titulo: c?.angulo || c?.tema || (c?.id ? `Candidato ${c.id}` : ''),
+    tema: c?.angulo && c?.tema ? c.tema : '',
+    numeros: c ? linhaDosNumeros(c).join(' · ') : '',
+    id: [c?.id, c?.plataforma].filter(Boolean).join(' · '),
+  };
   return [
-    { chave: 'candidato', rotulo: 'O candidato', texto: quem },
+    { chave: 'candidato', rotulo: 'O candidato', texto: quem, resumo },
     { chave: 'destino', rotulo: 'O que vai acontecer', texto: DESTINOS_CANDIDATO[destino]?.texto || '' },
   ];
 }

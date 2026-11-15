@@ -16,7 +16,7 @@ import {
 } from './controle.js';
 import { estadoDasPautas } from './selecao.js';
 import { estadoDoCandidato } from './candidatos.js';
-import { janelaRodar, janelaDetalhes, NOTA_PONTE_DESLIGADA } from './componentes/execucao.js';
+import { janelaRodar, janelaDetalhes, NOTA_PONTE_DESLIGADA, classeJanelaRodar } from './componentes/execucao.js';
 import { pendentesDe, janelaPrevia } from './telas/videos.js';
 import {
   janelaDecisoes, pedidosDaTela, resultadosDaGravacao, aprovadasParaEnviar, loteDaProximaSelecao, bloqueioDeDecisao,
@@ -232,7 +232,7 @@ function pintarJanela() {
       execucoes: execucoesLidas().execucoes || [], enviando: j.enviando, erro: j.erro,
     });
   }
-  if (html) abrirJanela(html);
+  if (html) abrirJanela(html, j.tipo === 'rodar' ? classeJanelaRodar(j.rotina) : 'janela');
 }
 
 /** As Execuções chegaram com a janela "Rodar agora?" aberta: os conflitos passam a valer. */

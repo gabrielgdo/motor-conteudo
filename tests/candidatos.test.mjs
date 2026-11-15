@@ -15,13 +15,15 @@ import { lerCandidatos, ordenarCandidatos, contarCandidatos, ultimaRodada, estad
 import {
   htmlPautas, htmlCandidatos, campoQuantidade, campoMotivoCandidato, extrasDoCandidato, textoDoPedidoCandidato,
   pautasParaDecidir, aprovadasParaEnviar, LIMITE_CANDIDATOS, MENSAGEM_CANDIDATOS_AUSENTE, NOTA_SO_ROBERTTA,
+  numeroCompacto, numeroDaPlanilha, linhaDosNumeros, tomDaVerificacao,
 } from '../js/telas/pautas.js';
-import { janelaRodar } from '../js/componentes/execucao.js';
+import { janelaRodar, classeJanelaRodar } from '../js/componentes/execucao.js';
 import { hrefWeb } from '../js/util.js';
 
 const ROBERTTA = ALLOWED[0];
 const GABRIEL = ALLOWED[1];
 const AGORA = lerDataHora('2026-11-18 10:30');
+const sp = (s) => String(s).replace(/\u00a0/g, ' '); // Intl usa espaço inseparável
 
 /* ------------------------------------------------------------ fixtures */
 
@@ -174,8 +176,11 @@ test('origem no cartão, discreta: "pelo app" / "automática"', () => {
   assert.equal(rotuloOrigem(''), '');
   const lidos = aba([{ id: '2026-11-17-01', origem: 'manual-app', id_execucao: 'EX-B' }, { id: '2026-11-17-02', origem: 'automatica' }]);
   const c = cartoes(htmlPautas({ dados: dadosPautas(), exec: dadosExec([]), candidatos: lidos, email: ROBERTTA, filtro: 'candidatos', agora: AGORA }));
-  assert.match(c['2026-11-17-01'], /class="meta pequeno apagado">[^<]*Rodada pelo app · EX-B/);
-  assert.match(c['2026-11-17-02'], /Rodada automática/);
+  // linha discreta id · data · origem; o id_execucao sai da linha e fica nos Detalhes
+  assert.match(c['2026-11-17-01'], /class="linha-id pequeno">2026-11-17-01 · [^<]*rodada pelo app</);
+  assert.doesNotMatch(c['2026-11-17-01'], /class="linha-id pequeno">[^<]*EX-B/);
+  assert.match(c['2026-11-17-01'], /<details><summary>Detalhes<\/summary><dl>.*<dt>Execução<\/dt><dd>EX-B<\/dd>/s);
+  assert.match(c['2026-11-17-02'], /rodada automática/);
 });
 
 /* ------------------------------------------------------------ segurança */
@@ -235,8 +240,8 @@ test('estados do cartão: livre, pedido em andamento, erro, virou pauta, aprovad
   const botoes = (x) => (x.match(/data-acao="candidato-pedir"[^>]*>/g) || []);
   assert.equal(botoes(c[ids[0]]).length, 2);
   assert.ok(botoes(c[ids[0]]).every((b) => !b.includes('disabled')));
-  assert.match(c[ids[0]], /type="button" class="botao calmo" data-acao="candidato-pedir" data-id="2026-11-17-01" data-valor="decidir"[^>]*>Passar para Para decidir</);
-  assert.match(c[ids[0]], /data-valor="roteirista"[^>]*>Mandar ao Roteirista</);
+  assert.match(c[ids[0]], /type="button" class="botao primario" data-acao="candidato-pedir" data-id="2026-11-17-01" data-valor="decidir"[^>]*>Passar para Para decidir</);
+  assert.match(c[ids[0]], /class="botao contorno" [^>]*data-valor="roteirista"[^>]*>Mandar ao Roteirista</);
   assert.match(c[ids[1]], /Pedido em andamento \(rodando/);
   assert.equal(botoes(c[ids[1]]).length, 0);
   assert.match(c[ids[2]], /O último pedido deu erro: fonte &lt;fora&gt; do ar\./);
@@ -247,7 +252,11 @@ test('estados do cartão: livre, pedido em andamento, erro, virou pauta, aprovad
   assert.match(c[ids[4]], />Aprovado</);
   assert.equal(botoes(c[ids[4]]).length, 0);
   assert.match(c[ids[5]], /Virou pauta S47-04/);
-  assert.match(c[ids[5]], /Enviado ao Roteirista/);
+  assert.match(c[ids[5]], /A pauta S47-04 foi enviada ao Roteirista/);
+  // no máximo 2 selos por cartão (estado + plataforma), seja qual for o estado
+  for (const id of ids) assert.ok((c[id].match(/class="selo /g) || []).length <= 2, id);
+  assert.match(c[ids[2]], /<span class="selo alerta">Erro<\/span>/);
+  assert.match(c[ids[1]], /<span class="selo espera">Em andamento<\/span>/);
   assert.match(c[ids[6]], /parece travado/);
   assert.match(c[ids[7]], /ainda não apareceu na aba Seleção/);
   // a lista de pautas continua igual (o chip Para decidir conta só a Seleção)
@@ -389,4 +398,85 @@ test('janelas: campo de quantidade (number 1–15, padrão 5) e motivo opcional;
   assert.match(textoDoPedidoCandidato('roteirista', { decisao: 'ja-existia' }), /já estava em Decisões/);
   assert.match(textoDoPedidoCandidato('decidir', {}), /aparece em Para decidir/);
   assert.match(textoDoPedidoCandidato('decidir', { repetido: true }), /já tinha chegado/);
+});
+
+/* ------------------------------------------------------------ legibilidade (Ponto 1) */
+
+test('Para decidir: tema em texto, verificação como selo com tom, linha Prazo · Verificação · Lote legível', () => {
+  assert.equal(tomDaVerificacao('reprovada'), 'alerta');
+  assert.equal(tomDaVerificacao('pendente'), 'alerta');
+  assert.equal(tomDaVerificacao('aprovada'), 'ok');
+  assert.equal(tomDaVerificacao('outra coisa'), 'neutro');
+  const dados = dadosPautas({ pautas: [
+    { id_pauta: 'S47-01', tema: 'Sono <e> sonhos', estado_verificacao: 'reprovada', id_lote: 'L1' },
+    { id_pauta: 'S47-02', estado_verificacao: 'aprovada' },
+  ] });
+  const h = htmlPautas({ dados, exec: dadosExec([]), candidatos: aba([]), email: ROBERTTA, filtro: 'decidir', agora: AGORA });
+  const p1 = h.match(/aria-labelledby="p-S47-01">[\s\S]*?<\/article>/)[0];
+  assert.match(p1, /<p class="subtitulo">Sono &lt;e&gt; sonhos<\/p>/);
+  assert.doesNotMatch(p1, /class="selo[^"]*">Sono/);
+  assert.match(p1, /class="linha-id pequeno">.*Verificação <span class="selo alerta">reprovada<\/span>.*Lote L1/s);
+  assert.doesNotMatch(p1, /meta pequeno apagado/);
+  assert.match(h, /aria-labelledby="p-S47-02">[\s\S]*?<span class="selo ok">aprovada<\/span>/);
+});
+
+test('números do cartão: pt-BR compacto quando é número, texto original (escapado) quando não é', () => {
+  assert.equal(sp(numeroCompacto('120000')), '120 mil');
+  assert.equal(sp(numeroCompacto('120.000')), '120 mil');
+  assert.equal(sp(numeroCompacto(' 1500000 ')), '1,5 mi');
+  assert.equal(sp(numeroCompacto('950')), '950');
+  assert.equal(numeroDaPlanilha('8x'), 8);
+  assert.equal(numeroDaPlanilha('2,5'), 2.5);
+  assert.equal(sp(numeroCompacto('cerca de 2 mil')), 'cerca de 2 mil');
+  assert.equal(numeroDaPlanilha('1e9'), null);
+  assert.equal(numeroDaPlanilha(''), null);
+  assert.deepEqual(linhaDosNumeros({ visualizacoes: '120000', mediana_do_criador: '15000', outlier_x: '8', criador: '@a' }).map(sp),
+    ['120 mil visualizações', 'mediana 15 mil', '8× a mediana', '@a']);
+  assert.deepEqual(linhaDosNumeros({ visualizacoes: 'muitas', outlier_x: 'alto' }), ['Visualizações: muitas', 'outlier altox']);
+  // no cartão: o texto livre passa por esc()
+  const lidos = aba([{ id: '2026-11-17-01', visualizacoes: '<b>mil</b>', mediana: '15000', outlier: '8' }]);
+  const c = cartoes(htmlPautas({ dados: dadosPautas(), exec: dadosExec([]), candidatos: lidos, email: ROBERTTA, filtro: 'candidatos', agora: AGORA }))['2026-11-17-01'];
+  assert.match(c, /<p class="candidato-numeros">/);
+  assert.match(c, /Visualizações: &lt;b&gt;mil&lt;\/b&gt;/);
+  assert.match(c, /mediana 15\s?mil/u);
+  assert.match(c, /8× a mediana/);
+  assert.ok(!c.includes('<b>mil</b>'));
+});
+
+test('cartão: tema como subtítulo em texto, no máximo 2 selos (estado + plataforma), status nos Detalhes', () => {
+  const lidos = aba([{ id: '2026-11-17-01', tema: 'Um tema <longo> da planilha', status: 'novo', plataforma: 'TikTok' }]);
+  const h = htmlPautas({ dados: dadosPautas(), exec: dadosExec([]), candidatos: lidos, email: ROBERTTA, filtro: 'candidatos', agora: AGORA });
+  const c = cartoes(h)['2026-11-17-01'];
+  assert.match(c, /<p class="subtitulo">Um tema &lt;longo&gt; da planilha<\/p>/);
+  assert.doesNotMatch(c, /class="selo[^"]*">Um tema/);
+  const selos = c.match(/class="selo [^"]*">[^<]*/g) || [];
+  assert.ok(selos.length <= 2, selos.join());
+  assert.match(c, /class="selo neutro">TikTok/);
+  assert.doesNotMatch(c, /class="selo[^"]*">novo/);
+  assert.match(c, /<dt>Status na planilha<\/dt><dd>novo<\/dd>/);
+});
+
+test('janela do candidato: larga, na ordem resumo → o que vai acontecer → Motivo → Como funciona (custo e limites visíveis)', () => {
+  assert.equal(classeJanelaRodar('radar-candidato'), 'janela larga');
+  assert.equal(classeJanelaRodar('radar-diario'), 'janela');
+  const c = { id: '2026-11-17-01', angulo: 'Ângulo <x>', tema: 'sono', criador: '@a', visualizacoes: '120000', plataforma: 'Instagram' };
+  const h = janelaRodar({
+    rotina: 'radar-candidato', idAlvo: c.id, email: ROBERTTA, agora: AGORA, dados: dadosExec([]), ligada: true,
+    extras: extrasDoCandidato(c, 'decidir'), campos: campoMotivoCandidato(),
+  });
+  assert.ok(!h.includes('<x>'));
+  assert.match(h, /class="titulo-resumo">Ângulo &lt;x&gt;</);
+  assert.match(h, /120\s?mil visualizações/u);
+  const ordem = [/class="resumo-candidato"/, /O que vai acontecer/, /rc-motivo/, /class="como-funciona"/, /<dt>Custo<\/dt>/, /<dt>Limites<\/dt>/].map((re) => h.search(re));
+  assert.ok(ordem.every((p) => p >= 0), String(ordem));
+  assert.deepEqual([...ordem].sort((a, b) => a - b), ordem);
+  assert.match(h, /class="confirmacao lado-a-lado"><div><dt>Tempo<\/dt>.*<dt>Custo<\/dt>/s);
+  assert.match(h, /class="confirmacao letra-menor"><div><dt>Limites<\/dt>/);
+  // sem ponte: tudo continua visível (custo e limites), sem o campo Motivo
+  const sem = janelaRodar({ rotina: 'radar-candidato', idAlvo: c.id, email: ROBERTTA, agora: AGORA, dados: dadosExec([]), ligada: false, extras: extrasDoCandidato(c, 'decidir'), campos: campoMotivoCandidato() });
+  assert.match(sem, /<dt>Custo<\/dt>/);
+  assert.doesNotMatch(sem, /rc-motivo/);
+  // as outras janelas continuam como eram
+  const d = janelaRodar({ rotina: 'radar-diario', email: ROBERTTA, agora: AGORA, dados: dadosExec([]), ligada: true });
+  assert.doesNotMatch(d, /como-funciona/);
 });
