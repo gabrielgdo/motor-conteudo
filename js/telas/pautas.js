@@ -519,6 +519,9 @@ function cartaoCandidato(c, ctx) {
   const criadorCurto = String(c.criador || '').trim();
   const linhaNumeros = numerosLivres.length
     ? [...numerosLivres.map((n) => `<b>${esc(n.valor)}</b> ${esc(n.rotulo)}`),
+      // mediana e outlier só quando são número (o "N/D …" fica na seção Números e origem)
+      ...(numeroDaPlanilha(c.mediana_do_criador) !== null ? [esc(`mediana ${numeroCompacto(c.mediana_do_criador)}`)] : []),
+      ...(numeroDaPlanilha(c.outlier_x) !== null ? [esc(`${COMPACTO.format(numeroDaPlanilha(c.outlier_x))}× a mediana`)] : []),
       ...(criadorCurto && criadorCurto.length <= 40 && !/\s/.test(criadorCurto) ? [esc(criadorCurto)] : [])]
     : linhaDosNumeros(c).map(esc);
   const secoes = [...ficha.secoes.map(secaoDaFicha)];

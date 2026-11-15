@@ -8,7 +8,7 @@
 
 import { esc, hrefSeguro } from '../util.js';
 
-/** Rótulos conhecidos do Radar → nome na tela. Os desconhecidos viram "Primeira maiúscula". */
+/** Rótulos do Radar → nome na tela. Só estes cortam o texto. */
 export const ROTULOS_RADAR = {
   'PÚBLICO/SITUAÇÃO': 'Para quem',
   PERGUNTA: 'Pergunta',
@@ -19,22 +19,14 @@ export const ROTULOS_RADAR = {
   LIMITES: 'Limites',
 };
 
-/** Ordem das seções recolhidas na ficha (as desconhecidas vêm depois, na ordem do texto). */
+/** Ordem das seções recolhidas na ficha. */
 const ORDEM_SECOES = ['PÚBLICO/SITUAÇÃO', 'REFERÊNCIAS', 'LIMITES', 'ORIGENS', 'DATAS'];
 
-// Rótulo: 4+ letras maiúsculas (aceita / e espaço no meio), um parêntese opcional e dois-pontos.
-// "CFP/CRP." e "DOI 10.1002" não casam: falta o dois-pontos logo depois.
-const ROTULO = /(?<=^|[\s.;(])(\p{Lu}[\p{Lu}/ ]{2,}\p{Lu})(?:\s*\(([^)]*)\))?:\s*/gu;
-
-const nomeDoRotulo = (chave) => ROTULOS_RADAR[chave]
-  || (chave ? chave.charAt(0) + chave.slice(1).toLowerCase() : '');
-
-/** "X DATAS" (uma palavra em maiúscula antes de um rótulo conhecido): separa o rótulo do que veio antes. */
-function partirChave(chave) {
-  if (ROTULOS_RADAR[chave]) return ['', chave];
-  const conhecida = Object.keys(ROTULOS_RADAR).find((k) => chave.endsWith(` ${k}`));
-  return conhecida ? [chave.slice(0, -conhecida.length).trim(), conhecida] : ['', chave];
-}
+// Só os rótulos conhecidos cortam o texto (siglas como "PMID:", "TDAH:" ou "CFP/CRP:" ficam no
+// texto), no começo ou depois de espaço, ponto, ponto e vírgula ou parêntese, com um parêntese
+// opcional e dois-pontos seguido de espaço. Sem lookbehind: o Safari do iOS < 16.4 não o aceita e
+// o app inteiro deixaria de carregar.
+const ROTULO = new RegExp(String.raw`(^|[\s.;(])(${Object.keys(ROTULOS_RADAR).join('|')})(?:\s*\(([^)]*)\))?:\s+`, 'gu');
 
 /**
  * Texto do Radar → [{chave, rotulo, nota, texto}]. `chave` '' é o trecho antes do primeiro rótulo.
@@ -43,20 +35,16 @@ function partirChave(chave) {
 export function separarTextoRadar(texto) {
   const t = String(texto ?? '').trim();
   if (!t) return [];
-  const achados = [...t.matchAll(ROTULO)];
+  // índice onde o rótulo começa (o delimitador antes dele fica no trecho anterior)
+  const achados = [...t.matchAll(ROTULO)].map((m) => ({ m, inicio: m.index + m[1].length }));
   if (!achados.length) return [{ chave: '', rotulo: '', nota: '', texto: t }];
   const partes = [];
-  let antes = t.slice(0, achados[0].index);
-  achados.forEach((m, i) => {
-    const [sobra, chave] = partirChave(m[1].trim());
-    if (sobra) antes = `${antes} ${sobra}`;
-    if (i === 0) {
-      if (antes.trim()) partes.push({ chave: '', rotulo: '', nota: '', texto: antes.trim() });
-    } else {
-      partes[partes.length - 1].texto = `${partes[partes.length - 1].texto} ${sobra}`.trim();
-    }
-    const fim = i + 1 < achados.length ? achados[i + 1].index : t.length;
-    partes.push({ chave, rotulo: nomeDoRotulo(chave), nota: (m[2] || '').trim(), texto: t.slice(m.index + m[0].length, fim).trim() });
+  const antes = t.slice(0, achados[0].inicio).trim();
+  if (antes) partes.push({ chave: '', rotulo: '', nota: '', texto: antes });
+  achados.forEach(({ m }, i) => {
+    const chave = m[2];
+    const fim = i + 1 < achados.length ? achados[i + 1].inicio : t.length;
+    partes.push({ chave, rotulo: ROTULOS_RADAR[chave], nota: (m[3] || '').trim(), texto: t.slice(m.index + m[0].length, fim).trim() });
   });
   return partes;
 }

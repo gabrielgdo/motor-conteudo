@@ -25,9 +25,20 @@ test('sem rótulos: uma parte só; vazio: nada', () => {
   assert.deepEqual(separarTextoRadar(undefined), []);
 });
 
-test('rótulo desconhecido vira nome com só a primeira letra maiúscula', () => {
-  const p = separarTextoRadar('GANCHO EXTRA: algo');
-  assert.equal(p[0].rotulo, 'Gancho extra');
+test('só rótulos conhecidos do Radar cortam o texto (siglas com dois-pontos ficam no texto)', () => {
+  assert.deepEqual(separarTextoRadar('GANCHO EXTRA: algo').map((x) => x.chave), ['']);
+  assert.deepEqual(fichaDoTexto('TDAH: por que adultos procrastinam'), { titulo: 'TDAH: por que adultos procrastinam', entrega: '', secoes: [] });
+  const r = separarTextoRadar('REFERÊNCIAS: (1) Estudo A, 2023, PMID: 3456789; (2) WHAT LOVE IS: a review; (3) https://x.org/a.WIKI:Foo. LIMITES: Segundo o CFP/CRP: não há');
+  assert.deepEqual(r.map((x) => x.chave), ['REFERÊNCIAS', 'LIMITES']);
+  assert.equal(referenciasEmLista(r[0].texto).length, 3);
+  assert.match(r[0].texto, /https:\/\/x\.org\/a\.WIKI:Foo/);
+  assert.equal(r[1].texto, 'Segundo o CFP/CRP: não há');
+});
+
+test('o módulo não usa lookbehind em regex (iOS < 16.4 não carrega o app)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const fonte = readFileSync(new URL('../js/telas/ficha.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(fonte, /\(\?<[=!]/);
 });
 
 test('ficha: pergunta vira título (primeira letra maiúscula), entrega à parte, seções na ordem', () => {

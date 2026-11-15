@@ -521,3 +521,10 @@ test('ficha do candidato antigo (ângulo curto, número puro): igual a antes, se
   assert.match(c.replace(/ /g, ' '), /120 mil visualizações · <\/?span[^>]*>?|120 mil visualizações/);
   assert.doesNotMatch(c, /ficha-secao|ficha-entrega/);
 });
+
+test('ficha: com visualizações em frase, mediana e outlier numéricos continuam na linha; N/D sai', () => {
+  const lidos = aba([{ id: '2026-11-17-01', angulo: 'PERGUNTA: p? ENTREGA: e', visualizacoes: '230.111 impressões', mediana: '15000', outlier: '8', criador: '@a' }]);
+  const c = cartoes(htmlPautas({ dados: dadosPautas(), exec: dadosExec([]), candidatos: lidos, email: ROBERTTA, filtro: 'candidatos', agora: AGORA }))['2026-11-17-01'];
+  const linha = c.match(/<p class="candidato-numeros">([\s\S]*?)<\/p>/)[1].replace(/ /g, ' ').replace(/<[^>]+>/g, '');
+  assert.equal(linha, '230,1 mil impressões · mediana 15 mil · 8× a mediana · @a');
+});
