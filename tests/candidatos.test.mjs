@@ -482,3 +482,42 @@ test('janela do candidato: larga, na ordem resumo → o que vai acontecer → Mo
   const d = janelaRodar({ rotina: 'radar-diario', email: ROBERTTA, agora: AGORA, dados: dadosExec([]), ligada: true });
   assert.doesNotMatch(d, /como-funciona/);
 });
+
+/* ------------------------------------------------------------ Ficha (opção A) */
+
+const RADAR_CAND = 'PÚBLICO/SITUAÇÃO: adultos que esperam ser deixados. PERGUNTA: por que o medo de ser abandonado faz ler sinais neutros como rejeição? ENTREGA: distinguir o medo do risco real. REFERÊNCIAS (consultado só o resumo): (1) Meta-análise 2023, https://doi.org/10.1/x - sustenta; (2) Li & Chan 2012 - sustenta; (3) Revisão Exeter (http://hdl.handle.net/1/2) - transversal. LIMITES: correlacional; sem promessa de cura. ORIGENS: post no X <b>12/11</b>.';
+
+test('ficha do candidato: pergunta no título, tema antes, entrega à vista, números limpos, seções recolhidas', () => {
+  const lidos = aba([{ id: '2026-11-17-01', tema: 'Relacionamentos', angulo: RADAR_CAND,
+    visualizacoes: '230.111 impressões, 929 salvamentos (X, coleta 14/11/2026)', mediana: 'N/D (sem mediana)', outlier: 'N/D', criador: '@perfil' }]);
+  const c = cartoes(htmlPautas({ dados: dadosPautas(), exec: dadosExec([]), candidatos: lidos, email: ROBERTTA, filtro: 'candidatos', agora: AGORA }))['2026-11-17-01'];
+  assert.match(c, /<h2 id="cand-2026-11-17-01">Por que o medo de ser abandonado faz ler sinais neutros como rejeição\?<\/h2>/);
+  assert.ok(c.indexOf('<p class="subtitulo">Relacionamentos</p>') < c.indexOf('<h2'));
+  assert.match(c, /<p class="ficha-entrega"><b>Entrega:<\/b> distinguir o medo do risco real\.<\/p>/);
+  const linha = c.match(/<p class="candidato-numeros">([\s\S]*?)<\/p>/)[1].replace(/ /g, ' ');
+  assert.match(linha, /<b>230,1 mil<\/b> impressões/);
+  assert.match(linha, /<b>929<\/b> salvamentos/);
+  assert.match(linha, /@perfil/);
+  assert.doesNotMatch(linha, /N\/D/);
+  const refs = c.match(/<details class="ficha-secao"><summary>Referências <small>consultado só o resumo<\/small><\/summary>[\s\S]*?<\/details>/)[0];
+  assert.equal((refs.match(/<li>/g) || []).length, 3);
+  assert.match(refs, /<a href="https:\/\/doi\.org\/10\.1\/x"/);
+  assert.doesNotMatch(refs, /href="http:/);
+  assert.match(c, /<details class="ficha-secao"><summary>Limites<\/summary>/);
+  assert.match(c, /<details class="ficha-secao"><summary>Para quem<\/summary>/);
+  assert.match(c, /post no X &lt;b&gt;12\/11&lt;\/b&gt;/);
+  assert.ok(!c.includes('<b>12/11</b>'));
+  const num = c.match(/<summary>Números e origem<\/summary>[\s\S]*?<\/details>/)[0];
+  assert.match(num, /<dt>Visualizações<\/dt><dd>230\.111 impressões, 929 salvamentos \(X, coleta 14\/11\/2026\)<\/dd>/);
+  assert.match(num, /<dt>Mediana<\/dt><dd>N\/D \(sem mediana\)<\/dd>/);
+  assert.ok(c.lastIndexOf('<details><summary>Detalhes</summary>') > c.lastIndexOf('ficha-secao'));
+  assert.ok(!c.includes('PÚBLICO/SITUAÇÃO'));
+});
+
+test('ficha do candidato antigo (ângulo curto, número puro): igual a antes, sem seções', () => {
+  const lidos = aba([{ id: '2026-11-17-01', angulo: 'Ângulo curto', visualizacoes: '120000' }]);
+  const c = cartoes(htmlPautas({ dados: dadosPautas(), exec: dadosExec([]), candidatos: lidos, email: ROBERTTA, filtro: 'candidatos', agora: AGORA }))['2026-11-17-01'];
+  assert.match(c, /<h2 id="cand-2026-11-17-01">Ângulo curto<\/h2>/);
+  assert.match(c.replace(/ /g, ' '), /120 mil visualizações · <\/?span[^>]*>?|120 mil visualizações/);
+  assert.doesNotMatch(c, /ficha-secao|ficha-entrega/);
+});

@@ -38,6 +38,7 @@ import {
 import { faixaExecucao } from '../componentes/execucao.js';
 import { moldura } from '../componentes/janelas.js';
 import { cab, selo, chipFiltro, vazio, campo, segmento, painelCarregando } from './pecas.js';
+import { fichaDoTexto, numerosDoTexto, referenciasEmLista, htmlTextoRadar } from './ficha.js';
 
 export const MENSAGEM_SELECAO_AUSENTE = 'A aba Seleção ainda não existe na planilha Radar. Até lá, a escolha continua na conversa com o Radar.';
 export const NOTA_SO_ROBERTTA = 'Só a conta da Robertta decide.';
@@ -473,11 +474,23 @@ function linhaDoEstado(est, ctx) {
   }
 }
 
+/** Uma seção recolhida da Ficha (HTML escapado; Referências numeradas viram lista). */
+function secaoDaFicha(s) {
+  const nota = s.nota ? ` <small>${esc(s.nota)}</small>` : '';
+  const refs = s.rotulo === 'Referências' ? referenciasEmLista(s.texto) : [];
+  const corpo = refs.length > 1
+    ? `<ol class="ficha-refs">${refs.map((r) => `<li>${htmlTextoRadar(r)}</li>`).join('')}</ol>`
+    : `<p>${htmlTextoRadar(s.texto)}</p>`;
+  return `<details class="ficha-secao"><summary>${esc(s.rotulo)}${nota}</summary><div class="ficha-corpo">${corpo}</div></details>`;
+}
+
 function cartaoCandidato(c, ctx) {
   const id = c.id;
   const nova = ctx.nova.has(id);
   const est = estadoDoCandidato(c, ctx.fontes);
-  const titulo = c.angulo || c.tema || `Candidato ${id}`;
+  // Ficha: o texto do Radar separado pelos rótulos (PERGUNTA vira o título; o resto, seções recolhidas).
+  const ficha = fichaDoTexto(c.angulo || '');
+  const titulo = ficha.titulo || c.tema || `Candidato ${id}`;
   const href = hrefWeb(c.link);
   let host = '';
   try { host = href ? new URL(href).hostname.replace(/^www\./, '') : ''; } catch { host = ''; }
@@ -489,7 +502,17 @@ function cartaoCandidato(c, ctx) {
   // Linha discreta: id · data · origem. O id_execucao (longo, técnico) fica nos Detalhes.
   const rodape = [id, data || '', origem ? `rodada ${origem}` : '']
     .filter(Boolean).map(esc).join(' · ');
-  const numeros = linhaDosNumeros(c);
+  const numerosLivres = numerosDoTexto(c.visualizacoes);
+  const criadorCurto = String(c.criador || '').trim();
+  const linhaNumeros = numerosLivres.length
+    ? [...numerosLivres.map((n) => `<b>${esc(n.valor)}</b> ${esc(n.rotulo)}`),
+      ...(criadorCurto && criadorCurto.length <= 40 && !/\s/.test(criadorCurto) ? [esc(criadorCurto)] : [])]
+    : linhaDosNumeros(c).map(esc);
+  const secoes = [...ficha.secoes.map(secaoDaFicha)];
+  if (numerosLivres.length) {
+    const dl = [item('Visualizações', c.visualizacoes), item('Mediana', c.mediana_do_criador), item('Outlier', c.outlier_x), item('Criador', c.criador)].join('');
+    secoes.push(`<details class="ficha-secao"><summary>Números e origem</summary><div class="ficha-corpo"><dl>${dl}</dl></div></details>`);
+  }
   const estadoSelo = seloDoCandidato(est, nova);
   const detalhes = [item('Status na planilha', c.status), item('Execução', c.id_execucao)].join('');
   const acoes = acoesDoCandidato(c, est, ctx, titulo);
@@ -502,14 +525,16 @@ function cartaoCandidato(c, ctx) {
     <div class="pauta-topo">
       ${anelNota(c.nota)}
       <div class="pilha leitura" style="gap:.375rem">
+        ${c.tema && ficha.titulo ? `<p class="subtitulo">${esc(c.tema)}</p>` : ''}
         <h2 id="cand-${esc(id)}">${esc(titulo)}</h2>
-        ${c.tema && c.angulo ? `<p class="subtitulo">${esc(c.tema)}</p>` : ''}
         ${estadoSelo || c.plataforma ? `<div class="meta selos">${estadoSelo ? selo(estadoSelo[0], estadoSelo[1]) : ''}${c.plataforma ? selo(c.plataforma, 'neutro') : ''}</div>` : ''}
       </div>
     </div>
-    ${numeros.length ? `<p class="candidato-numeros">${numeros.map((n) => `<span>${esc(n)}</span>`).join('<span aria-hidden="true"> · </span>')}</p>` : ''}
+    ${ficha.entrega ? `<p class="ficha-entrega"><b>Entrega:</b> ${htmlTextoRadar(ficha.entrega)}</p>` : ''}
+    ${linhaNumeros.length ? `<p class="candidato-numeros">${linhaNumeros.map((n) => `<span>${n}</span>`).join('<span aria-hidden="true"> · </span>')}</p>` : ''}
     ${link}
     ${linhaDoEstado(est, ctx)}
+    ${secoes.length ? `<div class="ficha-secoes">${secoes.join('')}</div>` : ''}
     ${rodape ? `<p class="linha-id pequeno">${rodape}</p>` : ''}
     ${detalhes ? `<details><summary>Detalhes</summary><dl>${detalhes}</dl></details>` : ''}
     ${notaFalha}
