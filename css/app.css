@@ -95,7 +95,7 @@ body.entrada #veu{position:fixed;height:100vh;height:100dvh;-webkit-mask-image:n
 .doca{position:fixed;left:50%;bottom:calc(.75rem + env(safe-area-inset-bottom));z-index:30;transform:translateX(-50%);width:min(28.75rem,calc(100% - 1.5rem));display:flex;justify-content:space-between;gap:.125rem;padding:.4375rem;border-radius:999px;background:var(--vidro);backdrop-filter:blur(1.375rem) saturate(1.3);-webkit-backdrop-filter:blur(1.375rem) saturate(1.3);border:1px solid var(--fio);box-shadow:var(--sombra),inset 0 1px 0 rgba(255,255,255,.06)}
 .nav-link{position:relative;display:flex;align-items:center;justify-content:center;gap:.5rem;height:3.125rem;min-width:3.125rem;padding:0 .8125rem;border-radius:999px;color:var(--tinta-3);font-size:.875rem;font-weight:600;text-decoration:none;white-space:nowrap;transition:background-color .2s,color .2s}
 .doca .nav-rot{display:none}
-.nav-link[aria-current="page"]{background:var(--acento);color:var(--acento-tinta)}
+.nav-link[aria-current="page"]{background:var(--acento);color:var(--acento-tinta);view-transition-name:nav-atual}
 .doca .nav-link[aria-current="page"] .nav-rot{display:inline}
 .nav-conta{position:absolute;top:.3125rem;right:.3125rem;min-width:1.0625rem;height:1.0625rem;padding:0 .25rem;border-radius:999px;background:var(--vinho-claro);color:#fff;font-size:.65625rem;font-weight:700;line-height:1.0625rem;text-align:center}
 html[data-tema="dia"] .nav-conta{background:var(--vinho)}
@@ -594,6 +594,12 @@ dialog[open]{animation:abre .22s cubic-bezier(.2,.7,.2,1)}
 ::view-transition-image-pair(ilha),::view-transition-image-pair(doca){isolation:auto}
 ::view-transition-old(ilha),::view-transition-old(doca){display:none}
 ::view-transition-new(ilha),::view-transition-new(doca){animation:none;mix-blend-mode:normal}
+/* A pílula da seção atual (só uma aparece: a da ilha no computador, a da doca no celular) desliza
+   da seção antiga para a nova e muda de largura; o rótulo antigo some e o novo aparece no meio.
+   O fundo da pílula fica no grupo, então a mudança de largura não abre buracos; as fotos ficam no
+   tamanho natural (object-fit:none), sem esticar o texto. */
+::view-transition-group(nav-atual){animation-duration:.38s;animation-timing-function:cubic-bezier(.3,.7,.2,1);border-radius:999px;background:var(--acento);overflow:clip}
+::view-transition-old(nav-atual),::view-transition-new(nav-atual){height:100%;object-fit:none;animation-duration:.2s}
 .ilha{view-transition-name:ilha}
 .doca{view-transition-name:doca}
 

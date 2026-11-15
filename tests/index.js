@@ -25,3 +25,4 @@ import('./envio.test.mjs');
 import('./telacheia.test.mjs');
 import('./estado-candidato.test.mjs');
 import('./ficha.test.mjs');
+import('./nav.test.mjs');
