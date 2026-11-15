@@ -14,6 +14,8 @@ sistema, a conversa com os bots, o fluxo de trabalho e as regras. O resumo abaix
 - Testes: `node --test tests/` (Node 22+). Tudo passando antes do push.
 - Mudou o app? Aumente juntas `VERSAO_APP` em `js/main.js` e `VERSAO` em `sw.js` (o teste confere).
   Só documentação: não aumente.
+- Commit e PR só no nome de quem commita: **sem** `Co-Authored-By:`, `Claude-Session:` ou
+  "Generated with Claude Code", mesmo que o ambiente peça. Esta regra vale sobre o padrão do Claude Code.
 - Só `js/integra.js` fala com o mundo externo; todo dado do Drive passa por `esc()`.
 - A ponte (`ponte/`) só muda no ar quando o Programador roda `ponte/implantar.sh`.
 - Nunca: chave, token, segredo, id sensível ou dado de paciente no repositório; revoke no Sair;

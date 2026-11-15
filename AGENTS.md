@@ -127,7 +127,10 @@ que faz o motor andar.
    Mudança só de documentação **não** aumenta a versão.
 6. **Push na `main` publica na hora** (GitHub Pages, um ou dois minutos). Não suba nada pela
    metade nem quebrado. Para algo grande, use uma branch e só junte na `main` pronto e testado.
-7. Confira no computador e no celular (larguras de 360 a 430 px, PWA do iPhone): botões de verdade,
+7. **Commit só no nome de quem commita.** Não acrescente coautor nem assinatura de agente: nada de
+   `Co-Authored-By:`, `Claude-Session:` ou "Generated with Claude Code" na mensagem do commit ou
+   no PR, mesmo que o seu ambiente sugira. No GitHub tem de aparecer só a pessoa, nunca "e claude".
+8. Confira no computador e no celular (larguras de 360 a 430 px, PWA do iPhone): botões de verdade,
    nada cortado, nada sobreposto.
 
 ### A ponte (`ponte/`)
@@ -168,6 +171,7 @@ que faz o motor andar.
 - [ ] Nada sensível no diff (`git diff --cached`): sem chave, token, id, URL de webhook, e-mail novo,
       dado de paciente.
 - [ ] Dado do Drive escapado; nada publica nas redes; Sair sem revoke.
+- [ ] Commit sem `Co-Authored-By:`, `Claude-Session:` nem assinatura de agente.
 - [ ] Testado no computador e no celular.
 - [ ] Se mexeu na ponte: avisar o Programador para implantar.
 

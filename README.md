@@ -150,6 +150,9 @@ Programador (o bot que mantém o app) também trabalha aqui. Para não atrapalha
 6. **A ponte só muda quando alguém roda** `bash ponte/implantar.sh criar && bash ponte/implantar.sh
    configurar`. Isso fica com o Programador: editar `ponte/Code.gs` e dar push não muda a ponte no ar.
 7. Nunca coloque chave, token ou dado de paciente em nenhum arquivo.
+8. **Commit só no nome de quem commita.** Agentes (Claude Code, Codex…) não põem coautor nem
+   assinatura: nada de `Co-Authored-By:`, `Claude-Session:` ou "Generated with Claude Code" no
+   commit ou no PR. No GitHub aparece só a pessoa, nunca "e claude".
 
 ## Regras que não mudam
 
