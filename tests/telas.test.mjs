@@ -416,12 +416,12 @@ test('Histórico: Drive + linhas de Execuções do id, em ordem; só do id', () 
   assert.deepEqual(historicoComExecucoes([], lista, '', AGORA), []);
 });
 
-test('Resultados: a faixa da retrospectiva fica dentro do mesmo painel do "Em breve"', () => {
-  const h = htmlResultados({ exec: { fase: 'pronto', execucoes: [], abaAusente: true }, agora: AGORA });
-  assert.match(h, /<div class="painel" style="max-width:58.75rem">\s*<div class="faixa"/);
-  assert.match(h, /data-acao="rodar-abrir" data-valor="diretor-retrospectiva">Fazer retrospectiva agora/);
-  assert.match(h, /Em breve, aqui/);
-  assert.match(h, /ainda sem registro/);
+test('Resultados: retrospectiva do motor (não mais do Diretor) e aviso enquanto lê a aba', () => {
+  assert.match(htmlResultados({ fase: 'carregando' }), /Lendo a aba Desempenho/);
+  const h = htmlResultados({ fase: 'ok', lido: { registros: [], col: {}, cabecalho: [], linhaCabecalho: 0 }, retro: null, agora: AGORA });
+  assert.match(h, /data-acao="pedir-retrospectiva">Fazer retrospectiva/);
+  assert.match(h, /Nenhum vídeo esperando números/);
+  assert.doesNotMatch(h, /diretor-retrospectiva/);
 });
 
 test('pauta na Ficha: pergunta e por que agora à vista, o resto em seções, campo vazio some', () => {

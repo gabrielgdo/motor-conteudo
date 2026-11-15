@@ -18,6 +18,8 @@ import { estadoDasPautas } from './selecao.js';
 import { estadoDoCandidato, planejarEstadoCandidato, mesclarEstadosApp } from './candidatos.js';
 import { janelaRodar, janelaDetalhes, NOTA_PONTE_DESLIGADA, classeJanelaRodar } from './componentes/execucao.js';
 import { pendentesDe, janelaPrevia } from './telas/videos.js';
+import { recarregarResultados, modeloNumero } from './telas/resultados.js';
+import { NUMEROS } from './desempenho.js';
 import {
   janelaDecisoes, pedidosDaTela, resultadosDaGravacao, aprovadasParaEnviar, loteDaProximaSelecao, bloqueioDeDecisao,
   bloqueioDeCandidato, bloqueioDeRoteirista, campoQuantidade, campoMotivoCandidato, extrasDoCandidato, textoDoPedidoCandidato,
@@ -338,6 +340,31 @@ export const ACOES = {
   },
   'outra-conta'() { return loginDaEntrada($('#botao-outra-conta'), null, () => Integra.entrarComOutraConta()); },
   sair() { if (estado.logada) abrirJanela(janelaSair(Integra.email())); },
+  /* -- resultados: números da aba Desempenho e retrospectiva do motor -- */
+  async 'salvar-numeros'(el) {
+    if (!estado.logada || el.disabled) return;
+    const id = el.dataset.id;
+    const rede = el.dataset.valor;
+    const valores = Object.fromEntries(NUMEROS.map(([chave]) => [chave, rascunho[modeloNumero(id, rede, chave)] || '']));
+    el.disabled = true;
+    try {
+      const r = await Integra.planilha.gravarNumeros({ id, rede, valores });
+      if (!r.ok) { avisar(r.mensagem); return; }
+      limparCampos(...NUMEROS.map(([chave]) => modeloNumero(id, rede, chave)));
+      avisar(`Números de ${id} no ${rede} gravados na aba Desempenho.`);
+      recarregarResultados();
+    } finally { el.disabled = false; }
+  },
+  async 'pedir-retrospectiva'(el) {
+    if (!estado.logada || el.disabled) return;
+    el.disabled = true;
+    try {
+      const r = await Integra.drive.pedirRetrospectiva();
+      avisar(r.viaCentral ? 'Retrospectiva pedida ao motor pela central. O resultado aparece aqui em alguns minutos.'
+        : 'Retrospectiva pedida ao motor pelo Drive. O resultado aparece aqui em alguns minutos.');
+    } finally { el.disabled = false; }
+  },
+  'recarregar-resultados'() { recarregarResultados(); },
   // Central (Supabase): liga de novo com o login Google do app (sem janela).
   async 'central-conectar'(el) {
     if (!estado.logada || !Integra.central || el?.disabled) return;

@@ -20,8 +20,12 @@ export const FORMATOS = {
   decisoes_semana: /^1-Radar\/decisoes [A-Za-z0-9-]+\.md$/,
   decisao_roteiro: /^2-Roteiros\/rascunhos\/[A-Za-z0-9-]+ decisao v[0-9]+\.md$/,
   decisao_previa: /^4-Revisao\/[A-Za-z0-9-]+ (aprovado|ajustes v[0-9]+)\.md$/,
+  retrospectiva: /^5-Prontos\/retrospectivas\/[0-9]{4}-[0-9]{2}-[0-9]{2} pedido\.md$/,
 };
-const PASTAS = { busca: '1-Radar', decisoes_semana: '1-Radar', decisao_roteiro: '2-Roteiros/rascunhos', decisao_previa: '4-Revisao' };
+const PASTAS = {
+  busca: '1-Radar', decisoes_semana: '1-Radar', decisao_roteiro: '2-Roteiros/rascunhos', decisao_previa: '4-Revisao',
+  retrospectiva: '5-Prontos/retrospectivas',
+};
 
 export class ErroCentral extends Error {
   constructor(mensagem, codigo = 'erro', status = 0) { super(mensagem); this.codigo = codigo; this.status = status; }

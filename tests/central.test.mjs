@@ -29,7 +29,7 @@ test('arquivoDoPedido: os quatro formatos e nada fora deles', () => {
 test('formatos iguais aos do banco e do motor', () => {
   const sql = readFileSync(new URL('../js/central.js', import.meta.url), 'utf8');
   assert.ok(sql.includes('arquivo_do_tipo'));
-  assert.deepEqual(Object.keys(FORMATOS).sort(), ['busca', 'decisao_previa', 'decisao_roteiro', 'decisoes_semana']);
+  assert.deepEqual(Object.keys(FORMATOS).sort(), ['busca', 'decisao_previa', 'decisao_roteiro', 'decisoes_semana', 'retrospectiva']);
 });
 
 test('motorOuvindo: só com sinal de vida recente', () => {

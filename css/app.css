@@ -559,6 +559,16 @@ dialog.paleta{width:calc(100vw - 1.5rem);max-width:37.5rem;max-height:min(35rem,
 dialog::backdrop{background:rgba(8,4,5,.6);backdrop-filter:blur(.1875rem);-webkit-backdrop-filter:blur(.1875rem)}
 dialog[open]{animation:abre .22s cubic-bezier(.2,.7,.2,1)}
 @keyframes abre{from{opacity:0;transform:translateY(.625rem) scale(.985)}}
+/* Resultados: números por rede e retrospectiva do motor (js/telas/resultados.js) */
+.painel-titulo{font-family:var(--titulo);font-size:1.25rem;margin:0 0 .75rem}
+.numeros-rede{border:1px solid var(--fio);border-radius:var(--r-painel,1rem);padding:.875rem 1rem 1rem;margin:0 0 .875rem}
+.numeros-rede legend{padding:0 .375rem}
+.tab-rolagem{overflow-x:auto;margin:.5rem 0 1rem}
+.retro-tabela{border-collapse:collapse;width:100%;font-size:.875rem}
+.retro-tabela th,.retro-tabela td{border-bottom:1px solid var(--fio);padding:.4rem .5rem;text-align:left;white-space:nowrap}
+.retro-titulo{font-size:1rem;margin:1rem 0 .375rem}
+.retro p,.retro li{line-height:1.55}
+.retro-lista{padding-left:1.25rem;margin:.25rem 0 .75rem}
 /* Sem height:100% aqui: no Safari (WebKit) a porcentagem contra a altura automática do dialog dava 0 e a
    janela abria só com a borda (2 px), parecendo travada. Só a gaveta, que tem altura fixa, usa 100%. */
 .dlg{display:flex;flex-direction:column;max-height:inherit}

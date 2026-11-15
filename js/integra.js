@@ -33,6 +33,7 @@ import * as S from './selecao.js';
 import { lerCandidatos, criarArquivosDoApp } from './candidatos.js';
 import { planejarArquivoRevisao } from './revisao.js';
 import * as PM from './pedidos-motor.js';
+import * as DS from './desempenho.js';
 // Envio do vídeo bruto (ponto 7): upload.js só é importado aqui; as regras ficam em envio-video.js.
 import { criarUpload } from './upload.js';
 import { criarEnviador, travaDoNavegador } from './envio-video.js';
@@ -338,6 +339,40 @@ export const Integra = {
       return { ok: true, arquivo, nome: plano.nome };
     },
 
+    /** Pasta 5-Prontos/retrospectivas (id) ou null. */
+    async _pastaRetrospectivas() {
+      const prontos = (await drive.pastas()).prontos;
+      const p = (await drive.listar(prontos)).find((f) => f.mimeType === 'application/vnd.google-apps.folder' && f.name.trim() === 'retrospectivas');
+      return p ? p.id : null;
+    },
+
+    /** Pede a retrospectiva ao motor: central primeiro, senão 5-Prontos/retrospectivas/<hoje> pedido.md no Drive. */
+    async pedirRetrospectiva(agora = new Date()) {
+      const email = auth.emailAtual();
+      if (!C.podeDisparar(email)) throw new ErroIntegra('Esta conta não pede retrospectiva.', 'sem-permissao');
+      const nome = DS.nomePedidoRetrospectiva(PM.isoBrasilia(agora).slice(0, 10));
+      const texto = DS.textoPedidoRetrospectiva({ quem: email, quando: PM.isoBrasilia(agora) });
+      const c = await Integra.central.enviarSePuder({ tipo: 'retrospectiva', nome, conteudo: texto });
+      if (c) return { ok: true, nome, viaCentral: true };
+      const pasta = await Integra.drive._pastaRetrospectivas();
+      if (!pasta) throw new ErroIntegra('Não encontrei 5-Prontos/retrospectivas no Drive.', 'pasta-desconhecida');
+      try {
+        const existente = await Integra.drive._acharArquivo(pasta, nome);
+        if (existente) await drive.substituirConteudo(existente.id, texto, 'text/markdown');
+        else await drive.criarArquivoTexto(nome, texto, pasta);
+      } finally { drive.invalidarCache(); }
+      return { ok: true, nome };
+    },
+
+    /** A retrospectiva mais nova (5-Prontos/retrospectivas/<data> retrospectiva.md) → {nome, texto} ou null. */
+    async ultimaRetrospectiva() {
+      const pasta = await Integra.drive._pastaRetrospectivas();
+      if (!pasta) return null;
+      const arq = DS.retrospectivaMaisNova(await drive.listar(pasta));
+      if (!arq) return null;
+      return { nome: arq.name.trim(), texto: await drive.baixarTexto(arq) };
+    },
+
     /* Pedidos ao Motor Reels por arquivo (Radar e Roteirista foram desligados; nada passa pela ponte). */
 
     /** Arquivo de texto por nome numa pasta (o mais recente), ou null. */
@@ -435,6 +470,26 @@ export const Integra = {
 
     /** Grava uma célula: `linha` 1-based, `coluna` índice 0-based ou letra (values.update, RAW). */
     atualizarCelula: (aba, linha, coluna, valor) => sheet.atualizarCelula(nomeDaAba(aba), linha, coluna, valor),
+
+    /** Aba Desempenho lida e interpretada (js/desempenho.js) → {cabecalho, linhaCabecalho, col, registros}. */
+    async lerDesempenho(forcar = false) {
+      return DS.lerDesempenho(await sheet.lerAba(nomeDaAba('desempenho'), { forcar }));
+    },
+
+    /** Números de um vídeo numa rede → aba Desempenho (relê a aba na hora; cria o cabeçalho "rede" se faltar).
+        → {ok:true} | {ok:false, mensagem}. */
+    async gravarNumeros({ id, rede, valores }) {
+      if (!C.podeDisparar(auth.emailAtual())) throw new ErroIntegra('Esta conta não grava números.', 'sem-permissao');
+      const lido = DS.lerDesempenho(await sheet.lerAba(nomeDaAba('desempenho'), { forcar: true }));
+      const plano = DS.planejarNumeros(lido, { id, rede, valores });
+      if (!plano.ok) return plano;
+      const aba = nomeDaAba('desempenho');
+      if (plano.cabecalhoRede) await sheet.atualizarCelula(aba, plano.cabecalhoRede.linha, plano.cabecalhoRede.coluna, plano.cabecalhoRede.valor);
+      if (plano.celulas) for (const c of plano.celulas) await sheet.atualizarCelula(aba, c.linha, c.coluna, c.valor);
+      if (plano.novaLinha) await sheet.acrescentarLinhas(aba, [plano.novaLinha]);
+      await sheet.lerAba(aba, { forcar: true }).catch(() => null);
+      return { ok: true };
+    },
 
     /** Seleção e Decisões lidas e interpretadas → {selecao, decisoes, colunasProntas}. */
     async lerPautas(forcar = false) {
