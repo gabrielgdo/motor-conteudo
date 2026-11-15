@@ -385,30 +385,36 @@ export const Integra = {
         email: auth.emailAtual(),
         agora: new Date(),
       });
-      if (!plano.ok || !plano.linhas.length) return { ...plano, gravado: 0, falhasSelecao: [] };
-      await sheet.acrescentarLinhas(dec.aba, plano.linhas);
-      // Decisões é a fonte do histórico; o status na Seleção acompanha. Se ele falhar, a decisão
-      // já está gravada e o estado da pauta segue a última linha de Decisões.
+      if (!plano.ok) return { ...plano, gravado: 0, falhasSelecao: [], falhasArquivo: [] };
       const falhasSelecao = [];
-      for (const a of plano.atualizacoes) {
-        try {
-          await sheet.atualizarCelula(sel.aba, a.linha, a.coluna, a.valor);
-        } catch (erro) {
-          falhasSelecao.push({ id_pauta: a.id_pauta, erro });
+      if (plano.linhas.length) {
+        await sheet.acrescentarLinhas(dec.aba, plano.linhas);
+        // Decisões é a fonte do histórico; o status na Seleção acompanha. Se ele falhar, a decisão
+        // já está gravada e o estado da pauta segue a última linha de Decisões.
+        for (const a of plano.atualizacoes) {
+          try {
+            await sheet.atualizarCelula(sel.aba, a.linha, a.coluna, a.valor);
+          } catch (erro) {
+            falhasSelecao.push({ id_pauta: a.id_pauta, erro });
+          }
         }
       }
-      // Arquivo da semana no Drive: o motor lê 1-Radar/decisoes <semana>.md para /roteirizar.
+      // Arquivo da semana no Drive (o motor lê 1-Radar/decisoes <semana>.md para /roteirizar): um reflexo
+      // da aba Decisões, regravado inteiro com todas as decisões daquela semana (PM.itensDaSemana). Assim
+      // uma gravação nunca apaga a decisão de outra pauta, e confirmar de novo depois de uma falha recria
+      // o arquivo mesmo sem linha nova na planilha.
       const falhasArquivo = [];
-      const porSemana = new Map();
-      for (const r of plano.registros || []) {
-        const sem = r.semana || PM.semanaDeIdPauta(r.id_pauta);
-        if (!sem) continue;
-        if (!porSemana.has(sem)) porSemana.set(sem, []);
-        porSemana.get(sem).push({ id_pauta: r.id_pauta, decisao: r.decisao, motivo: r.motivo, id_candidato: r.id_candidato });
-      }
-      for (const [semana, itens] of porSemana) {
+      const semanas = new Set([...(pedidos || []).map((p) => PM.semanaDeIdPauta(p?.id_pauta)),
+        ...(plano.registros || []).map((r) => r.semana || PM.semanaDeIdPauta(r.id_pauta))].filter(Boolean));
+      const jaGravadas = S.lerDecisoes(dec.linhas).decisoes;
+      for (const semana of semanas) {
+        const itens = PM.itensDaSemana({ semana, decisoes: jaGravadas, novos: plano.registros || [] });
+        if (!itens.length) continue;
         try { await Integra.drive.gravarDecisoesSemana({ semana, itens }); }
-        catch (erro) { falhasArquivo.push({ semana, erro }); }
+        catch {
+          try { await Integra.drive.gravarDecisoesSemana({ semana, itens }); } // uma nova tentativa na hora
+          catch (erro) { falhasArquivo.push({ semana, erro }); }
+        }
       }
       return { ...plano, gravado: plano.linhas.length, falhasSelecao, falhasArquivo };
     },

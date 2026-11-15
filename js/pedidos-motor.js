@@ -218,6 +218,27 @@ export function textoDecisoesSemana({ semana, itens = [], quem = '', quando = nu
   return linhas.join('\n');
 }
 
+/**
+ * Itens do arquivo da semana derivados da aba Decisões (a fonte da verdade) mais as linhas que acabaram de ser
+ * gravadas: a última decisão de cada pauta daquela semana, na ordem da planilha. O arquivo é sempre regravado
+ * inteiro a partir daqui, então uma gravação nunca apaga a decisão de outra pauta e uma nova tentativa depois
+ * de uma falha recria o arquivo. Ids T e de outras semanas ficam de fora.
+ */
+export function itensDaSemana({ semana, decisoes = [], novos = [] } = {}) {
+  const alvo = String(semana || '').trim().toUpperCase();
+  const porId = new Map();
+  const antigas = [...(Array.isArray(decisoes) ? decisoes : [])].sort((a, b) => (a._linha || 0) - (b._linha || 0));
+  for (const d of [...antigas, ...(Array.isArray(novos) ? novos : [])]) {
+    const id = texto(d?.id_pauta || d?.id);
+    if (!id || semanaDeIdPauta(id) !== alvo) continue;
+    const dec = minusc(d.decisao);
+    if (!DECISOES_PAUTA.includes(dec)) continue;
+    porId.delete(id); // a mais nova vai para o fim, na ordem em que foi decidida
+    porId.set(id, { id_pauta: id, decisao: dec, motivo: texto(d.motivo), id_candidato: texto(d.id_candidato) });
+  }
+  return [...porId.values()];
+}
+
 export function semanaDeIdPauta(id) {
   const m = String(id || '').trim().match(/^(S\d{2})-\d{2}$/i);
   return m ? m[1].toUpperCase() : '';

@@ -106,3 +106,25 @@ test('duracao', () => {
   assert.equal(duracao(26 * 3600 * 1000), '1 dia');
   assert.equal(duracao(50 * 3600 * 1000), '2 dias');
 });
+
+test('duas pistas, avisos pendentes e uso dos últimos 7 dias', () => {
+  const r = lerSaude(com((o) => {
+    o.atualizado_em = '2026-11-16T09:00:00-03:00';
+    o.rodando = { skill: 'editar', arquivo: 'S47-01.mov', desde: '2026-11-16T09:00:00-03:00', limite_s: 5400, pista: 'video' };
+    o.rodando_todas = [o.rodando, { skill: 'radar', arquivo: 'pedido-busca.md', desde: '2026-11-16T09:30:00-03:00', limite_s: 2400, pista: 'texto' }];
+    o.avisos_pendentes = 2;
+    o.uso = { dias: 7, execucoes: 12, custo_usd: 18.4, por_skill: [
+      { skill: 'editar', n: 3, falhas: 1, min_medio: 41.5, custo_usd: 12 }, { skill: 'radar', n: 7, falhas: 0, min_medio: 9, custo_usd: 4 }],
+    videos_30d: 4, revisoes_por_video_30d: 1.5 };
+  }), AGORA);
+  assert.equal(r.frase, 'Editando um vídeo (S47-01.mov) desde 9h · ao mesmo tempo, buscando pautas');
+  assert.ok(r.detalhes.some((d) => d.texto === '2 avisos ainda não chegaram ao Diretor; o motor reenvia sozinho a cada passada.' && d.tom === 'alerta'));
+  assert.ok(r.detalhes.some((d) => d.texto === 'Últimos 7 dias: 12 tarefas (1 com falha), custo estimado US$ 18,40; a mais demorada é editando um vídeo (média de 41,5 min).'));
+  assert.ok(r.detalhes.some((d) => d.texto === 'Em 30 dias: 1,5 rodadas de ajuste por vídeo, em média (4 vídeos).'));
+});
+
+test('arquivo antigo (sem pistas nem uso) continua valendo', () => {
+  const r = lerSaude(JSON.stringify(BASE), AGORA);
+  assert.equal(r.ok, true);
+  assert.ok(!r.detalhes.some((d) => /Últimos|avisos ainda/.test(d.texto)));
+});

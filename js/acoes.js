@@ -668,6 +668,11 @@ export const ACOES = {
       }
       j.resultados = resultados;
       pintarJanela();
+      // A planilha gravou, mas o arquivo da semana (que o motor lê) não: ele é refeito inteiro, a partir da
+      // aba Decisões, na próxima decisão desta semana.
+      for (const f of res.falhasArquivo || []) {
+        avisar(`Decisão gravada na planilha, mas o arquivo da semana ${f.semana} para o motor não foi atualizado. Ele é refeito na próxima decisão desta semana.`);
+      }
       relerManual('pautas');
       desenhar();
     } catch (e) {

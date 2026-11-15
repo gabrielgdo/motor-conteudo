@@ -85,3 +85,22 @@ test('decisões da semana e semanaDeIdPauta', () => {
   assert.match(t, /- id: S46-03\n  decisao: aprovada/);
   assert.match(t, /- id: S46-04\n  decisao: recusada\n  motivo: repetição/);
 });
+
+/* CONF-03: o arquivo da semana é um reflexo da aba Decisões, regravado inteiro. */
+test('itensDaSemana: decisões já gravadas + novas, a última de cada pauta, só da semana, sem ids T', async () => {
+  const PM = await import('../js/pedidos-motor.js');
+  const decisoes = [
+    { id_pauta: 'S47-01', decisao: 'aprovada', _linha: 2 },
+    { id_pauta: 'S47-02', decisao: 'recusada', motivo: 'tema repetido', _linha: 3 },
+    { id_pauta: 'S46-09', decisao: 'aprovada', _linha: 4 },
+    { id_pauta: 'T01-01', decisao: 'aprovada', _linha: 5 },
+    { id_pauta: 'S47-03', decisao: 'talvez', _linha: 6 },
+  ];
+  const novos = [{ id_pauta: 'S47-02', decisao: 'aprovada', id_candidato: '2026-11-17-03' }, { id_pauta: 'S47-04', decisao: 'aprovada' }];
+  const itens = PM.itensDaSemana({ semana: 'S47', decisoes, novos });
+  assert.deepEqual(itens.map((i) => `${i.id_pauta}:${i.decisao}`), ['S47-01:aprovada', 'S47-02:aprovada', 'S47-04:aprovada']);
+  assert.equal(itens[1].id_candidato, '2026-11-17-03');
+  // uma nova tentativa sem linha nova (a decisão já está na planilha) recria o arquivo do mesmo jeito
+  assert.deepEqual(PM.itensDaSemana({ semana: 'S47', decisoes, novos: [] }).map((i) => i.id_pauta), ['S47-01', 'S47-02']);
+  assert.deepEqual(PM.itensDaSemana({ semana: 'S48', decisoes, novos }), []);
+});
