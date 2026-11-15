@@ -154,7 +154,7 @@ export const ROTINAS = Object.freeze({
       produz: 'Grava “<id> decisao vN.md” em 2-Roteiros/rascunhos, com o seu e-mail e a hora. Ao aprovar, o motor grava “<id> - <título>.md” em 2-Roteiros; ao pedir mudança, um rascunho novo (vN+1); ao recusar, move para arquivo/.',
       custo: CUSTO_MOTOR,
       limites: ['O Roteirista trabalha um pedido por vez.'],
-      semanal: 'Não muda o fluxo da semana: vale igual à decisão que você daria no chat do Roteirista.',
+      semanal: 'Não muda o fluxo da semana: vale igual à decisão que você daria pela tela de Roteiros.',
     },
   },
   'diretor-retrospectiva': {
@@ -597,12 +597,12 @@ export const DESTINOS_CANDIDATO = Object.freeze({
   decidir: {
     botao: 'Pedir pauta completa ao Radar',
     titulo: 'Pedir pauta completa ao Radar?',
-    texto: 'O Radar transforma o candidato em pauta proposta na aba Seleção, verifica as fontes, e ela aparece em Para decidir. Nada vai ao Roteirista agora.',
+    texto: 'O Motor transforma o candidato em pauta proposta na aba Seleção, verifica as fontes, e ela aparece em Para decidir. Nada vira rascunho agora.',
   },
   roteirista: {
     botao: 'Mandar ao Roteirista',
     titulo: 'Mandar ao Roteirista?',
-    texto: 'O Radar cria a pauta na aba Seleção, verifica as fontes e manda ao Roteirista. A ponte grava a sua decisão (aprovada) em Decisões.',
+    texto: 'O Motor cria a pauta na aba Seleção, verifica as fontes e começa o rascunho. A decisão (aprovada) é gravada em Decisões e em 1-Radar/decisoes da semana.',
   },
 });
 export const MAX_MOTIVO_CANDIDATO = 300;
