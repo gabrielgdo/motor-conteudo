@@ -6,10 +6,10 @@ não guarda nenhuma chave, então os disparos manuais passam por ela. A cada ped
 1. confere quem pediu, pelo token do Google;
 2. confere se essa conta pode fazer o pedido e se a rotina está na lista fechada;
 3. aplica a trava, a janela de proteção, a idempotência e o limite por hora;
-4. registra o pedido na aba **Execuções** da planilha Radar;
+4. registra o pedido na aba **Execuções** da planilha Radar (e, só em `radar-candidato` com destino `roteirista`, a aprovação em **Decisões**);
 5. repassa o pedido ao webhook do bot.
 
-A ponte **nunca** grava em Decisões nem em Desempenho, e **nunca** dispara o motor.
+A ponte grava em Execuções e, numa única exceção, em Decisões: o pedido `radar-candidato` com destino `roteirista` grava **uma** linha de aprovação por candidato (nunca de id T). Ela **nunca** grava em Desempenho e **nunca** dispara o motor.
 
 | Arquivo | O que é |
 |---|---|
@@ -30,7 +30,7 @@ a pré-verificação de CORS. É exatamente o que `chamarPonte` em `js/integra.j
 |---|---|---|
 | `acao` | texto | `disparar` ou `decidir-roteiro` |
 | `rotina` | texto | Uma das rotinas da lista fechada (abaixo). Em `decidir-roteiro`, só `roteirista-decisao` (ou vazio) |
-| `id_alvo` | texto | Vazio, ou um id que passa em `idValido`: `S47-01`, `T01`, `T01-01`, `R001`. Obrigatório para `roteirista-decisao` |
+| `id_alvo` | texto | Vazio, ou um id que passa em `idValido`: `S47-01`, `T01`, `T01-01`, `R001`. Obrigatório para `roteirista-decisao`. Em `radar-candidato`, o id do candidato (`AAAA-MM-DD-NN`, ex.: `2026-11-14-01`), obrigatório |
 | `id_lote` | texto | Vazio, ou `^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$` (ex.: `S47-manual-2`) |
 | `chave_idem` | texto | Obrigatória, `^[A-Za-z0-9_-]{8,80}$`. O app manda um UUID criado quando a janela de confirmação abre |
 | `dados` | objeto | Objeto plano com até 30 itens. Chaves `^[a-z][a-z0-9_]{0,39}$`; valores texto (até 4000), número ou booleano |
@@ -40,6 +40,20 @@ Qualquer campo fora dessa lista é recusado com `pedido-invalido`. O corpo vai a
 
 **Campos de `dados` que a ponte usa e não repassa ao bot:**
 - `marcar_travada: true` e `id_execucao_travada` ("Marcar como travada e rodar de novo"; vêm de `acoes.js`, `rodar-confirmar`).
+
+**`radar-diario`:** `dados.quantidade` é opcional. Se vier, é um inteiro de 1 a 15 (número, ou texto só com dígitos); fora disso, `quantidade-invalida` e nada é gravado. Vai ao bot sempre como número. O app manda 5 por padrão; as rodadas agendadas não mudam.
+
+**`radar-candidato`** (só `EMAILS_DECIDIR`): em `dados` só valem `id_candidato`, `destino` e `motivo` (mais os dois campos de trava). Outro campo: `pedido-invalido`.
+- `id_candidato` igual a `id_alvo`, no formato de candidato; com `T` na frente: `teste-recusado`.
+- `destino` é `decidir` ou `roteirista` (senão `destino-invalido`).
+- `motivo` opcional: texto, numa linha só, até 300 caracteres. Vazio não vai ao bot.
+- Grupo de trava `radar-candidato|<id>`: um candidato não trava o outro, e o mesmo candidato não é pedido de novo enquanto houver linha aberta. O app manda uma `chave_idem` estável (`radar-candidato-<id>-<destino>-<n>`, com n = 1 + as linhas dele em Execuções).
+- Destino `roteirista`: sob o lock, a ponte abre `ABA_DECISOES` (padrão `Decisões`) e exige as 11 colunas (as 4 antigas e `id_pauta, rede, id_candidato, id_lote, data, quem, origem`). Sem elas, ou sem a aba: `decisoes-sem-colunas`, **antes** de gravar qualquer coisa. Se já existe uma linha aprovada com o mesmo `id_candidato`, não grava outra (a resposta traz `decisao: 'ja-existia'`). Senão grava uma linha pelo cabeçalho (resposta com `decisao: 'gravada'`):
+  - `semana` "S47" e `data` "AAAA-MM-DD HH:MM" (São Paulo, como o app);
+  - `pauta` = ângulo (ou tema) do candidato na `ABA_CANDIDATOS` (padrão `Candidatos`), ou o id;
+  - `decisao` `aprovada`, `motivo`, `id_candidato`, `id_lote` do pedido, `quem` (e-mail validado), `origem` `manual-app`;
+  - `id_pauta` e `rede` vazios (a pauta ainda não existe).
+- A linha de Decisões é gravada **antes** do webhook. Se a escrita falhar: `decisoes-falhou`, a linha de Execuções fecha com `erro` e o webhook **não** é chamado.
 
 **`decidir-roteiro`:** em `dados` só valem `id`, `versao`, `decisao`, `pedido` e `motivo` (mais os dois campos de trava acima).
 - `dados.id` precisa ser igual a `id_alvo`.
@@ -60,7 +74,7 @@ const PONTE_SETUP_HASH = '<sha256 hex de um código aleatório de uso único>';
 Corpo: `{"acao": "configurar", "codigo": "<o código>", "propriedades": {...}}`, sem `access_token`: o código de uso único é a autenticação.
 - Sem `Setup.gs` (ou com um hash mal formado), a resposta é a mesma de uma ação desconhecida.
 - `sha256(codigo)` é comparado com `PONTE_SETUP_HASH` em tempo constante. Errado: `configuracao-recusada`.
-- Só valem as propriedades da lista fechada: `PLANILHA_ID`, `CLIENT_ID`, `EMAILS_DISPARAR`, `EMAILS_DECIDIR`, `ABA_EXECUCOES`, `LIMITE_POR_HORA`, `WEBHOOK_RADAR_URL`, `WEBHOOK_RADAR_KEY`, `WEBHOOK_ROTEIRISTA_URL`, `WEBHOOK_ROTEIRISTA_KEY`, `WEBHOOK_DIRETOR_URL`, `WEBHOOK_DIRETOR_KEY`. Os valores são texto de até 2000 caracteres, e as `*_URL` precisam ser https. Qualquer coisa fora disso é `pedido-invalido`, e nada é gravado.
+- Só valem as propriedades da lista fechada: `PLANILHA_ID`, `CLIENT_ID`, `EMAILS_DISPARAR`, `EMAILS_DECIDIR`, `ABA_EXECUCOES`, `ABA_DECISOES`, `ABA_CANDIDATOS`, `LIMITE_POR_HORA`, `WEBHOOK_RADAR_URL`, `WEBHOOK_RADAR_KEY`, `WEBHOOK_ROTEIRISTA_URL`, `WEBHOOK_ROTEIRISTA_KEY`, `WEBHOOK_DIRETOR_URL`, `WEBHOOK_DIRETOR_KEY`. Os valores são texto de até 2000 caracteres, e as `*_URL` precisam ser https. Qualquer coisa fora disso é `pedido-invalido`, e nada é gravado.
 - A gravação é `setProperties(obj, false)`, que não apaga as outras propriedades.
 - A resposta é `{ok:true, gravadas:[nomes]}`, **nunca** com valores. Nada disso vai para log.
 
@@ -105,7 +119,11 @@ Alguns códigos trazem campos extras:
 | `webhook-nao-configurado` | O pedido foi registrado, mas não há webhook válido. A linha vira `erro` |
 | `webhook-falhou` | O webhook não deu 2xx em 2 tentativas. A linha vira `erro` |
 | `repetido-com-erro` | A `chave_idem` repetida é de um pedido que terminou em `erro` (é preciso uma chave nova) |
-| `teste-recusado`, `aba-nao-permitida` | Guardas de gravação (ver "Ids T"). Hoje nenhum pedido chega nelas |
+| `teste-recusado`, `aba-nao-permitida` | Guardas de gravação (ver "Ids T"). `teste-recusado` também vale para candidato T em `radar-candidato` |
+| `quantidade-invalida` | `radar-diario` com `dados.quantidade` fora de 1..15 ou não inteiro |
+| `destino-invalido` | `radar-candidato` com `destino` fora de `decidir` / `roteirista` |
+| `decisoes-sem-colunas` | `radar-candidato` → Roteirista sem a aba Decisões ou sem as colunas novas. Nada foi gravado nem repassado |
+| `decisoes-falhou` | `radar-candidato` → Roteirista: a escrita em Decisões falhou. A linha de Execuções vira `erro`; nada foi repassado |
 | `erro-interno` | Exceção inesperada. Nada de detalhe na resposta; o log fica sem segredos |
 
 ### Ordem das conferências
@@ -119,8 +137,9 @@ Alguns códigos trazem campos extras:
    2. trava;
    3. janela de proteção;
    4. limite por hora;
-   5. grava em Execuções.
-6. Solta o lock e chama o webhook.
+   5. só em `radar-candidato` → Roteirista: confere Decisões (aba e colunas) e se o candidato já está aprovado;
+   6. grava em Execuções e, se for o caso, a aprovação em Decisões.
+6. Solta o lock. Se a escrita em Decisões falhou, fecha a linha com `erro` e para aqui. Senão, chama o webhook.
 7. Se o webhook falhar, pega o lock de novo e muda a linha para `erro`.
 
 ---
@@ -132,6 +151,7 @@ Alguns códigos trazem campos extras:
 | `radar-diario` | radar | disparar | `radar` | todo dia 7:00 | disparar |
 | `radar-selecao` | radar | disparar | `radar` | domingo 9:00 | disparar |
 | `radar-enviar` | radar | disparar | `radar` | — | **só decidir** (é "enviar adiante", PLANO 13) |
+| `radar-candidato` | radar | disparar | `radar-candidato\|<id do candidato>` | — | **só decidir** |
 | `roteirista-decisao` | roteirista | decidir-roteiro | `roteirista\|<id>` | — | **só decidir** |
 | `diretor-retrospectiva` | diretor | disparar | `diretor\|retrospectiva` | segunda 8:00 | disparar |
 | `motor-*` | motor | — | — | — | **ninguém**: o app nunca dispara o motor |
@@ -146,7 +166,7 @@ Alguns códigos trazem campos extras:
 - No grupo `radar`, vale para as três rotinas do Radar, perto das 7h todo dia e de domingo 9h.
 - Exemplo: às 6h30, `radar-diario` e `radar-enviar` são recusados.
 
-**Limite:** no máximo `LIMITE_POR_HORA` disparos manuais (padrão 4) por rotina, contando as linhas `manual-app` da rotina na última hora, de qualquer status.
+**Limite:** no máximo `LIMITE_POR_HORA` disparos manuais (padrão 4; `radar-candidato`: 15, um por candidato escolhido) por rotina, contando as linhas `manual-app` da rotina na última hora, de qualquer status.
 
 **Rodada agendada nunca é bloqueada.** Na lógica pura, `avaliarTrava` e `avaliarProtecao` aceitam `{origem:'agendada'}` e liberam. Mas o `doPost` **não tem** caminho de origem agendada: o pedido não pode escolher a `origem`, e toda linha que a ponte grava é `manual-app`. As rodadas agendadas só registram em Execuções, direto pelos bots, e não passam pela ponte.
 
@@ -161,11 +181,13 @@ Ficam em *Configurações do projeto → Propriedades do script*. **Nenhum valor
 | `CLIENT_ID` | sim | O client_id OAuth do app. É o mesmo de `CLIENT_ID` em `js/config.js` (público por natureza), algo como `262963421281-….apps.googleusercontent.com` |
 | `PLANILHA_ID` | sim | Id da planilha Radar (o de `RADAR_SHEET` em `js/config.js`) |
 | `ABA_EXECUCOES` | não | Nome da aba (padrão `Execuções`) |
+| `ABA_DECISOES` | não | Nome da aba Decisões (padrão `Decisões`), só para `radar-candidato` → Roteirista |
+| `ABA_CANDIDATOS` | não | Nome da aba Candidatos (padrão `Candidatos`), lida só para o título da linha de Decisões |
 | `EMAILS_DECIDIR` | sim | E-mails que decidem, separados por vírgula (a conta da Robertta). Também podem disparar |
 | `EMAILS_DISPARAR` | não | E-mails que **só** disparam (a conta do Gabriel). Vazio: só quem está em `EMAILS_DECIDIR` dispara |
 | `LIMITE_POR_HORA` | não | Disparos manuais por rotina por hora (padrão 4; `0` fecha tudo) |
 | `LIMITE_POR_HORA_<ROTINA>` | não | Limite de uma rotina, que vence o geral. Ex.: `LIMITE_POR_HORA_ROTEIRISTA_DECISAO` |
-| `WEBHOOK_RADAR_URL` / `WEBHOOK_RADAR_KEY` | por bot | Webhook do Radar: `radar-diario`, `radar-selecao` e `radar-enviar` |
+| `WEBHOOK_RADAR_URL` / `WEBHOOK_RADAR_KEY` | por bot | Webhook do Radar: `radar-diario`, `radar-selecao`, `radar-enviar` e `radar-candidato` |
 | `WEBHOOK_ROTEIRISTA_URL` / `WEBHOOK_ROTEIRISTA_KEY` | por bot | Webhook do Roteirista: `roteirista-decisao` |
 | `WEBHOOK_DIRETOR_URL` / `WEBHOOK_DIRETOR_KEY` | por bot | Webhook do Diretor: `diretor-retrospectiva` |
 
@@ -215,9 +237,9 @@ id_execucao | chave_idem | bot | rotina | origem | quem | id_alvo | id_lote | et
 Todo texto é gravado com um apóstrofo na frente. A planilha guarda o valor como **texto puro**: o apóstrofo não aparece, e nada vira fórmula (`=`, `+`, `-`, `@`), número ou data com formato do local. A linha respeita a ordem real das colunas da aba.
 
 **Ids T:** podem ser disparados, e vão para Execuções com `teste = sim`.
-- A ponte só grava em Execuções. A guarda `abaGravavelPelaPonte` recusa qualquer outra aba.
-- A guarda `podeGravarNaAba(aba, id)` recusa ids T em Decisões e Desempenho.
-- Hoje não existe ação que grave nessas abas. Uma ação futura que grave nelas (como `gravar-decisoes`) teria de entrar em `ACOES_PONTE` e passar por `conferirGravacao`, que junta as duas guardas.
+- A guarda `abaGravavelPelaPonte` aceita Execuções sempre, e Decisões **só** com `{rotina: 'radar-candidato', destino: 'roteirista'}`. Qualquer outra aba é recusada.
+- A guarda `podeGravarNaAba(aba, id)` recusa ids T (qualquer id que começa com T, de roteiro ou de candidato) em Decisões e Desempenho.
+- Toda escrita passa por `conferirGravacao`, que junta as duas guardas. Qualquer gravação futura nessas abas teria de passar por ela também.
 
 ---
 
@@ -227,7 +249,24 @@ Todo texto é gravado com um apóstrofo na frente. A planilha guarda o valor com
 
 O corpo tem **exatamente** estes campos, nesta ordem: `rotina`, `id_execucao`, `chave_idem`, `origem` (sempre `"manual-app"`), `quem`, `id_alvo`, `id_lote`, `dados`. Nada além disso. `dados` são os dados validados do app, sem `marcar_travada` e `id_execucao_travada`.
 
-**Radar** (`WEBHOOK_RADAR_URL`): `radar-diario` e `radar-selecao` levam `dados: {}`; `radar-enviar` leva os ids das pautas aprovadas.
+**Radar** (`WEBHOOK_RADAR_URL`):
+- `radar-diario` leva `{quantidade}` (inteiro de 1 a 15) quando o pedido vem do app;
+- `radar-selecao` leva `dados: {}`;
+- `radar-enviar` leva os ids das pautas aprovadas;
+- `radar-candidato` leva exatamente `{id_candidato, destino, motivo?}`.
+
+```json
+{
+  "rotina": "radar-candidato",
+  "id_execucao": "EX-20261118-100000-7f3a",
+  "chave_idem": "radar-candidato-2026-11-14-01-roteirista-1",
+  "origem": "manual-app",
+  "quem": "<e-mail validado>",
+  "id_alvo": "2026-11-14-01",
+  "id_lote": "",
+  "dados": { "id_candidato": "2026-11-14-01", "destino": "roteirista", "motivo": "tema forte" }
+}
+```
 
 ```json
 {

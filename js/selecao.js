@@ -123,7 +123,24 @@ export function estadoDasPautas(selecao, decisoes) {
   return out;
 }
 
-/** Pautas "para decidir": status proposta na Seleção e nenhuma linha em Decisões. */
+/**
+ * A aprovação de um CANDIDATO em Decisões (a linha que a ponte grava no "Mandar ao Roteirista" de
+ * radar-candidato: id_candidato preenchido, decisão aprovada; id_pauta vazio, porque a pauta ainda
+ * não existia). A mais nova, ou null. Ela não decide a pauta: a pauta só é decidida por id_pauta.
+ */
+export function aprovacaoDoCandidato(decisoes, idCandidato) {
+  const id = String(idCandidato || '').trim();
+  if (!id) return null;
+  return listaDecisoes(decisoes).filter((d) => d.id_candidato === id && !d.id_pauta && normalizarDecisao(d.decisao) === 'aprovada')
+    .sort((a, b) => (b._linha || 0) - (a._linha || 0))[0] || null;
+}
+
+/**
+ * Pautas "para decidir": status proposta na Seleção e nenhuma linha em Decisões com o id_pauta.
+ * Uma aprovação do candidato (aprovacaoDoCandidato, sem id_pauta) não tira a pauta daqui: se o
+ * Radar deixou a pauta como proposta (a verificação das fontes não passou), ela não foi ao
+ * Roteirista e precisa de uma decisão nova, sobre a pauta já verificada.
+ */
 export function paraDecidir(selecao, decisoes) {
   const ids = new Set(listaDecisoes(decisoes).map((d) => d.id_pauta).filter(Boolean));
   return listaPautas(selecao).filter((p) => p.status === STATUS_PAUTA.proposta && !ids.has(p.id_pauta));
@@ -162,7 +179,7 @@ export function textoMotivo(motivo, observacao = '') {
 
 /* -------------------------------------------------- planejar a gravação */
 
-const ROTULO_ORIGEM = { app: 'app', chat: 'chat', radar: 'Radar', ponte: 'app' };
+const ROTULO_ORIGEM = { app: 'app', 'manual-app': 'app', chat: 'chat', radar: 'Radar', ponte: 'app' };
 
 function textoJaDecidido(d, agora) {
   const quando = lerDataHora(d.data);

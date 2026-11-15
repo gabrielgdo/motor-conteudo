@@ -18,6 +18,19 @@ export function hrefSeguro(url) {
   }
 }
 
+/** Links de post de rede social (aba Candidatos): só http e https, sem usuário/senha no endereço;
+    o resto (javascript:, data:, mailto:…) vira ''. */
+export function hrefWeb(url) {
+  try {
+    const u = new URL(String(url || '').trim());
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') return '';
+    if (u.username || u.password) return '';
+    return u.href;
+  } catch {
+    return '';
+  }
+}
+
 /* ---------------------------------------------------------------- datas */
 
 export const DIAS = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];

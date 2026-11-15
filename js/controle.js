@@ -16,7 +16,7 @@
 import { ALLOWED } from './config.js';
 import {
   lerTabela, linhaNaOrdem, lerDataHora, momentoNoFuso, dataNoFuso, horaCurta, formatarDataHora,
-  normalizarCabecalho, ehTeste, idValido,
+  normalizarCabecalho, ehTeste, idValido, idCandidatoValido, ehCandidatoTeste,
 } from './parse.js';
 
 /* ------------------------------------------------------ aba Execuções */
@@ -89,23 +89,26 @@ const TODO_DIA = [0, 1, 2, 3, 4, 5, 6];
 /**
  * Rotinas que o app conhece. Só as `disparavel` podem ir à ponte; as do motor são só para leitura
  * (o app nunca dispara o motor: ele grava o arquivo de entrada e o vigia faz o resto).
- * `grupo`: grupo de trava (PLANO 5.2); 'roteirista' vira `roteirista|<id>` em grupoDeTrava.
+ * `grupo`: grupo de trava (PLANO 5.2); com `travaPorId`, vira `<grupo>|<id>` em grupoDeTrava
+ * (roteirista por roteiro, radar-candidato por candidato: um não trava o outro).
+ * `soDecide`: só a conta que decide (podeDecidir / EMAILS_DECIDIR na ponte) pede.
  * `agenda`: {dias (0 = domingo), hora, minuto} no fuso de São Paulo, ou null.
+ * Espelhado em ponte/Code.gs (ROTINAS); tests/ponte.test.mjs confere a paridade.
  */
 export const ROTINAS = Object.freeze({
   'radar-diario': {
-    bot: 'radar', rotulo: 'Radar diário', grupo: 'radar', disparavel: true, precisaId: false,
+    bot: 'radar', rotulo: 'Radar diário', grupo: 'radar', disparavel: true, precisaId: false, soDecide: false, travaPorId: false,
     agenda: { dias: TODO_DIA, hora: 7, minuto: 0 },
     confirmacao: {
       oQue: 'Radar diário: pesquisa os temas ativos (sinais das últimas 48 h no X, nos perfis de referência do Instagram e do TikTok, Trends, estudos e CFP/CRP), verifica as fontes e faz a triagem.',
-      produz: 'Grava os candidatos na aba Candidatos da planilha Radar. Não cria arquivo no Drive.',
+      produz: 'Grava os candidatos na aba Candidatos da planilha Radar, no máximo a quantidade que você escolher abaixo (de 1 a 15; padrão 5). Não cria arquivo no Drive.',
       custo: CUSTO_BOT,
       limites: [LIMITE_X, LIMITE_NAVEGADOR],
-      semanal: 'Entra no mesmo dia do diário das 7h, sem repetir candidato (pelo id e pelo link). Não muda a seleção de domingo.',
+      semanal: 'Entra no mesmo dia do diário das 7h, sem repetir candidato (pelo id e pelo link). A quantidade vale só para esta rodada: o diário das 7h continua como está. Não muda a seleção de domingo.',
     },
   },
   'radar-selecao': {
-    bot: 'radar', rotulo: 'Seleção de pautas', grupo: 'radar', disparavel: true, precisaId: false,
+    bot: 'radar', rotulo: 'Seleção de pautas', grupo: 'radar', disparavel: true, precisaId: false, soDecide: false, travaPorId: false,
     agenda: { dias: [0], hora: 9, minuto: 0 },
     confirmacao: {
       oQue: 'Seleção manual do Radar: escolhe pautas entre os candidatos, com as mesmas regras da seleção de domingo.',
@@ -116,7 +119,7 @@ export const ROTINAS = Object.freeze({
     },
   },
   'radar-enviar': {
-    bot: 'radar', rotulo: 'Enviar ao Roteirista', grupo: 'radar', disparavel: true, precisaId: false,
+    bot: 'radar', rotulo: 'Enviar ao Roteirista', grupo: 'radar', disparavel: true, precisaId: false, soDecide: true, travaPorId: false,
     agenda: null,
     confirmacao: {
       oQue: 'O Radar lê as pautas aprovadas do lote e manda uma mensagem só ao Roteirista.',
@@ -126,8 +129,19 @@ export const ROTINAS = Object.freeze({
       semanal: 'As pautas enviadas entram na fila de roteiros; a seleção de domingo já desconta a fila.',
     },
   },
+  'radar-candidato': {
+    bot: 'radar', rotulo: 'Candidato do Radar', grupo: 'radar-candidato', disparavel: true, precisaId: true, soDecide: true, travaPorId: true,
+    agenda: null,
+    confirmacao: {
+      oQue: 'O Radar pega este candidato da aba Candidatos, transforma em pauta e verifica as fontes.',
+      produz: 'Uma pauta nova na aba Seleção, com o id do candidato. “Passar para Para decidir”: ela aparece em Para decidir. “Mandar ao Roteirista”: a ponte grava a sua aprovação em Decisões e o Radar manda a pauta ao Roteirista.',
+      custo: CUSTO_BOT,
+      limites: ['O navegador do Radar faz uma tarefa por vez: se ele estiver ocupado, o pedido espera a vez.'],
+      semanal: 'Não muda o Radar diário das 7h nem a seleção de domingo. Cada candidato é pedido uma vez (um não segura o outro).',
+    },
+  },
   'roteirista-decisao': {
-    bot: 'roteirista', rotulo: 'Decisão de roteiro', grupo: 'roteirista', disparavel: true, precisaId: true,
+    bot: 'roteirista', rotulo: 'Decisão de roteiro', grupo: 'roteirista', disparavel: true, precisaId: true, soDecide: true, travaPorId: true,
     agenda: null,
     confirmacao: {
       oQue: 'Leva ao Roteirista a sua decisão sobre esta versão do roteiro (aprovar, pedir mudança ou recusar).',
@@ -138,7 +152,7 @@ export const ROTINAS = Object.freeze({
     },
   },
   'diretor-retrospectiva': {
-    bot: 'diretor', rotulo: 'Retrospectiva', grupo: 'diretor|retrospectiva', disparavel: true, precisaId: false,
+    bot: 'diretor', rotulo: 'Retrospectiva', grupo: 'diretor|retrospectiva', disparavel: true, precisaId: false, soDecide: false, travaPorId: false,
     agenda: { dias: [1], hora: 8, minuto: 0 },
     confirmacao: {
       oQue: 'O Diretor pede os números dos vídeos com 7 dias ou mais e faz a retrospectiva.',
@@ -156,7 +170,7 @@ export const ROTINAS = Object.freeze({
 
 function motor(rotulo, oQue, produz) {
   return {
-    bot: 'motor', rotulo, grupo: 'motor', disparavel: false, precisaId: true, agenda: null,
+    bot: 'motor', rotulo, grupo: 'motor', disparavel: false, precisaId: true, soDecide: false, travaPorId: false, agenda: null,
     confirmacao: { oQue, produz, custo: CUSTO_MOTOR, limites: [], semanal: 'Roda sozinho quando o arquivo de entrada chega (o vigia passa a cada 5 min).' },
   };
 }
@@ -164,11 +178,11 @@ function motor(rotulo, oQue, produz) {
 export const rotinaConhecida = (rotina) => Object.prototype.hasOwnProperty.call(ROTINAS, rotina);
 export const ROTINAS_DISPARAVEIS = Object.keys(ROTINAS).filter((r) => ROTINAS[r].disparavel);
 
-/** Grupo de trava de uma rotina (com o id, para o Roteirista), ou '' se a rotina não é do catálogo. */
+/** Grupo de trava de uma rotina (com o id, nas `travaPorId`), ou '' se a rotina não é do catálogo. */
 export function grupoDeTrava(rotina, idAlvo = '') {
   const def = rotinaConhecida(rotina) ? ROTINAS[rotina] : null;
   if (!def) return '';
-  return def.grupo === 'roteirista' ? `roteirista|${String(idAlvo || '').trim()}` : def.grupo;
+  return def.travaPorId ? `${def.grupo}|${String(idAlvo || '').trim()}` : def.grupo;
 }
 
 // Grupo de uma linha de Execuções. Linha do Radar com um nome de rotina que o app não conhece
@@ -352,8 +366,8 @@ export function avaliarDisparo({ execucoes = [], rotina, idAlvo = '', email, ago
   const def = ROTINAS[rotina];
   if (!def.disparavel) return { pode: false, motivo: 'nao-disparavel', mensagem: 'O app não dispara o motor: ele roda sozinho quando o arquivo de entrada chega.' };
   if (!podeDisparar(email)) return { pode: false, motivo: 'sem-permissao', mensagem: 'Esta conta não pode disparar rodadas.' };
-  if (rotina === 'roteirista-decisao' && !podeDecidir(email)) return { pode: false, motivo: 'sem-permissao', mensagem: 'Só a conta da Robertta decide.' };
-  if (def.precisaId && !String(idAlvo || '').trim()) return { pode: false, motivo: 'falta-id', mensagem: 'Falta o id do roteiro.' };
+  if (def.soDecide && !podeDecidir(email)) return { pode: false, motivo: 'sem-permissao', mensagem: 'Só a conta da Robertta decide.' };
+  if (def.precisaId && !String(idAlvo || '').trim()) return { pode: false, motivo: 'falta-id', mensagem: rotina === 'radar-candidato' ? 'Falta o id do candidato.' : 'Falta o id do roteiro.' };
   const trava = avaliarTrava(execucoes, rotina, idAlvo, agora);
   // Travada primeiro: "Marcar como travada" também fecha a linha que segura a janela de proteção.
   if (!trava.livre) return { pode: false, motivo: trava.motivo, mensagem: textoTrava(trava), trava };
@@ -541,4 +555,78 @@ export function planejarDecisaoRoteiro({ id, versao, decisao, pedido = '', motiv
     : decisao === 'mudar' ? `Pedir mudança no rascunho v${v}: ${p}`
       : `Recusar o rascunho v${v} (${m})`;
   return { ok: true, payload, resumo };
+}
+
+/* ------------------------------------------- Radar diário: quantos candidatos */
+
+export const QUANTIDADE_PADRAO = 5;
+export const QUANTIDADE_MIN = 1;
+export const QUANTIDADE_MAX = 15;
+
+/**
+ * Campo "Quantos candidatos" da janela do Radar diário → {ok:true, valor} | {ok:false, erro}.
+ * Campo nunca tocado (undefined/null) = 5. Só inteiros de 1 a 15 (o mesmo que a ponte confere).
+ */
+export function lerQuantidade(valor) {
+  if (valor === undefined || valor === null) return { ok: true, valor: QUANTIDADE_PADRAO };
+  const s = String(valor).trim();
+  if (!s) return { ok: false, erro: `Escolha quantos candidatos: um número inteiro de ${QUANTIDADE_MIN} a ${QUANTIDADE_MAX}.` };
+  if (!/^\d+$/.test(s)) return { ok: false, erro: `Use um número inteiro (sem vírgula), de ${QUANTIDADE_MIN} a ${QUANTIDADE_MAX}.` };
+  const n = Number(s);
+  if (n < QUANTIDADE_MIN || n > QUANTIDADE_MAX) return { ok: false, erro: `A quantidade vai de ${QUANTIDADE_MIN} a ${QUANTIDADE_MAX} candidatos.` };
+  return { ok: true, valor: n };
+}
+
+/** `dados` do pedido manual do Radar diário: {ok:true, dados:{quantidade}} (inteiro) | {ok:false, erro}. */
+export function dadosDoRadarDiario(valor) {
+  const q = lerQuantidade(valor);
+  return q.ok ? { ok: true, dados: { quantidade: q.valor } } : { ok: false, erro: q.erro };
+}
+
+/* -------------------------------------------- candidato → pauta (radar-candidato) */
+
+export const DESTINOS_CANDIDATO = Object.freeze({
+  decidir: {
+    botao: 'Passar para Para decidir',
+    titulo: 'Passar para Para decidir?',
+    texto: 'O Radar transforma o candidato em pauta proposta na aba Seleção, verifica as fontes, e ela aparece em Para decidir. Nada vai ao Roteirista agora.',
+  },
+  roteirista: {
+    botao: 'Mandar ao Roteirista',
+    titulo: 'Mandar ao Roteirista?',
+    texto: 'O Radar cria a pauta na aba Seleção, verifica as fontes e manda ao Roteirista. A ponte grava a sua decisão (aprovada) em Decisões.',
+  },
+});
+export const MAX_MOTIVO_CANDIDATO = 300;
+
+/**
+ * Pedido de um candidato (botões "Mandar ao Roteirista" / "Passar para Para decidir") → o que vai
+ * em `dados` para a ponte: {ok:true, dados:{id_candidato, destino, motivo}} | {ok:false, erros}.
+ * Só a conta que decide; id no formato de candidato e não de teste; motivo opcional, uma linha só,
+ * até 300 caracteres.
+ */
+export function planejarPedidoCandidato({ id, destino, motivo = '', email } = {}) {
+  const erros = {};
+  const idc = String(id ?? '').trim();
+  if (!podeDecidir(email)) erros.permissao = 'Só a conta da Robertta decide.';
+  if (!idCandidatoValido(idc)) erros.id = `Id de candidato inválido: ${umaLinha(idc).slice(0, 30)}`;
+  else if (ehCandidatoTeste(idc)) erros.id = 'Candidato de teste (T) não vira pauta pelo app.';
+  if (!Object.prototype.hasOwnProperty.call(DESTINOS_CANDIDATO, destino)) erros.destino = 'Escolha: Mandar ao Roteirista ou Passar para Para decidir.';
+  if (Object.keys(erros).length) return { ok: false, erros };
+  const m = umaLinha(motivo).slice(0, MAX_MOTIVO_CANDIDATO).trimEnd();
+  // Contrato com o Radar: exatamente {id_candidato, destino, motivo?}; motivo vazio não vai.
+  return { ok: true, dados: m ? { id_candidato: idc, destino, motivo: m } : { id_candidato: idc, destino } };
+}
+
+/**
+ * chave_idem ESTÁVEL do pedido de um candidato: `radar-candidato-<id>-<destino>-<n>`, com n = 1 +
+ * as linhas de radar-candidato desse candidato já em Execuções. Dois toques (ou dois aparelhos)
+ * com a mesma tela mandam a mesma chave e a ponte não duplica; depois de um erro, a linha a mais
+ * muda o n e "tentar de novo" vira um pedido novo (a ponte recusa repetir uma chave que falhou).
+ * Só letras, números e hífen (o formato que a ponte aceita).
+ */
+export function chaveIdemCandidato(id, destino, execucoes = []) {
+  const idc = String(id ?? '').trim();
+  const n = 1 + (execucoes || []).filter((e) => e.rotina === 'radar-candidato' && e.id_alvo === idc).length;
+  return `radar-candidato-${idc}-${destino}-${n}`;
 }

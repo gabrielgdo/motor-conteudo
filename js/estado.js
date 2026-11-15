@@ -7,7 +7,7 @@
 const inicial = () => ({
   logada: false,
   rota: { nome: 'inicio', id: null },
-  filtroPautas: 'decidir', // decidir | decididas | todas
+  filtroPautas: 'decidir', // candidatos | decidir | decididas | todas
   filtroRoteiros: 'aprovar',
   abaRoteiro: 'ig',
   versaoVista: {}, // id do roteiro -> número da versão do vídeo que está na tela
@@ -21,6 +21,7 @@ const inicial = () => ({
   mudandoPauta: {}, // id_pauta -> true: pauta já decidida aberta para mudar a decisão
   resultadoPautas: {}, // id_pauta -> {acao, mensagem} da última gravação
   decisaoRoteiro: {}, // id do roteiro -> 'aprovar' | 'mudar' | 'recusar' (ainda não enviada)
+  candidatosVisiveis: 30, // chip Candidatos: quantos cartões aparecem antes do "Mostrar mais"
   janela: null, // janela de confirmação aberta: {tipo, ...} (js/acoes.js)
 });
 

@@ -128,6 +128,7 @@ const ROTULO_CONFIRMAR = {
   'radar-diario': 'Rodar agora',
   'radar-selecao': 'Fazer seleção agora',
   'radar-enviar': 'Enviar ao Roteirista',
+  'radar-candidato': 'Confirmar o pedido',
   'roteirista-decisao': 'Enviar a decisão',
   'diretor-retrospectiva': 'Fazer retrospectiva agora',
 };
@@ -164,10 +165,15 @@ export function itensDaJanela(rotina, { execucoes = [], semRegistro = '', idAlvo
  *   notaDesligada   o texto calmo no lugar do confirmar com a ponte desligada
  *   acao            data-acao do confirmar (padrão 'rodar-confirmar')
  *   podeTravar      oferece "Marcar como travada e rodar de novo" (padrão: true)
+ *   titulo          título no lugar de "<rótulo>: rodar agora?" (texto puro; a janela escapa)
+ *   rotuloConfirmar texto do botão de confirmar (padrão: o da rotina)
+ *   campos          HTML já montado (e escapado) dos campos da janela: a quantidade do Radar
+ *                   diário, o motivo do candidato. Só aparece com a ponte ligada e o confirmar possível.
  */
 export function janelaRodar({
   rotina, idAlvo = '', email = '', agora = new Date(), dados = {}, extras = [], etapa = 'confirmar', enviando = false,
   erro = '', ligada = ponteLigada(), notaDesligada = NOTA_PONTE_DESLIGADA, acao = 'rodar-confirmar', podeTravar = true,
+  titulo = '', rotuloConfirmar: rotuloPedido = '', campos = '',
 } = {}) {
   const semRegistro = dados.abaAusente ? 'Sem a aba Execuções, o app não consegue ver se há uma rodada em andamento.'
     : !dados.execucoes ? 'O registro de Execuções não foi lido: o app não consegue ver se há uma rodada em andamento.' : '';
@@ -182,7 +188,7 @@ export function janelaRodar({
       if (!c.lista.length) j.itens.splice(j.itens.indexOf(c), 1);
     }
   }
-  const rotuloConfirmar = ROTULO_CONFIRMAR[rotina] || 'Rodar agora';
+  const rotuloConfirmar = rotuloPedido || ROTULO_CONFIRMAR[rotina] || 'Rodar agora';
   const notas = [];
   if (j.teste) notas.push(`<p class="meta">${selo('Teste')}<span class="pequeno apagado">Id de teste: a rodada vai com teste = sim.</span></p>`);
   let confirmar = '';
@@ -211,8 +217,9 @@ export function janelaRodar({
   }
   // As notas (o que segura o botão, a ponte desligada) vêm antes dos detalhes: no celular a janela
   // rola, e o motivo de não haver botão ativo precisa estar à vista.
-  const corpo = `${notas.join('')}<dl class="confirmacao">${j.itens.map(itemHTML).join('')}</dl>`;
-  return moldura(esc(j.titulo), corpo, `<button type="button" class="botao calmo" data-acao="fechar-janela">${confirmar ? 'Cancelar' : 'Fechar'}</button>${confirmar}`);
+  const comCampos = campos && ligada && (d.pode || d.motivo === 'parece-travada');
+  const corpo = `${notas.join('')}<dl class="confirmacao">${j.itens.map(itemHTML).join('')}</dl>${comCampos ? `<div class="pilha campos-janela">${campos}</div>` : ''}`;
+  return moldura(esc(titulo || j.titulo), corpo, `<button type="button" class="botao calmo" data-acao="fechar-janela">${confirmar ? 'Cancelar' : 'Fechar'}</button>${confirmar}`);
 }
 
 /* ---------------------------------------------------------- histórico */

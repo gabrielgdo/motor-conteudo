@@ -7,15 +7,21 @@ import { estado, rascunho, reiniciarEstado } from './estado.js';
 import { Integra } from './integra.js';
 import {
   carregar, iniciarDados, limparDados, estadoDados, rot, ultima, anexo, textoDoAnexo, tentarAnexosDeNovo,
-  execucoesLidas, pautasLidas, relerManual,
+  execucoesLidas, pautasLidas, candidatosLidas, relerManual,
 } from './dados.js';
-import { textoDosAjustes } from './parse.js';
-import { novaChaveIdem, planejarDecisaoRoteiro, podeDecidir, avaliarDisparo, rotinaConhecida, ROTINAS } from './controle.js';
+import { textoDosAjustes, idCandidatoValido, ehCandidatoTeste } from './parse.js';
+import {
+  novaChaveIdem, planejarDecisaoRoteiro, podeDecidir, avaliarDisparo, rotinaConhecida, ROTINAS,
+  dadosDoRadarDiario, planejarPedidoCandidato, chaveIdemCandidato, DESTINOS_CANDIDATO,
+} from './controle.js';
 import { estadoDasPautas } from './selecao.js';
+import { estadoDoCandidato } from './candidatos.js';
 import { janelaRodar, janelaDetalhes, NOTA_PONTE_DESLIGADA } from './componentes/execucao.js';
 import { pendentesDe, janelaPrevia } from './telas/videos.js';
 import {
   janelaDecisoes, pedidosDaTela, resultadosDaGravacao, aprovadasParaEnviar, loteDaProximaSelecao, bloqueioDeDecisao,
+  bloqueioDeCandidato, bloqueioDeRoteirista, campoQuantidade, campoMotivoCandidato, extrasDoCandidato, textoDoPedidoCandidato,
+  LIMITE_CANDIDATOS,
 } from './telas/pautas.js';
 import { arquivoDeLegenda } from './telas/prontos.js';
 import { desenhar, rotear } from './roteador.js';
@@ -191,7 +197,16 @@ async function loginDaEntrada(b, textoEl, pedir) {
 
 /* ---- Janelas de confirmação do controle manual ----
    estado.janela guarda o que está aberto ({tipo:'rodar'|'decisoes'|'previa'|'detalhes', ...}); a
-   chave_idem nasce quando a janela "Rodar agora?" abre e vale até ela fechar. */
+   chave_idem nasce quando a janela "Rodar agora?" abre e vale até ela fechar (no pedido de um
+   candidato, ela é estável: chaveIdemCandidato). A janela "rodar" tem `acao`: 'disparar' (faixas),
+   'decidir-roteiro' ou 'candidato' (Mandar ao Roteirista / Passar para Para decidir). */
+
+/** Campos da janela "rodar": a quantidade do Radar diário, o motivo de um candidato. */
+function camposDaJanela(j) {
+  if (j.rotina === 'radar-diario' && j.acao === 'disparar') return campoQuantidade();
+  if (j.acao === 'candidato') return campoMotivoCandidato();
+  return '';
+}
 
 function pintarJanela() {
   const j = estado.janela;
@@ -200,7 +215,9 @@ function pintarJanela() {
   if (j.tipo === 'rodar') {
     html = janelaRodar({
       rotina: j.rotina, idAlvo: j.idAlvo, email: Integra.email(), agora: new Date(), dados: execucoesLidas(), extras: j.extras,
-      etapa: j.etapa, enviando: j.enviando, erro: j.erro, notaDesligada: j.notaDesligada, podeTravar: j.acao === 'disparar',
+      etapa: j.etapa, enviando: j.enviando, erro: j.erro, notaDesligada: j.notaDesligada,
+      podeTravar: j.acao === 'disparar' || j.acao === 'candidato',
+      titulo: j.titulo, rotuloConfirmar: j.rotuloConfirmar, campos: camposDaJanela(j),
     });
   } else if (j.tipo === 'decisoes') {
     html = janelaDecisoes({ itens: j.itens, enviando: j.enviando, resultados: j.resultados, erro: j.erro });
@@ -221,7 +238,7 @@ export function aoMudarManual() {
 function abrirRodar(janela) {
   estado.janela = {
     tipo: 'rodar', acao: 'disparar', idAlvo: '', idLote: '', extras: [], dados: {}, etapa: 'confirmar', enviando: false, erro: '',
-    notaDesligada: NOTA_PONTE_DESLIGADA, ...janela, chaveIdem: novaChaveIdem(),
+    notaDesligada: NOTA_PONTE_DESLIGADA, ...janela, chaveIdem: janela.chaveIdem || novaChaveIdem(),
   };
   pintarJanela();
 }
@@ -394,9 +411,11 @@ export const ACOES = {
   /* -- controle manual: faixas de execução e "Rodar agora" -- */
   'rodar-abrir'(el) {
     const rotina = el.dataset.valor;
-    if (!rotinaConhecida(rotina) || !ROTINAS[rotina].disparavel || rotina === 'roteirista-decisao') return;
+    // A decisão de roteiro e o pedido de um candidato têm botões próprios (com os dados de cada um).
+    if (!rotinaConhecida(rotina) || !ROTINAS[rotina].disparavel || rotina === 'roteirista-decisao' || rotina === 'radar-candidato') return;
     const extras = [];
     let idLote = '';
+    if (rotina === 'radar-diario') { limparCampos('rd-quantidade'); delete estado.erros['rd-quantidade']; } // a janela abre sempre com o padrão (5)
     if (rotina === 'radar-selecao') {
       idLote = loteDaProximaSelecao({ execucoes: execucoesLidas().execucoes || [], selecao: pautasLidas().selecao, agora: new Date() });
       extras.push({ chave: 'lote', rotulo: 'Lote que vai nascer', texto: `${idLote}: as pautas entram na aba Seleção com ids novos e status “proposta”.` });
@@ -405,7 +424,7 @@ export const ACOES = {
   },
   'rodar-travada'() {
     const j = estado.janela;
-    if (j?.tipo !== 'rodar' || j.acao !== 'disparar') return;
+    if (j?.tipo !== 'rodar' || (j.acao !== 'disparar' && j.acao !== 'candidato')) return;
     j.etapa = 'travada';
     pintarJanela();
   },
@@ -417,15 +436,33 @@ export const ACOES = {
     const d = avaliarDisparo({ execucoes: exec.execucoes || [], rotina: j.rotina, idAlvo: j.idAlvo, email: Integra.email(), agora: new Date() });
     const travada = el.dataset.valor === 'travada';
     if (!d.pode && !(travada && d.motivo === 'parece-travada')) { pintarJanela(); return; }
+    // Os campos da janela, conferidos antes de qualquer pedido (a ponte confere de novo).
+    if (j.rotina === 'radar-diario' && j.acao === 'disparar') {
+      const q = dadosDoRadarDiario(rascunho['rd-quantidade']);
+      if (!q.ok) {
+        estado.erros = { ...estado.erros, 'rd-quantidade': q.erro };
+        pintarJanela();
+        $('#c-rd-quantidade')?.focus();
+        return;
+      }
+      delete estado.erros['rd-quantidade'];
+      j.dados = { ...j.dados, ...q.dados }; // dados.quantidade (inteiro de 1 a 15)
+    }
+    if (j.acao === 'candidato') {
+      const plano = planejarPedidoCandidato({ id: j.idAlvo, destino: j.destino, motivo: rascunho['rc-motivo'], email: Integra.email() });
+      if (!plano.ok) { j.erro = Object.values(plano.erros)[0]; pintarJanela(); return; }
+      j.dados = { ...plano.dados }; // {id_candidato, destino, motivo}
+    }
     j.enviando = true;
     j.erro = '';
     pintarJanela();
     try {
+      let res;
       if (j.acao === 'decidir-roteiro') {
-        await Integra.ponte.decidirRoteiro({ ...j.payload, chave_idem: j.chaveIdem });
+        res = await Integra.ponte.decidirRoteiro({ ...j.payload, chave_idem: j.chaveIdem });
       } else {
         const marcar = travada ? { marcar_travada: true, id_execucao_travada: String(d.trava?.linha?.id_execucao || '') } : {};
-        await Integra.ponte.disparar({ rotina: j.rotina, id_alvo: j.idAlvo, id_lote: j.idLote, chave_idem: j.chaveIdem, dados: { ...j.dados, ...marcar } });
+        res = await Integra.ponte.disparar({ rotina: j.rotina, id_alvo: j.idAlvo, id_lote: j.idLote, chave_idem: j.chaveIdem, dados: { ...j.dados, ...marcar } });
       }
       if (estado.janela !== j) return;
       fecharJanela();
@@ -433,11 +470,16 @@ export const ACOES = {
         delete estado.decisaoRoteiro[j.idAlvo];
         limparCampos(`rp-${j.idAlvo}`, `rm-${j.idAlvo}`, `ro-${j.idAlvo}`);
         avisar('Decisão enviada ao Roteirista. O andamento aparece na faixa.');
+      } else if (j.acao === 'candidato') {
+        limparCampos('rc-motivo');
+        avisar(textoDoPedidoCandidato(j.destino, res));
       } else {
-        avisar(`${ROTINAS[j.rotina].rotulo}: pedido enviado. O andamento aparece na faixa.`);
+        const q = j.rotina === 'radar-diario' && j.dados?.quantidade ? ` (${j.dados.quantidade} ${j.dados.quantidade === 1 ? 'candidato' : 'candidatos'})` : '';
+        avisar(`${ROTINAS[j.rotina].rotulo}${q}: pedido enviado. O andamento aparece na faixa.`);
       }
       relerManual('execucoes');
-      if (j.rotina === 'radar-enviar' || j.rotina === 'radar-selecao') relerManual('pautas');
+      if (j.rotina === 'radar-enviar' || j.rotina === 'radar-selecao' || j.acao === 'candidato') relerManual('pautas');
+      if (j.rotina === 'radar-diario' || j.acao === 'candidato') relerManual('candidatos');
       desenhar();
     } catch (e) {
       if (estado.janela !== j || !estado.logada) return;
@@ -542,6 +584,39 @@ export const ACOES = {
       idLote: lotes.length === 1 ? lotes[0] : '',
       dados: { ids: aprovadas.map((p) => p.id_pauta).join(',') },
       extras: [{ chave: 'pautas', rotulo: aprovadas.length === 1 ? 'A pauta que vai' : `As ${aprovadas.length} pautas que vão`, lista: aprovadas.map((p) => `${p.id_pauta} · ${p.titulo || ''}`) }],
+    });
+  },
+
+  /* -- pautas: candidatos (aba Candidatos) -- */
+  'candidatos-recarregar'() { relerManual('candidatos'); desenhar(); },
+  'candidatos-mais'() {
+    estado.candidatosVisiveis = (Number(estado.candidatosVisiveis) || LIMITE_CANDIDATOS) + LIMITE_CANDIDATOS;
+    desenhar();
+  },
+  /* "Mandar ao Roteirista" / "Passar para Para decidir": confere tudo de novo (o botão pode estar
+     velho) e abre a janela de confirmação da rotina radar-candidato, com a chave estável. */
+  'candidato-pedir'(el) {
+    const id = String(el.dataset.id || '');
+    const destino = el.dataset.valor;
+    const email = Integra.email();
+    if (!idCandidatoValido(id) || ehCandidatoTeste(id) || !Object.prototype.hasOwnProperty.call(DESTINOS_CANDIDATO, destino)) return;
+    const lidos = candidatosLidas();
+    if (bloqueioDeCandidato({ email, offline: lidos.offline })) return;
+    const c = (lidos.candidatos || []).find((x) => x.id === id);
+    if (!c) return;
+    const pautas = pautasLidas();
+    if (destino === 'roteirista' && bloqueioDeRoteirista(pautas)) return;
+    const execucoes = execucoesLidas().execucoes || [];
+    const est = estadoDoCandidato(c, { selecao: pautas.selecao, decisoes: pautas.decisoes, execucoes, agora: new Date() });
+    if (!est.podePedir) { desenhar(); return; }
+    limparCampos('rc-motivo');
+    const def = DESTINOS_CANDIDATO[destino];
+    abrirRodar({
+      rotina: 'radar-candidato', acao: 'candidato', idAlvo: id, destino,
+      chaveIdem: chaveIdemCandidato(id, destino, execucoes),
+      titulo: def.titulo, rotuloConfirmar: def.botao,
+      extras: extrasDoCandidato(c, destino),
+      notaDesligada: 'O pedido pelo app ainda não está ligado. Por enquanto, peça ao Radar no chat.',
     });
   },
 

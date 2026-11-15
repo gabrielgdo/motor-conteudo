@@ -348,10 +348,11 @@ export function limparDados() {
 // ({fase:'carregando'} na primeira vez) e se redesenha com o evento 'motor:manual'. Erro não tenta
 // de novo sozinho (só com "Atualizar" ou "Tentar de novo"). Sem internet, nada é pedido.
 const novaLeitura = () => ({ fase: 'vazio', dados: null, erro: null, lidoEm: 0, vencido: false, promessa: null });
-const manual = { execucoes: novaLeitura(), pautas: novaLeitura() };
+const manual = { execucoes: novaLeitura(), pautas: novaLeitura(), candidatos: novaLeitura() };
 const LEITORES = {
   execucoes: (forcar) => Integra.execucoes.ler(forcar),
   pautas: (forcar) => Integra.planilha.lerPautas(forcar),
+  candidatos: (forcar) => Integra.candidatos.ler(forcar),
 };
 
 function vencerManual() {
@@ -388,6 +389,9 @@ export const execucoesLidas = () => vistaManual(lerManual('execucoes'));
 
 /** Abas Seleção e Decisões: {fase, erro, offline, selecao?, decisoes?, colunasProntas?, decisoesAusente?}. */
 export const pautasLidas = () => vistaManual(lerManual('pautas'));
+
+/** Aba Candidatos: {fase, erro, offline, candidatos?, temIdExecucao?, abaAusente?}. */
+export const candidatosLidas = () => vistaManual(lerManual('candidatos'));
 
 /** Relê agora (depois de gravar ou disparar, e no "Tentar de novo"). */
 export function relerManual(chave) {

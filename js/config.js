@@ -51,7 +51,7 @@ export const CONFIG = {
   // Nomes das pastas como aparecem no Drive (para textos e caminhos; os ids vêm de drive.pastas()).
   pastas: { base: '0-Base', radar: '1-Radar', roteiros: '2-Roteiros', brutos: '3-Brutos', revisao: '4-Revisao', prontos: '5-Prontos' },
   planilha: 'Radar',
-  abas: { selecao: 'Seleção', decisoes: 'Decisões', desempenho: 'Desempenho', execucoes: 'Execuções' },
+  abas: { selecao: 'Seleção', decisoes: 'Decisões', desempenho: 'Desempenho', execucoes: 'Execuções', candidatos: 'Candidatos' },
   vencedorMultiplo: 3, // vencedor = visualizações >= 3x a mediana da conta na rede
   pedacoEnvioMB: 8, // tamanho de cada pedaço do envio (múltiplo de 256 KB no Drive)
   concorrencia: 4, // downloads de roteiro ao mesmo tempo
