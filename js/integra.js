@@ -372,4 +372,48 @@ export const Integra = {
       });
     },
   },
+
+  /* Andamento do Motor Reels (só leitura): `_motor/andamento/<id>.json`, publicado pelo
+     bin/andamento.sh. Validação e resumo em js/andamento.js (puro). */
+  motor: (() => {
+    const PASTA_DRIVE = 'application/vnd.google-apps.folder';
+    let pastasAndamento = null; // ids das pastas "andamento" dentro de _motor (o Drive aceita nome repetido)
+    const lidos = new Map(); // id do vídeo → {chave: `${fileId}:${modifiedTime}`, dados}
+    return {
+      /** → {estado:'ok', dados} | {estado:'sem-arquivo'} | {estado:'indisponivel', erro}. `dados` já
+          validado (validarAndamento). Cache por modifiedTime: arquivo igual não é baixado de novo. */
+      async andamento(id) {
+        if (!idValido(id)) return { estado: 'indisponivel', erro: `Id inválido: ${id}` };
+        try {
+          if (!pastasAndamento) {
+            const ids = await drive.pastas();
+            if (!ids.motor) return { estado: 'sem-arquivo' }; // ainda sem a pasta _motor
+            const filhos = await drive.listar(ids.motor);
+            const achadas = filhos.filter((f) => f.mimeType === PASTA_DRIVE && f.name.trim() === 'andamento').map((f) => f.id);
+            if (!achadas.length) return { estado: 'sem-arquivo' };
+            pastasAndamento = achadas;
+          }
+          const nome = `${id}.json`;
+          const arquivos = (await Promise.all(pastasAndamento.map((p) => drive.listar(p)))).flat()
+            .filter((f) => f.mimeType !== PASTA_DRIVE && f.name.trim() === nome)
+            .sort((a, b) => String(b.modifiedTime || '').localeCompare(String(a.modifiedTime || '')));
+          if (!arquivos.length) return { estado: 'sem-arquivo' };
+          const arquivo = arquivos[0];
+          const chave = `${arquivo.id}:${arquivo.modifiedTime || ''}`;
+          const guardado = lidos.get(id);
+          if (guardado?.chave === chave) return { estado: 'ok', dados: guardado.dados };
+          const [{ validarAndamento }, conteudo] = await Promise.all([import('./andamento.js'), drive.baixarTexto(arquivo)]);
+          const v = validarAndamento(String(conteudo || ''), id);
+          if (!v.ok) return { estado: 'indisponivel', erro: `O arquivo de andamento não está no formato esperado (${v.motivo}).` };
+          lidos.set(id, { chave, dados: v.dados });
+          return { estado: 'ok', dados: v.dados };
+        } catch (e) {
+          pastasAndamento = null; // a pasta pode ter mudado ou a conta saído: resolve de novo na próxima
+          return { estado: 'indisponivel', erro: e?.message || 'Não consegui ler o andamento.' };
+        }
+      },
+      /** Ao sair da conta: esquece o que foi lido. */
+      esquecer() { pastasAndamento = null; lidos.clear(); },
+    };
+  })(),
 };

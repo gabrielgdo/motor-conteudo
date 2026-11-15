@@ -16,7 +16,8 @@ import { podeDecidir, ROTINAS, estatisticasTempo } from '../controle.js';
 import { nomeArquivoRevisao } from '../revisao.js';
 import { Players } from '../componentes/players.js';
 import { moldura } from '../componentes/janelas.js';
-import { faixaExecucao, historicoComExecucoes, blocoHistorico } from '../componentes/execucao.js';
+import { faixaExecucao, historicoComExecucoes, blocoHistorico, linhasDe } from '../componentes/execucao.js';
+import { resumirAndamento, htmlAndamento } from '../andamento.js';
 import { cab, selo, vt, passoDe, naoAchei, comDados, vazio, campo, segmento, rodapeAtualizado, voltar } from './pecas.js';
 
 const enc = encodeURIComponent;
@@ -97,10 +98,93 @@ function resumoDoMotor(v) {
   return texto ? `<div class="pequeno resumo-motor"><strong>Resumo do motor:</strong> ${esc(texto)}</div>` : '';
 }
 
-/** Faixa do motor para o id (só leitura): a última linha de Execuções com bot = motor. */
-const faixaMotor = (r, exec) => faixaExecucao({
-  bot: 'motor', rotulo: 'Motor de edição', idAlvo: r.id, dados: exec, semRegistro: 'o motor ainda não publica o andamento no app',
-});
+/* ---- Andamento do motor (_motor/andamento/<id>.json, via Integra.motor.andamento) ----
+   Lido ao abrir a página do vídeo; relido a cada 60 s só enquanto a página estiver visível e houver
+   etapa em andamento. Sair da rota esquece a leitura e para o relógio. */
+const INTERVALO_ANDAMENTO_MS = 60 * 1000;
+const andamentos = new Map(); // id → {fase: 'carregando'|'ok'|'sem-arquivo'|'indisponivel', dados, lendo, timer, esperandoVisivel}
+const temNavegador = () => typeof window !== 'undefined' && typeof document !== 'undefined' && typeof location !== 'undefined';
+
+/** Id do vídeo na rota atual (#/videos/<id>), ou null. */
+function idDaRota() {
+  const m = String(location.hash || '').match(/^#\/?videos\/([^/?#]+)/);
+  try { return m ? decodeURIComponent(m[1]) : null; } catch { return null; }
+}
+const avisarTela = () => window.dispatchEvent(new CustomEvent('motor:anexo')); // main.js redesenha a tela
+
+function esquecerAndamento(id) {
+  const l = andamentos.get(id);
+  if (l) clearTimeout(l.timer);
+  andamentos.delete(id);
+}
+
+function agendarAndamento(id, l) {
+  clearTimeout(l.timer);
+  if (l.fase !== 'ok' || !resumirAndamento(l.dados).emAndamento) return; // nada andando: não relê sozinho
+  l.timer = setTimeout(() => {
+    if (andamentos.get(id) !== l) return;
+    if (idDaRota() !== id) { esquecerAndamento(id); return; }
+    if (document.visibilityState === 'visible') lerAndamentoDe(id);
+    else l.esperandoVisivel = true; // relê quando a página voltar a ficar visível
+  }, INTERVALO_ANDAMENTO_MS);
+}
+
+function lerAndamentoDe(id) {
+  let l = andamentos.get(id);
+  if (!l) { l = { fase: 'carregando', dados: null }; andamentos.set(id, l); }
+  if (l.lendo) return;
+  l.lendo = true;
+  Promise.resolve().then(() => Integra.motor.andamento(id))
+    .catch((e) => ({ estado: 'indisponivel', erro: e?.message || '' }))
+    .then((r) => {
+      if (andamentos.get(id) !== l) return; // saiu da página antes de a leitura voltar
+      l.lendo = false;
+      if (r?.estado === 'ok') { l.fase = 'ok'; l.dados = r.dados; }
+      else if (r?.estado === 'sem-arquivo') { l.fase = 'sem-arquivo'; l.dados = null; }
+      else { l.fase = 'indisponivel'; l.dados = null; }
+      agendarAndamento(id, l);
+      avisarTela();
+    });
+}
+
+if (temNavegador()) {
+  window.addEventListener('hashchange', () => {
+    const atual = idDaRota();
+    for (const id of [...andamentos.keys()]) if (id !== atual) esquecerAndamento(id);
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    for (const [id, l] of andamentos) {
+      if (l.esperandoVisivel && idDaRota() === id) { l.esperandoVisivel = false; lerAndamentoDe(id); }
+    }
+  });
+  // "Tentar de novo" do andamento (a ação não está em acoes.js: fica junto da leitura, aqui).
+  document.addEventListener('click', (ev) => {
+    const el = ev.target?.closest?.('[data-acao="andamento-tentar"]');
+    if (!el || !el.dataset.id) return;
+    const l = andamentos.get(el.dataset.id);
+    if (l && !l.lendo) l.fase = 'carregando';
+    lerAndamentoDe(el.dataset.id);
+    avisarTela();
+  });
+}
+
+/** Leitura do andamento para o desenho da tela (dispara a primeira leitura do id). */
+function andamentoNaTela(id) {
+  if (!temNavegador() || idDaRota() !== id) return { fase: 'carregando' };
+  if (!andamentos.has(id)) lerAndamentoDe(id);
+  const l = andamentos.get(id);
+  return l.fase === 'ok' ? { fase: 'ok', andamento: resumirAndamento(l.dados, new Date()) } : { fase: l.fase };
+}
+
+/** Faixa do motor para o id (só leitura): o andamento publicado pelo motor e, se houver, a última
+    linha de Execuções com bot = motor (com "Detalhes"). */
+const faixaMotor = (r, exec) => {
+  const registro = linhasDe(exec?.execucoes, { bot: 'motor', idAlvo: r.id }).length
+    ? faixaExecucao({ bot: 'motor', rotulo: 'Registro do motor', idAlvo: r.id, dados: exec })
+    : '';
+  return `${htmlAndamento(andamentoNaTela(r.id), r.id)}${registro}`;
+};
 
 const NOTA_SO_ROBERTTA = 'Só a conta da Robertta decide.';
 

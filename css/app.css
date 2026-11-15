@@ -753,3 +753,11 @@ button.aviso.fixo:hover{filter:brightness(1.06)}
 @media (min-width:1080px){.bandeja{bottom:calc(1.25rem + env(safe-area-inset-bottom))}}
 /* Roteiros: o Histórico fica na coluna do conteúdo, embaixo; o aside continua fixo ao lado */
 .roteiro-historia{grid-column:1}
+/* Vídeos: andamento do motor (_motor/andamento/<id>.json) embaixo da faixa */
+.andamento{display:flex;flex-direction:column;gap:.5rem;min-width:0}
+.andamento-frase{white-space:normal;overflow-wrap:anywhere}
+.andamento-mais summary{cursor:pointer;color:var(--tinta-2);min-height:2.75rem;display:flex;align-items:center}
+.andamento-lista{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:.375rem;font-size:.875rem;line-height:1.4}
+.andamento-lista+.andamento-lista{margin-top:.75rem}
+.andamento-lista li{display:flex;gap:.625rem;min-width:0;overflow-wrap:anywhere}
+.andamento-hora{flex:none;min-width:3.25rem;color:var(--tinta-3);font-variant-numeric:tabular-nums}
