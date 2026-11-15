@@ -56,9 +56,10 @@ test('sw.js: tem todos os módulos do app e os arquivos que o index.html carrega
     assert.ok(existsSync(path.join(RAIZ, r)), `index.html aponta para ${r}, que não existe`);
     assert.ok(lista.has(r), `${r} (do index.html) falta no ARQUIVOS do sw.js`);
   }
-  // Fora do cache de propósito: o SheetJS (grande, sob demanda) e o envio da etapa 2.
+  // Fora do cache de propósito: o SheetJS (grande, sob demanda). O envio do vídeo (ponto 7) entra.
   assert.ok(!lista.has('vendor/xlsx.full.min.js'));
-  assert.ok(!lista.has('js/upload.js'));
+  assert.ok(lista.has('js/upload.js'), 'js/upload.js (envio do vídeo) falta no ARQUIVOS do sw.js');
+  assert.ok(lista.has('js/envio-video.js'), 'js/envio-video.js falta no ARQUIVOS do sw.js');
 });
 
 test('sw.js: versão nova do cache, igual à do js/main.js, e limpeza dos caches antigos', () => {

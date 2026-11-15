@@ -13,8 +13,8 @@
 //                                            os nomes imediatamente antes (revisao.js)
 //   ponte.disparar / ponte.decidirRoteiro    atrás de FLAGS.ponte e PONTE_URL (config.js);
 //                                            desligada, erro com codigo 'ponte-desligada'
-// Só o envio do vídeo (drive.enviarVideo) segue para a etapa 2: lança Error('Disponível na
-// etapa 2') e traz, no comentário, a chamada real (procure "INTEGRAÇÃO:").
+//   drive.enviarVideo                        vídeo bruto → 3-Brutos (`<id>.<ext>`), retomável com
+//                                            upload.js e conferido nos metadados (envio-video.js)
 //
 // As regras puras (controle.js, selecao.js, revisao.js) são importadas aqui e estão na lista do
 // service worker (sw.js).
@@ -28,8 +28,31 @@ import * as C from './controle.js';
 import * as S from './selecao.js';
 import { lerCandidatos } from './candidatos.js';
 import { planejarArquivoRevisao } from './revisao.js';
+// Envio do vídeo bruto (ponto 7): upload.js só é importado aqui; as regras ficam em envio-video.js.
+import { criarUpload } from './upload.js';
+import { criarEnviador, travaDoNavegador } from './envio-video.js';
 
 const naEtapa2 = () => { throw new Error('Disponível na etapa 2'); };
+
+// Enviador do vídeo bruto: montado uma vez (guarda os envios desta aba contra o clique repetido).
+let enviadorVideo = null;
+function enviador() {
+  if (!enviadorVideo) {
+    enviadorVideo = criarEnviador({
+      podeEnviar: () => C.podeDecidir(auth.emailAtual()),
+      validadeToken: () => Math.max(0, (auth.lerSessao()?.expires_at || 0) - Date.now()),
+      renovarInterativo: () => auth.renovarInterativo(),
+      pastaBrutos: async () => (await drive.pastas()).brutos,
+      listarBrutos: (pastaId) => drive.listar(pastaId),
+      metadados: (id, campos) => drive.metadados(id, campos),
+      criarUpload,
+      trava: travaDoNavegador(),
+      storage: globalThis.localStorage,
+      aoTerminar: () => drive.invalidarCache(),
+    });
+  }
+  return enviadorVideo;
+}
 
 /** Erro com `codigo` para a tela decidir o que mostrar ('ponte-desligada', 'sem-permissao'…). */
 export class ErroIntegra extends Error {
@@ -234,7 +257,12 @@ export const Integra = {
           (pedaços múltiplos de 256 KB). Resposta 308 = continue; 200 ou 201 = terminou.
        3) Se a conexão cair: um PUT vazio, com Content-Range no formato "bytes [asterisco]/total",
           devolve até onde o envio chegou. */
-    enviarVideo(nome, total) { naEtapa2(nome, total); },
+    /** Vídeo bruto → 3-Brutos (nível de cima) como `<id>.<ext minúscula>`, retomável (upload.js).
+        Chamar DENTRO do toque em "Enviar" (renova o token ali, se faltar pouco). Bloqueia se já houver
+        bruto do id (nunca sobrescreve), trava por id (navigator.locks + reserva no localStorage) e só
+        diz concluído depois de conferir tamanho, pasta e lixeira nos metadados. Ver envio-video.js.
+        → {promessa, nome, pausar(), continuar(), cancelar()}. */
+    enviarVideo(opcoes) { return enviador()(opcoes); },
   },
 
   planilha: {

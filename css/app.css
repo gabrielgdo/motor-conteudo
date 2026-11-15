@@ -761,3 +761,8 @@ button.aviso.fixo:hover{filter:brightness(1.06)}
 .andamento-lista+.andamento-lista{margin-top:.75rem}
 .andamento-lista li{display:flex;gap:.625rem;min-width:0;overflow-wrap:anywhere}
 .andamento-hora{flex:none;min-width:3.25rem;color:var(--tinta-3);font-variant-numeric:tabular-nums}
+
+/* ===== Envio do vídeo pelo app (ponto 7) ===== */
+.envio-nome{overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.envio-alternativa{margin-top:.75rem;padding-top:1rem;border-top:1px solid var(--fio);font-size:1rem;font-weight:600;color:var(--tinta-2)}
+.subida .botoes .botao[disabled],.solte .botao[disabled],[data-acao="envio-enviar"][disabled]{opacity:.55;cursor:not-allowed}

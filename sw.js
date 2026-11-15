@@ -12,7 +12,7 @@
 // que ficava numa subpasta ("motor-novo-").
 
 const PREFIXO = 'motor-app-';
-const VERSAO = `${PREFIXO}v15`;
+const VERSAO = `${PREFIXO}v16`;
 const CACHES_ANTIGOS = ['motor-shell-', 'motor-novo-', PREFIXO];
 
 const ARQUIVOS = [
@@ -42,6 +42,8 @@ const ARQUIVOS = [
   './js/envios.js',
   './js/decisoes-roteiro.js',
   './js/andamento.js',
+  './js/upload.js',
+  './js/envio-video.js',
   './js/revisao.js',
   './js/versao.js',
   './js/saida.js',
@@ -65,8 +67,7 @@ const ARQUIVOS = [
   './icons/apple-touch-icon.png',
   './icons/favicon.png',
 ];
-// Fora do cache: vendor/xlsx.full.min.js (SheetJS, ~900 KB, só carrega ao ler a planilha .xlsx) e
-// js/upload.js (envio retomável, guardado para a etapa 2, ainda não usado pelo app).
+// Fora do cache: vendor/xlsx.full.min.js (SheetJS, ~900 KB, só carrega ao ler a planilha .xlsx).
 
 const ESCOPO = self.registration.scope; // ex.: https://motor.rocambrea.com/
 const URLS = new Set(ARQUIVOS.map((p) => new URL(p, ESCOPO).href));
