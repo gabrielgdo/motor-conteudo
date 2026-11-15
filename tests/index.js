@@ -22,3 +22,4 @@ import('./envios.test.mjs');
 import('./tele.test.mjs');
 import('./decisoes-roteiro.test.mjs');
 import('./envio.test.mjs');
+import('./telacheia.test.mjs');

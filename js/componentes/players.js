@@ -10,6 +10,7 @@
 //   tudo é revogado (liberar).
 // - O <video> sobrevive aos redesenhos da tela: guardar() o tira da tela antiga e montar() o põe na
 //   nova (o vídeo continua tocando, com a duração e o tempo de antes).
+// - "Tela cheia" (botão em cada player) abre componentes/telacheia.js com a MESMA URL de Blob.
 // - Tocar um pausa o outro. Ao trocar de rota, o roteador chama parar().
 
 import { $, esc, ic, relogio, NOME_REDE } from '../util.js';
@@ -43,6 +44,7 @@ export const Players = {
         <span class="tela-rede">${nome}</span>
         <div class="tela-carga" data-player-carga ${pronto ? 'hidden' : ''}>${pronto ? '' : this.htmlCarga(k)}</div>
         <button type="button" class="tela-play" data-acao="player-alternar" aria-label="Tocar a versão do ${nome}" ${pronto ? '' : 'hidden'}>${ic('play', 26)}</button>
+        <button type="button" class="tela-cheia-botao" data-acao="player-tela-cheia" aria-label="Tela cheia: versão do ${nome}" title="Tela cheia" ${pronto ? '' : 'hidden'}>${ic('telaCheia', 20)}</button>
       </div>
       <div class="player-linha"><input type="range" min="0" max="${dur}" step="0.1" value="${Math.min(t, dur || t)}" data-player-pos aria-label="Posição no vídeo do ${nome}" ${dur ? '' : 'disabled'}><span><span data-player-tempo>${relogio(t)}</span> / <span data-player-dur>${dur ? relogio(dur) : '–:––'}</span></span></div>
       ${marcar ? `<button type="button" class="botao calmo" data-acao="marcar-momento" data-valor="${rede}">Pedir ajuste neste ponto</button>` : ''}
@@ -136,7 +138,7 @@ export const Players = {
     this.urls.delete(k);
     this.urls.set(k, url);
     if (this.urls.size <= MAX_VIDEOS) return;
-    const naTela = new Set([...document.querySelectorAll('[data-player-video]')].map((v) => v.src).filter(Boolean));
+    const naTela = new Set([...document.querySelectorAll('[data-player-video], [data-telacheia-video]')].map((v) => v.src).filter(Boolean));
     for (const [chave, u] of this.urls) {
       if (this.urls.size <= MAX_VIDEOS) break;
       if (chave === k || naTela.has(u)) continue;
@@ -150,6 +152,7 @@ export const Players = {
     const k = fig.dataset.arquivo;
     const camada = $('[data-player-carga]', fig);
     const play = $('.tela-play', fig);
+    const cheia = $('.tela-cheia-botao', fig);
     const pronto = this.urls.has(k);
     if (camada) {
       camada.hidden = pronto;
@@ -157,6 +160,7 @@ export const Players = {
       else camada.innerHTML = '';
     }
     if (play) play.hidden = !pronto;
+    if (cheia) cheia.hidden = !pronto;
   },
 
   async alternar(fig) {
@@ -210,6 +214,7 @@ export const Players = {
   /** Libera os vídeos baixados (ao sair da conta). */
   liberar() {
     this.geracao++;
+    window.dispatchEvent(new CustomEvent('motor:telacheia-fechar')); // fecha a tela cheia (telacheia.js)
     this.parar();
     document.querySelectorAll('[data-player-video]').forEach((v) => { v.removeAttribute('src'); v.load(); });
     this.urls.forEach((u) => URL.revokeObjectURL(u));

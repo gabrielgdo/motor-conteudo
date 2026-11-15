@@ -15,6 +15,7 @@ import { avisoFixo, removerAviso, subirAvisos } from './componentes/janelas.js';
 import { Paleta } from './componentes/paleta.js';
 import { Tele } from './componentes/tele.js';
 import { Players } from './componentes/players.js';
+import { TelaCheia } from './componentes/telacheia.js';
 import { ligarGrafico } from './componentes/grafico.js';
 import { Veu, Tema, ligarLuz } from './visual.js';
 
@@ -53,7 +54,7 @@ window.addEventListener('unhandledrejection', (e) => {
    procura atualização ao abrir, ao voltar a ficar visível e no pageshow (bfcache), e pergunta a
    versão do SW que a controla. Versão diferente: recarrega sozinha uma vez se não houver trabalho em
    andamento; senão mostra "Nova versão" (tocar recarrega). Regras e anti-laço em js/versao.js. */
-const VERSAO_APP = 'motor-app-v17'; // igual a VERSAO em sw.js (tests/sw.test.mjs confere)
+const VERSAO_APP = 'motor-app-v18'; // igual a VERSAO em sw.js (tests/sw.test.mjs confere)
 
 function avisarNovaVersao() {
   avisoFixo('versao', 'Nova versão do app. Toque para atualizar.', { acao: 'nova-versao', icone: 'atualizar' });
@@ -68,7 +69,7 @@ function trabalhoEmAndamento() {
     if (estado.envio || estado.arquivo) return true;
     if (Object.values(estado.pendentes || {}).some((l) => l?.length)) return true;
     if (['aj-pedido', 'aj-tempo', 'aj-como'].some((k) => String(rascunho[k] || '').trim())) return true;
-    if (document.getElementById('tele')?.open || document.getElementById('dialogo')?.hasAttribute('open')) return true;
+    if (document.getElementById('tele')?.open || document.getElementById('telacheia')?.open || document.getElementById('dialogo')?.hasAttribute('open')) return true;
     if ([...document.querySelectorAll('video')].some((v) => !v.paused && !v.ended)) return true;
     const ativo = document.activeElement;
     if (ativo && ativo.matches?.('input:not([type="radio"]):not([type="checkbox"]):not([type="range"]), textarea') && ativo.value) return true;
@@ -151,6 +152,7 @@ Paleta.ligar();
 Tele.ligar({ segurar: Integra.segurarRenovacao });
 subirAvisos(); // #avisos como popover (acima das janelas), quando o navegador tiver
 Players.ligar();
+TelaCheia.ligar();
 ligarGrafico();
 ligarLuz();
 

@@ -802,3 +802,23 @@ dialog.janela.larga .campos-janela{margin-top:0}
 .envio-nome{overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
 .envio-alternativa{margin-top:.75rem;padding-top:1rem;border-top:1px solid var(--fio);font-size:1rem;font-weight:600;color:var(--tinta-2)}
 .subida .botoes .botao[disabled],.solte .botao[disabled],[data-acao="envio-enviar"][disabled]{opacity:.55;cursor:not-allowed}
+/* ===== Tela cheia das prévias (js/componentes/telacheia.js) ===== */
+.tela-cheia-botao{position:absolute;top:1.5rem;right:.5rem;z-index:3;width:2.75rem;height:2.75rem;min-width:44px;min-height:44px;padding:0;border-radius:50%;border:1px solid rgba(239,214,206,.22);background:rgba(11,6,7,.72);color:#fff;display:grid;place-items:center;cursor:pointer;transition:background .2s,transform .2s}
+.tela-cheia-botao[hidden]{display:none}
+.tela-cheia-botao:hover{background:rgba(11,6,7,.9);transform:scale(1.06)}
+.tela-cheia-botao:focus-visible,.tc-fechar:focus-visible{outline:2px solid var(--acento);outline-offset:2px}
+dialog.telacheia{width:100vw;max-width:100vw;height:100vh;height:100dvh;max-height:100vh;max-height:100dvh;margin:0;padding:0;border:0;background:transparent;color:#F6ECE6;overflow:hidden}
+dialog.telacheia[open]{display:flex;flex-direction:column}
+/* Fundo da plataforma desfocado atrás; sem backdrop-filter, só escurecido (mais forte) */
+dialog.telacheia::backdrop{background:rgba(8,4,5,.62);backdrop-filter:blur(1.5rem) saturate(1.2);-webkit-backdrop-filter:blur(1.5rem) saturate(1.2)}
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){dialog.telacheia::backdrop{background:rgba(8,4,5,.9)}}
+dialog.telacheia.sem-modal[open]{position:fixed;inset:0;z-index:300;margin:0;height:100vh;height:100dvh;background:rgba(8,4,5,.9);box-shadow:none}
+.tc-topo{flex-shrink:0;display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:calc(env(safe-area-inset-top) + .75rem) calc(env(safe-area-inset-right) + .75rem) .5rem calc(env(safe-area-inset-left) + 1rem)}
+.tc-nome{margin:0;min-width:0;padding:.25rem .75rem;border-radius:999px;background:rgba(11,6,7,.6);font-size:.8125rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tc-fechar{flex-shrink:0;width:3rem;height:3rem;min-width:44px;min-height:44px;padding:0;border-radius:50%;border:0;background:rgba(255,252,250,.94);color:var(--vinho);display:grid;place-items:center;cursor:pointer;box-shadow:var(--sombra);transition:transform .2s}
+.tc-fechar:hover{transform:scale(1.06)}
+.tc-palco{flex:1;min-height:0;display:grid;place-items:center;padding:0 calc(env(safe-area-inset-right) + 1rem) calc(env(safe-area-inset-bottom) + 1rem) calc(env(safe-area-inset-left) + 1rem)}
+/* 9:16, o maior que couber (até ~92% da altura), largura proporcional; contain = nunca corta */
+.tc-video{display:block;aspect-ratio:9/16;width:auto;max-width:100%;object-fit:contain;border-radius:1.25rem;background:#0B0607;box-shadow:0 0 0 1px rgba(239,214,206,.18),0 1.5rem 4rem rgba(0,0,0,.6);
+  height:min(92vh,calc(100vh - 6.5rem),calc((100vw - 2rem) * 16 / 9));
+  height:min(92dvh,calc(100dvh - 6.5rem - env(safe-area-inset-top) - env(safe-area-inset-bottom)),calc((100vw - 2rem - env(safe-area-inset-left) - env(safe-area-inset-right)) * 16 / 9))}

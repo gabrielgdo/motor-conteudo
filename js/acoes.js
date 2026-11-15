@@ -34,6 +34,7 @@ import { abrirJanela, fecharJanela, avisar, removerAviso, copiarTexto, janelaSob
 import { Paleta } from './componentes/paleta.js';
 import { Tele } from './componentes/tele.js';
 import { Players } from './componentes/players.js';
+import { TelaCheia } from './componentes/telacheia.js';
 import { Downloads } from './componentes/downloads.js';
 import { Tema } from './visual.js';
 import { executarSaida, urlDaEntrada, tirarSaida, sessaoSegura } from './saida.js';
@@ -329,6 +330,8 @@ export const ACOES = {
       if (e?.name !== 'AbortError') avisar(e?.message || 'Não consegui tocar este vídeo agora.');
     }
   },
+  'player-tela-cheia'(el) { return TelaCheia.abrir(el.closest('[data-player]'), el); },
+  'telacheia-fechar'() { TelaCheia.fechar(); },
   'player-tentar'(el) { Players.tentar(el.closest('[data-player]')); },
   'video-versao'(el) { Players.parar(); estado.versaoVista[el.dataset.id] = +el.dataset.valor; desenhar(); },
   'marcar-momento'(el) {
