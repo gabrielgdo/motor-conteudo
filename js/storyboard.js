@@ -2,17 +2,20 @@
 // o motor entrega quadros parados da mesma composição que vira vídeo ("<id> storyboard vN/" com ig-01.jpg… e
 // "<id> storyboard vN.md" em 4-Revisao); ela aprova ou pede mudança por quadro, e só com o storyboard aprovado o motor
 // renderiza as prévias v1. A decisão vira "4-Revisao/<id> decisao storyboard vN.md" (pela central, tipo
-// decisao_storyboard, com o Drive como reserva) e vale a primeira de cada versão.
+// decisao_storyboard, com o Drive como reserva) e vale a primeira decisão VÁLIDA de cada versão (como no motor: um
+// arquivo inválido antes não bloqueia uma decisão válida depois; decisaoValida).
 //
 //   lerStoryboard(texto)              o .md do motor → {id, versao, redes, notas, mudancas, quadros:{ig:[…], tt:[…]}}
 //   estadoDoStoryboard(r, {local})    em que pé está a decisão (decidir | aprovado | ajustar | sem-texto)
 //   planejarDecisaoStoryboard(…)      nome e conteúdo do arquivo da decisão, conferindo se ela já existe
 //   lerDecisaoStoryboard(texto)       a decisão gravada (para mostrar o que ela pediu)
+//   decisaoValida(lida, {id, versao}) a decisão lida vale sozinha? (os critérios do motor)
 //
 // Os arquivos são DADOS: só a lista fechada de campos é lida (formatos.md do motor) e tudo vai para a tela por esc().
 
 import { idValido, yamlTexto } from './parse.js';
 import { isoBrasilia } from './pedidos-motor.js';
+import { quemDecide } from './ganchos.js';
 
 export const DECISOES_STORYBOARD = Object.freeze(['aprovar', 'ajustar']);
 export const REDES_STORYBOARD = Object.freeze(['ig', 'tt', 'ambas']);
@@ -150,9 +153,10 @@ export function pedidosDoQuadro(quadros = {}, rede, n, pedido, ambas = false) {
   return out;
 }
 
-/** A decisão gravada (só os campos combinados) → {id, versao, decisao, ajustes:[{rede, quadro, tempo, pedido}], observacoes}. */
+/** A decisão gravada (só os campos combinados) → {id, versao, decisao, ajustes:[{rede, quadro, tempo, pedido}],
+    observacoes, quem}. */
 export function lerDecisaoStoryboard(texto) {
-  const out = { id: '', versao: 0, decisao: '', ajustes: [], observacoes: '' };
+  const out = { id: '', versao: 0, decisao: '', ajustes: [], observacoes: '', quem: '' };
   const m = String(texto ?? '').match(/^﻿?---\r?\n([\s\S]*?)\r?\n---/);
   if (!m) return out;
   let dentro = false;
@@ -176,10 +180,25 @@ export function lerDecisaoStoryboard(texto) {
     else if (k === 'versao' && !out.versao) out.versao = Number(v.replace(/^v/i, '')) || 0;
     else if (k === 'decisao' && !out.decisao) out.decisao = DECISOES_STORYBOARD.includes(v.toLowerCase()) ? v.toLowerCase() : '';
     else if (k === 'observacoes' && !out.observacoes) out.observacoes = limpo(v, MAX_PEDIDO);
+    else if (k === 'quem' && !out.quem) out.quem = limpo(v, 200).toLowerCase();
   }
   out.ajustes = out.ajustes.filter((a) => REDES_STORYBOARD.includes(String(a.rede || '').toLowerCase()) && a.pedido)
     .map((a) => ({ rede: a.rede.toLowerCase(), quadro: Number(a.quadro) || null, tempo: a.tempo || '', pedido: a.pedido }));
   return out;
+}
+
+/**
+ * A decisão lida (lerDecisaoStoryboard) vale sozinha? Os critérios do motor (storyboard.invalida): id e versão do
+ * conteúdo iguais aos do nome (ou vazios), decisão aprovar|ajustar, ajustar com algum pedido, quem que decide. Só uma
+ * decisão válida conta para "a primeira de cada versão".
+ */
+export function decisaoValida(lida, { id, versao } = {}) {
+  if (!lida || typeof lida !== 'object') return false;
+  if (lida.id && lida.id !== id) return false;
+  if (lida.versao && Number(lida.versao) !== Number(versao)) return false;
+  if (!DECISOES_STORYBOARD.includes(lida.decisao)) return false;
+  if (lida.decisao === 'ajustar' && !(lida.ajustes || []).length && !lida.observacoes) return false;
+  return quemDecide(lida.quem, id);
 }
 
 /** O registro otimista {versao, decisao, desde} ainda vale para esta versão do storyboard? */

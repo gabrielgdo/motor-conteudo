@@ -133,7 +133,7 @@ test('etapa storyboard: storyboard sem prévia; decisão muda o texto; prévia v
 
 test('storyboardDe: quadros com o arquivo da imagem achado na pasta; decisão lida', () => {
   const p = montarProjetos({ revisao: [pasta('T05-01 storyboard v2'), arq('T05-01 storyboard v2.md'), arq('T05-01 decisao storyboard v2.md')] }).get('T05-01');
-  const s = storyboardDe(p, { md: lerStoryboard(MD), arquivos: [arq('ig-01.jpg'), arq('tt-01.jpg')], decisao: { decisao: 'aprovar', ajustes: [], observacoes: '' } });
+  const s = storyboardDe(p, { md: lerStoryboard(MD), arquivos: [arq('ig-01.jpg'), arq('tt-01.jpg')], decisao: { decisao: 'aprovar', ajustes: [], observacoes: '' }, decisaoArq: p.decisoesStoryboard[0].file });
   assert.equal(s.versao, 2);
   assert.equal(s.quadros.ig[0].file.name, 'ig-01.jpg');
   assert.equal(s.lido, true);
@@ -258,11 +258,14 @@ test('gravar a decisão: central primeiro, Drive como reserva; só a conta que d
   globalThis.localStorage = { getItem: (k) => guardado.get(k) ?? null, setItem: (k, v) => guardado.set(k, String(v)), removeItem: (k) => guardado.delete(k) };
   const orig = {
     listar: Integra.drive.listarRevisao, enviar: Integra.central.enviarSePuder, criar: Integra.drive.criarArquivo,
+    jaPedido: Integra.central.jaPedido,
   };
   const chamadas = [];
   let central = null;
   let existentes = [];
+  let jaNaCentral = null;
   Integra.drive.listarRevisao = async () => existentes;
+  Integra.central.jaPedido = async (p) => { chamadas.push(['ja?', p.tipo, p.nome, p.desde]); return jaNaCentral; };
   Integra.central.enviarSePuder = async (p) => { chamadas.push(['central', p.tipo, p.nome]); return central; };
   Integra.drive.criarArquivo = async (pasta, nome) => { chamadas.push(['drive', pasta, nome]); return { id: 'novo', name: nome }; };
   try {
@@ -270,9 +273,18 @@ test('gravar a decisão: central primeiro, Drive como reserva; só a conta que d
     await assert.rejects(() => Integra.drive.gravarDecisaoStoryboard({ id: 'S47-01', versao: 2, decisao: 'aprovar' }), /Só a conta da Robertta/);
     guardado.set('motor.sessao', JSON.stringify({ access_token: 'x', email: ROBERTTA, expires_at: Date.now() + 3600e3 }));
     central = { via: 'central', id: 'p1' };
-    let r = await Integra.drive.gravarDecisaoStoryboard({ id: 'S47-01', versao: 2, decisao: 'aprovar' });
+    let r = await Integra.drive.gravarDecisaoStoryboard({ id: 'S47-01', versao: 2, decisao: 'aprovar', desde: '2026-11-18T12:00:00.000Z' });
     assert.deepEqual(r, { ok: true, nome: 'S47-01 decisao storyboard v2.md', viaCentral: true });
-    assert.deepEqual(chamadas, [['central', 'decisao_storyboard', 'S47-01 decisao storyboard v2.md']]);
+    assert.deepEqual(chamadas, [['ja?', 'decisao_storyboard', 'S47-01 decisao storyboard v2.md', '2026-11-18T12:00:00.000Z'],
+      ['central', 'decisao_storyboard', 'S47-01 decisao storyboard v2.md']], 'confere a central (desde o storyboard v2) antes de enviar');
+    // o app recarregou antes de a decisão chegar ao Drive: a central já tem o pedido, e o segundo envio sumiria
+    jaNaCentral = true;
+    chamadas.length = 0;
+    r = await Integra.drive.gravarDecisaoStoryboard({ id: 'S47-01', versao: 2, decisao: 'ajustar', ajustes: [{ rede: 'ig', quadro: 1, pedido: 'x' }] });
+    assert.equal(r.motivo, 'ja-decidido');
+    assert.match(r.mensagem, /já foi enviada ao motor/);
+    assert.deepEqual(chamadas.map((c) => c[0]), ['ja?'], 'nada é enviado nem gravado');
+    jaNaCentral = null;
     central = null;
     r = await Integra.drive.gravarDecisaoStoryboard({ id: 'S47-01', versao: 2, decisao: 'ajustar', ajustes: [{ rede: 'ig', quadro: 1, pedido: 'x' }] });
     assert.equal(r.ok, true);
@@ -284,6 +296,7 @@ test('gravar a decisão: central primeiro, Drive como reserva; só a conta que d
     assert.equal(chamadas.length, n, 'nada é gravado quando a decisão já existe');
   } finally {
     Integra.drive.listarRevisao = orig.listar;
+    Integra.central.jaPedido = orig.jaPedido;
     Integra.central.enviarSePuder = orig.enviar;
     Integra.drive.criarArquivo = orig.criar;
     globalThis.localStorage = antes;

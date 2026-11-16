@@ -15,9 +15,9 @@ import { Integra } from './integra.js';
 import { montarProjetos, historico, checagemConcluida, escolhaDosUltimosGanchos, decisaoDoUltimoStoryboard } from './model.js';
 import { etapaDe } from './etapas.js';
 import { lerRoteiro } from './roteiro.js';
-import { lerGanchos } from './ganchos.js';
+import { lerGanchos, escolhaValida } from './ganchos.js';
 import { lerEscolhaGancho } from './pedidos-motor.js';
-import { lerStoryboard, lerDecisaoStoryboard } from './storyboard.js';
+import { lerStoryboard, lerDecisaoStoryboard, decisaoValida } from './storyboard.js';
 import { prefixoSemana, semanaIso, classificarArquivoPacote } from './parse.js';
 import { quando, periodoDaSemana, tamanho } from './util.js';
 
@@ -147,14 +147,41 @@ function arquivosDoPacote(files) {
 }
 
 /**
+ * O primeiro arquivo VÁLIDO de uma versão (vale a primeira decisão válida de cada versão, como no motor): `ler(f)` dá
+ * o conteúdo lido (ou lança), `valida(lido)` diz se vale sozinho. → {lido, file} | {incerto: true, file} (um arquivo
+ * antes do válido não pôde ser lido: não dá para saber qual vale) | null (nenhum válido).
+ */
+export async function primeiraValida(arquivos, ler, valida) {
+  for (const f of arquivos || []) {
+    let lido;
+    try { lido = await ler(f); } catch { return { incerto: true, file: f }; }
+    if (lido == null) return { incerto: true, file: f };
+    if (valida(lido)) return { lido, file: f };
+  }
+  return null;
+}
+
+/** Há uma decisão em vigor? Sem o conteúdo (não baixado, erro, ou um arquivo antes do válido que não leu): se existe
+    arquivo, conta como decidida (bloqueia), como antes; lido, só a primeira VÁLIDA conta. → {tem, file}. */
+function decisaoEmVigor(existe, lido, chaveArq, chaveIncerta) {
+  if (!existe) return { tem: false, file: null };
+  if (!lido || lido.erro) return { tem: true, file: existe.file };
+  if (lido[chaveArq]) return { tem: true, file: lido[chaveArq] };
+  if (lido[chaveIncerta]) return { tem: true, file: existe.file };
+  return { tem: false, file: null };
+}
+
+/**
  * A proposta de ganchos na etapa 'ganchos' (js/ganchos.js lê e decide o estado): a versão mais nova, as 3 opções
- * lidas do arquivo e a escolha gravada para essa versão (só o nome na listagem; o conteúdo, se foi baixado).
- * `lidoG`: {ganchos: lerGanchos(...)|null, escolha: lerEscolhaGancho(...)|null, erro} ou null (não baixado).
+ * lidas do arquivo e a escolha em vigor para essa versão: a primeira VÁLIDA (como no motor; js/ganchos.js
+ * escolhaValida). `lidoG`: {ganchos: lerGanchos(...)|null, escolha: lerEscolhaGancho(...)|null (a válida),
+ * escolhaArq: o arquivo dela|null, escolhaIncerta, erro} ou null (não baixado).
  */
 export function propostaDeGanchos(p, lidoG = null) {
   if (!p?.ultimosGanchos) return null;
   const esc = escolhaDosUltimosGanchos(p);
   const g = lidoG?.ganchos || null;
+  const vigor = decisaoEmVigor(esc, lidoG, 'escolhaArq', 'escolhaIncerta');
   return {
     versao: p.ultimosGanchos.v,
     arquivo: p.ultimosGanchos.file,
@@ -162,21 +189,24 @@ export function propostaDeGanchos(p, lidoG = null) {
     opcoes: g ? g.opcoes.map((o) => ({ ...o })) : [],
     lido: !!g && g.opcoes.length > 0,
     erro: !!lidoG?.erro,
-    temEscolha: !!esc,
-    escolhaEm: esc?.file?.createdTime || esc?.file?.modifiedTime || null,
-    escolha: esc && lidoG?.escolha ? { escolha: lidoG.escolha.escolha, observacoes: lidoG.escolha.observacoes } : null,
+    temEscolha: vigor.tem,
+    escolhaEm: vigor.file?.createdTime || vigor.file?.modifiedTime || null,
+    escolha: vigor.tem && lidoG?.escolha ? { escolha: lidoG.escolha.escolha, observacoes: lidoG.escolha.observacoes } : null,
   };
 }
 
 /**
  * O storyboard na etapa 'storyboard' (js/storyboard.js decide o estado): a versão mais nova, os quadros lidos do .md
- * (cada um com o arquivo da imagem achado na pasta) e a decisão gravada para essa versão (só o nome na listagem; o
- * conteúdo, se foi baixado). `lidoS`: {md: lerStoryboard(...)|null, arquivos: [arquivos da pasta], decisao:
- * lerDecisaoStoryboard(...)|null, erro} ou null (não baixado).
+ * (cada um com o arquivo da imagem achado na pasta) e a decisão em vigor para essa versão: a primeira VÁLIDA (como no
+ * motor; js/storyboard.js decisaoValida). `lidoS`: {md: lerStoryboard(...)|null, arquivos: [arquivos da pasta],
+ * decisao: lerDecisaoStoryboard(...)|null (a válida), decisaoArq: o arquivo dela|null, decisaoIncerta, erro} ou null
+ * (não baixado).
  */
 export function storyboardDe(p, lidoS = null) {
   if (!p?.ultimoStoryboard) return null;
-  const dec = decisaoDoUltimoStoryboard(p);
+  const existe = decisaoDoUltimoStoryboard(p);
+  const vigor = decisaoEmVigor(existe, lidoS, 'decisaoArq', 'decisaoIncerta');
+  const dec = vigor.tem ? { file: vigor.file } : null;
   const md = lidoS?.md || null;
   const porNome = new Map((lidoS?.arquivos || []).map((f) => [String(f.name || '').trim().toLowerCase(), f]));
   const quadros = { ig: [], tt: [] };
@@ -378,10 +408,13 @@ async function buscar(forcar, ger = geracao) {
     try {
       const ganchos = await ler(p.ultimosGanchos.file, lerGanchos);
       const esc = escolhaDosUltimosGanchos(p);
-      const escolha = esc ? await ler(esc.file, lerEscolhaGancho).catch(() => null) : null;
-      ganchosLidos.set(p.id, { ganchos, escolha, erro: false });
+      // vale a primeira escolha VÁLIDA da versão (como no motor); os arquivos vêm do mais velho para o mais novo
+      const vale = esc ? await primeiraValida(esc.arquivos || [esc.file], (f) => ler(f, lerEscolhaGancho),
+        (l) => escolhaValida(l, { id: p.id, versao: esc.v, opcoes: ganchos?.opcoes })) : null;
+      ganchosLidos.set(p.id, { ganchos, escolha: vale?.lido || null, escolhaArq: vale?.lido ? vale.file : null,
+        escolhaIncerta: !!vale?.incerto, erro: false });
     } catch {
-      ganchosLidos.set(p.id, { ganchos: null, escolha: null, erro: true });
+      ganchosLidos.set(p.id, { ganchos: null, escolha: null, escolhaArq: null, escolhaIncerta: false, erro: true });
     }
   });
 
@@ -404,20 +437,22 @@ async function buscar(forcar, ger = geracao) {
         const completo = ['ig', 'tt'].every((r) => (md.quadros[r] || []).every((q) => nomes.has(q.arquivo.toLowerCase())));
         if (completo) cacheLido.set(chave, lidoSb);
       }
+      // vale a primeira decisão VÁLIDA da versão (como no motor); os arquivos vêm do mais velho para o mais novo
       const dec = decisaoDoUltimoStoryboard(p);
-      let decisao = null;
-      if (dec) {
-        const chaveD = `d:${dec.file.id}:${dec.file.modifiedTime || ''}`;
+      const vale = dec ? await primeiraValida(dec.arquivos || [dec.file], async (f) => {
+        const chaveD = `d:${f.id}:${f.modifiedTime || ''}`;
         if (!cacheLido.has(chaveD)) {
-          const t = await Integra.baixarTexto(dec.file).catch(() => null);
-          if (ger !== geracao) return;
-          if (t !== null) cacheLido.set(chaveD, lerDecisaoStoryboard(t));
+          const t = await Integra.baixarTexto(f);
+          if (ger !== geracao) return null;
+          cacheLido.set(chaveD, lerDecisaoStoryboard(t));
         }
-        decisao = cacheLido.get(chaveD) || null;
-      }
-      storyboardsLidos.set(p.id, { ...lidoSb, decisao, erro: false });
+        return cacheLido.get(chaveD);
+      }, (l) => decisaoValida(l, { id: p.id, versao: dec.v })) : null;
+      if (ger !== geracao) return;
+      storyboardsLidos.set(p.id, { ...lidoSb, decisao: vale?.lido || null, decisaoArq: vale?.lido ? vale.file : null,
+        decisaoIncerta: !!vale?.incerto, erro: false });
     } catch {
-      storyboardsLidos.set(p.id, { md: null, arquivos: [], decisao: null, erro: true });
+      storyboardsLidos.set(p.id, { md: null, arquivos: [], decisao: null, decisaoArq: null, decisaoIncerta: false, erro: true });
     }
   });
 

@@ -32,6 +32,7 @@ import {
 } from './decisoes-roteiro.js';
 import { versaoVistaDe, janelaGancho } from './telas/roteiros.js';
 import { estadoDosGanchos, textoDaEscolhaAceita } from './ganchos.js';
+import { lerEnviados, guardarEnviado } from './enviados.js';
 import { estadoDoStoryboard, textoDaDecisaoStoryboardAceita, pedidosDoQuadro } from './storyboard.js';
 import { pedidosDoStoryboard, janelaStoryboard } from './telas/storyboard.js';
 import { Quadros } from './componentes/quadros.js';
@@ -78,6 +79,10 @@ export function pintarBotaoSair() {
 export function entrarNoApp() {
   tirarSaida(sessaoSegura()); // entrou de novo: a marca de "acabou de sair" não vale mais
   estado.logada = true;
+  // escolha de gancho e decisão de storyboard enviadas antes de uma recarga e ainda não vistas no Drive (desta conta)
+  const enviados = lerEnviados(armazenamentoLocal(), Integra.email());
+  Object.assign(estado.ganchosEnviados, enviados.ganchos);
+  Object.assign(estado.storyboardsEnviados, enviados.storyboards);
   pintarBotaoSair();
   document.documentElement.classList.remove('retomando');
   mensagemLogin('');
@@ -311,8 +316,23 @@ function abrirDecisaoStoryboard(el, decisao) {
     avisar('Toque em “Pedir mudança neste quadro” no quadro que quer mudar, ou escreva um pedido geral.');
     return;
   }
-  estado.janela = { tipo: 'storyboard', id: r.id, versao: r.storyboard.versao, decisao, ajustes, observacoes, teste: r.teste, enviando: false, erro: '' };
+  estado.janela = {
+    tipo: 'storyboard', id: r.id, versao: r.storyboard.versao, decisao, ajustes, observacoes, teste: r.teste,
+    desde: r.storyboard.arquivo?.createdTime || null, enviando: false, erro: '',
+  };
   pintarJanela();
+}
+
+/** localStorage, se este navegador deixar (modo privado pode lançar). */
+function armazenamentoLocal() {
+  try { return globalThis.localStorage || null; } catch { return null; }
+}
+
+/** Registro otimista de uma decisão enviada: na memória e no aparelho (js/enviados.js), para uma recarga não reabrir
+    os botões antes de a decisão aparecer no Drive. */
+function lembrarEnviado(tipo, id, reg) {
+  (tipo === 'ganchos' ? estado.ganchosEnviados : estado.storyboardsEnviados)[id] = reg;
+  guardarEnviado(armazenamentoLocal(), Integra.email(), tipo, id, reg);
 }
 
 /**
@@ -953,7 +973,8 @@ export const ACOES = {
     if (escolha !== 'outros' && !opcao) return;
     estado.janela = {
       tipo: 'gancho', id: r.id, versao: g.versao, escolha, opcao,
-      observacoes: escolha === 'outros' ? (rascunho[`go-${r.id}`] || '').trim() : '', teste: r.teste, enviando: false, erro: '',
+      observacoes: escolha === 'outros' ? (rascunho[`go-${r.id}`] || '').trim() : '', teste: r.teste,
+      desde: g.arquivo?.createdTime || null, enviando: false, erro: '',
     };
     pintarJanela();
   },
@@ -965,11 +986,13 @@ export const ACOES = {
     j.erro = '';
     pintarJanela();
     try {
-      const res = await Integra.drive.gravarEscolhaGancho({ id: j.id, versao: j.versao, escolha: j.escolha, observacoes: j.observacoes });
+      const res = await Integra.drive.gravarEscolhaGancho({
+        id: j.id, versao: j.versao, escolha: j.escolha, observacoes: j.observacoes, desde: j.desde,
+      });
       if (estado.janela !== j) return;
       if (!res.ok) { j.enviando = false; j.erro = res.mensagem; pintarJanela(); return; }
-      // Registro otimista até a releitura do Drive mostrar a escolha (js/ganchos.js).
-      estado.ganchosEnviados[j.id] = { versao: j.versao, escolha: j.escolha, desde: Date.now() };
+      // Registro otimista até a releitura do Drive mostrar a escolha (js/ganchos.js), também no aparelho.
+      lembrarEnviado('ganchos', j.id, { versao: j.versao, escolha: j.escolha, desde: Date.now() });
       limparCampos(`go-${j.id}`);
       fecharJanela();
       avisar(textoDaEscolhaAceita(j.id, j, !!res.viaCentral));
@@ -1035,12 +1058,12 @@ export const ACOES = {
     pintarJanela();
     try {
       const res = await Integra.drive.gravarDecisaoStoryboard({
-        id: j.id, versao: j.versao, decisao: j.decisao, ajustes: j.ajustes, observacoes: j.observacoes,
+        id: j.id, versao: j.versao, decisao: j.decisao, ajustes: j.ajustes, observacoes: j.observacoes, desde: j.desde,
       });
       if (estado.janela !== j) return;
       if (!res.ok) { j.enviando = false; j.erro = res.mensagem; pintarJanela(); return; }
-      // Registro otimista até a releitura do Drive mostrar a decisão (js/storyboard.js).
-      estado.storyboardsEnviados[j.id] = { versao: j.versao, decisao: j.decisao, desde: Date.now() };
+      // Registro otimista até a releitura do Drive mostrar a decisão (js/storyboard.js), também no aparelho.
+      lembrarEnviado('storyboards', j.id, { versao: j.versao, decisao: j.decisao, desde: Date.now() });
       const r = rot(j.id);
       if (r) pedidosDoStoryboard(r).length = 0;
       delete estado.sbQuadro[j.id];

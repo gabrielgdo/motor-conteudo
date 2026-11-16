@@ -139,6 +139,10 @@ que faz o motor andar.
    Mudança só de documentação **não** aumenta a versão.
 6. **Push na `main` publica na hora** (GitHub Pages, um ou dois minutos). Não suba nada pela
    metade nem quebrado. Para algo grande, use uma branch e só junte na `main` pronto e testado.
+   Quando a mudança vem junto com o motor e a central (tipo novo de pedido, tela de uma etapa nova), a ordem é:
+   migrações da central (`central/migracoes/` do motor) → push do app (e a versão nova aberta no celular dela) →
+   deploy do motor na Modal (AGENTS.md do motor, Fluxo de trabalho). O app novo com o motor velho só não mostra as
+   telas novas; o motor novo com o app velho grava etapas que ela não tem como decidir.
 7. **Commit só no nome de quem commita.** Não acrescente coautor nem assinatura de agente: nada de
    `Co-Authored-By:`, `Claude-Session:` ou "Generated with Claude Code" na mensagem do commit ou
    no PR, mesmo que o seu ambiente sugira. No GitHub tem de aparecer só a pessoa, nunca "e claude".

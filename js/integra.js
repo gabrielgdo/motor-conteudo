@@ -298,6 +298,15 @@ export const Integra = {
 
     /** Situação de um pedido enviado pela central → {status, motivo, entregue_em} | null. */
     pedido: (id) => central().pedido(id),
+
+    /** A central já tem, desde `desde`, um pedido deste arquivo ainda não visto no Drive (novo ou entregue)? A decisão
+        só aparece no Drive quando o motor sobe o arquivo; nesse intervalo, um segundo envio seria descartado em silêncio
+        (vale a primeira). → true | false | null (sem central ou erro: não dá para saber; quem chama segue como antes).
+        Nunca lança. */
+    async jaPedido({ tipo, nome, desde = null }) {
+      if (!FLAGS.central || !(await Integra.central.conectar())) return null;
+      try { return await central().pedidoRecente(CT.arquivoDoPedido(tipo, nome), desde); } catch { return null; }
+    },
   },
 
   drive: {
@@ -447,10 +456,10 @@ export const Integra = {
     },
 
     /** 2-Roteiros/rascunhos/<id> gancho vN.md: a escolha de um dos 3 ganchos (1, 2 ou 3) ou "outros" (desde
-        15/11/2026). Só a conta que decide. Vale a primeira escolha de cada versão: confere as pastas rascunhos* logo
+        15/11/2026). Só a conta que decide. Vale a primeira escolha válida de cada versão: confere as pastas rascunhos* logo
         antes (a central também não regrava). Central primeiro (tipo decisao_gancho), Drive como reserva.
         → {ok:true, nome, viaCentral?} | {ok:false, motivo, mensagem}. */
-    async gravarEscolhaGancho({ id, versao, escolha, observacoes = '' } = {}) {
+    async gravarEscolhaGancho({ id, versao, escolha, observacoes = '', desde = null } = {}) {
       const email = auth.emailAtual();
       if (!C.podeDecidir(email)) throw new ErroIntegra('Só a conta da Robertta escolhe o gancho.', 'sem-permissao');
       const raiz = (await drive.pastas()).roteiros;
@@ -460,6 +469,10 @@ export const Integra = {
       const existentes = (await Promise.all(pastas.map((p) => drive.listar(p.id)))).flat();
       const plano = G.planejarEscolhaGancho({ id, versao, escolha, observacoes, email, existentes, agora: new Date() });
       if (!plano.ok) return plano;
+      // já enviada pela central e ainda não no Drive (o app recarregou no meio): a segunda sumiria sem aviso
+      if (await Integra.central.jaPedido({ tipo: 'decisao_gancho', nome: plano.nome, desde })) {
+        return { ok: false, motivo: 'ja-escolhido', mensagem: `A escolha dos ganchos v${Number(versao)} de ${id} já foi enviada ao motor (vale a primeira). Ela aparece aqui quando chegar ao Drive.` };
+      }
       const c = await Integra.central.enviarSePuder({ tipo: 'decisao_gancho', nome: plano.nome, conteudo_id: id, conteudo: plano.conteudo });
       if (c) return { ok: true, nome: plano.nome, viaCentral: true };
       try {
@@ -479,15 +492,19 @@ export const Integra = {
     },
 
     /** 4-Revisao/<id> decisao storyboard vN.md: aprovar o storyboard ou pedir mudanças por quadro (desde 15/11/2026).
-        Só a conta que decide. Vale a primeira decisão de cada versão: confere 4-Revisao logo antes (a central também não
+        Só a conta que decide. Vale a primeira decisão válida de cada versão: confere 4-Revisao logo antes (a central também não
         regrava). Central primeiro (tipo decisao_storyboard), Drive como reserva.
         → {ok:true, nome, viaCentral?} | {ok:false, motivo, mensagem}. */
-    async gravarDecisaoStoryboard({ id, versao, decisao, ajustes = [], observacoes = '' } = {}) {
+    async gravarDecisaoStoryboard({ id, versao, decisao, ajustes = [], observacoes = '', desde = null } = {}) {
       const email = auth.emailAtual();
       if (!C.podeDecidir(email)) throw new ErroIntegra('Só a conta da Robertta decide.', 'sem-permissao');
       const existentes = await Integra.drive.listarRevisao(true);
       const plano = SB.planejarDecisaoStoryboard({ id, versao, decisao, ajustes, observacoes, email, existentes, agora: new Date() });
       if (!plano.ok) return plano;
+      // já enviada pela central e ainda não no Drive (o app recarregou no meio): a segunda sumiria sem aviso
+      if (await Integra.central.jaPedido({ tipo: 'decisao_storyboard', nome: plano.nome, desde })) {
+        return { ok: false, motivo: 'ja-decidido', mensagem: `A decisão do storyboard v${Number(versao)} de ${id} já foi enviada ao motor (vale a primeira). Ela aparece aqui quando chegar ao Drive.` };
+      }
       const c = await Integra.central.enviarSePuder({ tipo: 'decisao_storyboard', nome: plano.nome, conteudo_id: id, conteudo: plano.conteudo });
       if (c) return { ok: true, nome: plano.nome, viaCentral: true };
       await Integra.drive.criarArquivo('revisao', plano.nome, plano.conteudo);

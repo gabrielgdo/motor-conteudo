@@ -140,6 +140,15 @@ export function criarCentral({ url, chave, fetch: f = globalThis.fetch, storage 
       if (!Array.isArray(l) || !l[0]?.id) throw new ErroCentral('A central não confirmou o pedido.', 'sem-id');
       return { id: l[0].id };
     },
+    /** Há pedido `novo` ou `entregue` deste arquivo, criado desde `desde` (data; null = qualquer data)? → true | false.
+        A conta que decide pode ler os pedidos (regra pedidos_ler). */
+    async pedidoRecente(arquivo, desde = null) {
+      let q = `pedidos?arquivo=eq.${encodeURIComponent(arquivo)}&status=in.(novo,entregue)&select=id&limit=1`;
+      const t = desde ? new Date(desde) : null;
+      if (t && !Number.isNaN(t.getTime())) q += `&criado_em=gte.${encodeURIComponent(t.toISOString())}`;
+      const l = await rest('GET', q);
+      return Array.isArray(l) && l.length > 0;
+    },
     /** Situação de um pedido → {status, motivo, entregue_em} ou null. */
     async pedido(id) {
       const l = await rest('GET', `pedidos?id=eq.${encodeURIComponent(id)}&select=status,motivo,entregue_em`);

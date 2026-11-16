@@ -76,7 +76,8 @@ só para o TikTok; os demais, para os dois. Sem `[GANCHO TT]`, o gancho é o mes
   3 primeiros segundos), `tela:` (texto curto na tela) e `por que:` (uma linha). O app só lê (`js/ganchos.js`).
 - Ela escolhe no app: `2-Roteiros/rascunhos/<id> gancho v<N>.md` (N = a versão dos ganchos), com `id`, `versao`,
   `escolha` (`1` | `2` | `3` | `outros`), `observacoes`, `quem`, `quando`. Pela central (tipo `decisao_gancho`), com o
-  Drive como reserva; vale a primeira escolha de cada versão. Só a conta que decide escolhe.
+  Drive como reserva; vale a primeira escolha VÁLIDA de cada versão (como no motor: um arquivo inválido antes não
+  bloqueia; o app mostra essa). Só a conta que decide escolhe.
 - Com `1`, `2` ou `3`, o motor escreve o `rascunho v1` com a fala do gancho abrindo o roteiro; com `outros`, os
   ganchos v<N+1>. O aviso `ganchos` manda push para quem decide e quem vê.
 
@@ -97,7 +98,8 @@ com um id, o motor descobre o roteiro pela fala (preparo sem IA, antes do /edita
 - Ela aprova ou pede mudança por quadro no app: `4-Revisao/<id> decisao storyboard v<N>.md` com `id`, `versao`,
   `decisao` (`aprovar` | `ajustar`), `ajustes` (lista com `rede` ig | tt | ambas, `quadro`, `tempo`, `pedido`),
   `observacoes`, `quem`, `quando`. Pela central (tipo `decisao_storyboard`), com o Drive como reserva; vale a
-  primeira de cada versão; só a conta que decide.
+  primeira decisão VÁLIDA de cada versão (como no motor; o app mostra essa); só a conta que decide. Enviada e ainda
+  não no Drive: o app guarda o registro no aparelho (2 h) e confere a central antes de outro envio.
 - `ajustar` → storyboard v<N+1> (só quadros); `aprovar` → as prévias v1 (IG e TT). O aviso `storyboard` manda push
   para quem decide e quem vê.
 

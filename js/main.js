@@ -54,7 +54,7 @@ window.addEventListener('unhandledrejection', (e) => {
    procura atualização ao abrir, ao voltar a ficar visível e no pageshow (bfcache), e pergunta a
    versão do SW que a controla. Versão diferente: recarrega sozinha uma vez se não houver trabalho em
    andamento; senão mostra "Nova versão" (tocar recarrega). Regras e anti-laço em js/versao.js. */
-const VERSAO_APP = 'motor-app-v35'; // igual a VERSAO em sw.js (tests/sw.test.mjs confere)
+const VERSAO_APP = 'motor-app-v36'; // igual a VERSAO em sw.js (tests/sw.test.mjs confere)
 
 function avisarNovaVersao() {
   avisoFixo('versao', 'Nova versão do app. Toque para atualizar.', { acao: 'nova-versao', icone: 'atualizar' });

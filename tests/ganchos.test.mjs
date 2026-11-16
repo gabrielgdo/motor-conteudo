@@ -178,7 +178,7 @@ test('estadoDosGanchos: escolher, escolhido, outros, registro otimista e ilegív
 
 test('montarRoteiro: a proposta dos ganchos (título do arquivo) só na etapa ganchos', () => {
   const p = projeto('S47-01', ['S47-01 ganchos v1.md', 'S47-01 gancho v1.md']);
-  const r = montarRoteiro(p, null, AGORA, { ganchosLido: { ganchos: lerGanchos(GANCHOS_V1), escolha: { escolha: '2', observacoes: '' }, erro: false } });
+  const r = montarRoteiro(p, null, AGORA, { ganchosLido: { ganchos: lerGanchos(GANCHOS_V1), escolha: { escolha: '2', observacoes: '' }, escolhaArq: p.escolhasGancho[0].file, erro: false } });
   assert.equal(r.etapa, 'ganchos');
   assert.equal(r.titulo, 'Por que o domingo pesa');
   assert.equal(r.propostaGanchos.versao, 1);

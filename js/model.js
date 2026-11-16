@@ -35,6 +35,12 @@ function maisRecente(a, b) {
   return tempo(b.modifiedTime || b.createdTime) > tempo(a.modifiedTime || a.createdTime) ? b : a;
 }
 
+/** Ordem de chegada (a primeira decisão é a do arquivo mais velho; o motor ordena pela data do Drive). */
+function maisVelhoPrimeiro(a, b) {
+  return tempo(a.modifiedTime || a.createdTime) - tempo(b.modifiedTime || b.createdTime)
+    || tempo(a.createdTime) - tempo(b.createdTime) || String(a.id || '').localeCompare(String(b.id || ''));
+}
+
 function novoProjeto(id) {
   return {
     id,
@@ -100,6 +106,15 @@ export function montarProjetos({
     const porV = mapa.get(x.id);
     porV.set(x.v, maisRecente(porV.get(x.v), f));
   };
+  // Escolhas de gancho e decisões do storyboard: TODOS os arquivos de cada versão (pasta rascunhos duplicada, nome
+  // repetido no Drive), do mais velho para o mais novo. Vale a primeira VÁLIDA, como no motor (js/dados.js lê o
+  // conteúdo e decide: primeiraValida).
+  const todosPorVersao = (mapa, x, f) => {
+    if (!mapa.has(x.id)) mapa.set(x.id, new Map());
+    const porV = mapa.get(x.id);
+    if (!porV.has(x.v)) porV.set(x.v, []);
+    porV.get(x.v).push(f);
+  };
   for (const f of rascunhos) {
     if (ehPasta(f)) continue;
     const r = parseRascunho(f.name);
@@ -107,7 +122,7 @@ export function montarProjetos({
     const g = parseGanchos(f.name);
     if (g) { porVersao(ganchosPorId, g, f); continue; }
     const e = parseEscolhaGancho(f.name);
-    if (e) { porVersao(escolhasPorId, e, f); continue; }
+    if (e) { todosPorVersao(escolhasPorId, e, f); continue; }
     const fo = parseFontes(f.name);
     if (fo) {
       const p = proj(fo.id);
@@ -115,6 +130,11 @@ export function montarProjetos({
     }
   }
   const emOrdem = (porV) => [...porV].map(([v, file]) => ({ v, file })).sort((a, b) => a.v - b.v);
+  // {v, file (o mais velho), arquivos (todos, do mais velho para o mais novo)}, em ordem de versão
+  const emOrdemTodos = (porV) => [...porV].map(([v, lista]) => {
+    const arquivos = [...lista].sort(maisVelhoPrimeiro);
+    return { v, file: arquivos[0], arquivos };
+  }).sort((a, b) => a.v - b.v);
   for (const [id, porV] of rascPorId) {
     const p = proj(id);
     p.rascunhos = emOrdem(porV);
@@ -126,7 +146,7 @@ export function montarProjetos({
     p.ultimosGanchos = p.ganchos[p.ganchos.length - 1];
   }
   // Escolha sem os ganchos (arquivados ou apagados) não cria projeto: não há o que mostrar.
-  for (const [id, porV] of escolhasPorId) if (projetos.has(id)) proj(id).escolhasGancho = emOrdem(porV);
+  for (const [id, porV] of escolhasPorId) if (projetos.has(id)) proj(id).escolhasGancho = emOrdemTodos(porV);
 
   // 3-Brutos: só os que começam com o id.
   for (const f of brutos) {
@@ -154,7 +174,7 @@ export function montarProjetos({
     const r = parseRevisao(f.name);
     if (!r) continue;
     if (r.tipo === 'storyboard') { const x = sbDe(r.id, r.v); x.md = maisRecente(x.md, f); continue; }
-    if (r.tipo === 'decisaoStoryboard') { porVersao(decSbPorId, r, f); continue; }
+    if (r.tipo === 'decisaoStoryboard') { todosPorVersao(decSbPorId, r, f); continue; }
     const p = proj(r.id);
     if (r.tipo === 'aprovado') { p.aprovado = maisRecente(p.aprovado, f); continue; }
     if (r.tipo === 'limpar') { p.limpar = maisRecente(p.limpar, f); continue; }
@@ -184,7 +204,7 @@ export function montarProjetos({
     p.storyboards = versoes;
     p.ultimoStoryboard = versoes[versoes.length - 1];
   }
-  for (const [id, porV] of decSbPorId) if (projetos.has(id)) proj(id).decisoesStoryboard = emOrdem(porV);
+  for (const [id, porV] of decSbPorId) if (projetos.has(id)) proj(id).decisoesStoryboard = emOrdemTodos(porV);
 
   // 5-Prontos: pastas de pacote (exceto "vencedores").
   for (const f of prontos) {
@@ -235,7 +255,8 @@ export function ehGanchosParaEscolher(p) {
   return (p.ganchos || []).length > 0 && !p.rascunhos.length && !p.roteiro;
 }
 
-/** A escolha gravada para a versão MAIS NOVA dos ganchos ({v, file}), ou null (a vez é dela). */
+/** Os arquivos de escolha da versão MAIS NOVA dos ganchos ({v, file, arquivos}: todos, do mais velho para o mais novo;
+    vale o primeiro VÁLIDO, js/dados.js decide), ou null (nenhum: a vez é dela). */
 export function escolhaDosUltimosGanchos(p) {
   const n = p?.ultimosGanchos?.v;
   if (!n) return null;
@@ -254,7 +275,8 @@ export function ehStoryboardSemPrevia(p) {
   return !!p.ultimoStoryboard && p.previas.versoes.length === 0 && !p.pacote && !p.aprovado;
 }
 
-/** A decisão gravada para a versão MAIS NOVA do storyboard ({v, file}), ou null (a vez é dela). */
+/** Os arquivos de decisão da versão MAIS NOVA do storyboard ({v, file, arquivos}: todos, do mais velho para o mais
+    novo; vale o primeiro VÁLIDO, js/dados.js decide), ou null (nenhum: a vez é dela). */
 export function decisaoDoUltimoStoryboard(p) {
   const n = p?.ultimoStoryboard?.v;
   if (!n) return null;
