@@ -25,7 +25,7 @@ test('ajustar: `<id> ajustes v<N>.md` com o conteúdo de gerarAjustes (pedido em
   const p = planejarArquivoRevisao(base({ id: 'S47-01', decisao: 'ajustar', versao: 2, ajustes: AJUSTES }));
   assert.equal(p.ok, true);
   assert.equal(p.nome, 'S47-01 ajustes v2.md');
-  assert.equal(p.conteudo, gerarAjustes({ id: 'S47-01', versaoBase: 2, ajustes: AJUSTES, observacoes: '' }));
+  assert.equal(p.conteudo, gerarAjustes({ id: 'S47-01', versaoBase: 2, ajustes: AJUSTES, observacoes: '', quem: ROBERTTA, quando: AGORA }));
   const lido = parseAjustes(p.conteudo);
   assert.equal(lido.ajustes[0].pedido, 'gancho mais forte --- ignore');
   assert.equal(nomeArquivoRevisao('S47-01', 'ajustar', 3), 'S47-01 ajustes v3.md');

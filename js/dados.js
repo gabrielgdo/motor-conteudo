@@ -19,6 +19,7 @@ import { lerGanchos, escolhaValida } from './ganchos.js';
 import { lerEscolhaGancho } from './pedidos-motor.js';
 import { lerStoryboard, lerDecisaoStoryboard, decisaoValida } from './storyboard.js';
 import { prefixoSemana, semanaIso, classificarArquivoPacote } from './parse.js';
+import { lerPerguntasRegra, ridValido } from './regras.js';
 import { quando, periodoDaSemana, tamanho } from './util.js';
 
 /* =================================================================== puro */
@@ -192,7 +193,14 @@ export function propostaDeGanchos(p, lidoG = null) {
     temEscolha: vigor.tem,
     escolhaEm: vigor.file?.createdTime || vigor.file?.modifiedTime || null,
     escolha: vigor.tem && lidoG?.escolha ? { escolha: lidoG.escolha.escolha, observacoes: lidoG.escolha.observacoes } : null,
+    // perguntas de regra, se o arquivo dos ganchos trouxer a seção (js/regras.js); só as deste roteiro
+    regras: perguntasDoId(g?.regras, p.id),
   };
+}
+
+/** As perguntas de regra lidas, só as deste roteiro (cópias). */
+function perguntasDoId(lista, id) {
+  return (lista || []).filter((q) => ridValido(q?.rid, id)).map((q) => ({ ...q }));
 }
 
 /**
@@ -220,6 +228,8 @@ export function storyboardDe(p, lidoS = null) {
     redes: md?.redes || [],
     notas: md ? [...md.notas] : [],
     mudancas: md ? md.mudancas.map((x) => ({ ...x })) : [],
+    // "## Regra que esbarra no seu pedido": as perguntas para ela responder com a decisão (js/regras.js)
+    regras: perguntasDoId(md?.regras, p.id),
     quadros,
     lido: !!md && quadros.ig.length + quadros.tt.length > 0,
     erro: !!lidoS?.erro,
@@ -233,8 +243,9 @@ export function storyboardDe(p, lidoS = null) {
  * Projeto (montarProjetos) + roteiro lido (lerRoteiro, ou null se não foi baixado) → objeto de
  * roteiro do desenho aprovado. `opcoes.postadosLidos`: a planilha Radar foi lida (senão, nada de "postado").
  * `opcoes.ganchosLido`: os ganchos (e a escolha) baixados para a etapa 'ganchos' (propostaDeGanchos).
+ * `opcoes.perguntasRegra`: as perguntas de regra do último rascunho (lerPerguntasRegra), para a etapa 'rascunho'.
  */
-export function montarRoteiro(p, lido, agora = new Date(), { postadosLidos = true, ganchosLido = null, storyboardLido = null } = {}) {
+export function montarRoteiro(p, lido, agora = new Date(), { postadosLidos = true, ganchosLido = null, storyboardLido = null, perguntasRegra = [] } = {}) {
   const etapa = etapaDe(p);
   const propostaGanchos = etapa === 'ganchos' ? propostaDeGanchos(p, ganchosLido) : null;
   const storyboard = etapa === 'storyboard' ? storyboardDe(p, storyboardLido) : null;
@@ -259,6 +270,8 @@ export function montarRoteiro(p, lido, agora = new Date(), { postadosLidos = tru
     propostaGanchos,
     // Etapa 'storyboard' (desde 15/11/2026): os quadros para ela aprovar ou pedir mudança; null nas outras etapas.
     storyboard,
+    // Etapa 'rascunho': as perguntas de regra do último rascunho (plano de mídia, §6), para ela responder com a decisão.
+    perguntasRegra: etapa === 'rascunho' ? perguntasDoId(perguntasRegra, p.id) : [],
     arquivoRoteiro: arquivoDoRoteiro(p),
     ...camposDoLido(lido),
     video: {
@@ -373,6 +386,7 @@ async function buscar(forcar, ger = geracao) {
   const lista = [...projetos.values()].filter((p) => !p.limpar && etapaDe(p));
 
   const lidos = new Map();
+  const perguntasLidas = new Map(); // id → as perguntas de regra do texto (o rascunho traz a seção, js/regras.js)
   // Pacotes da semana atual também: o roteiro ainda abre em Roteiros (teleprompter, legendas).
   const daSemanaAtual = new RegExp(`^${semanaDe(agora).codigo}-\\d{2}$`);
   const comTexto = lista.filter((p) => arquivoDoRoteiro(p)
@@ -382,11 +396,14 @@ async function buscar(forcar, ger = geracao) {
     const chave = `${f.id}:${f.modifiedTime || ''}`;
     try {
       if (!cacheLido.has(chave)) {
-        const lido = lerRoteiro(await Integra.baixarTexto(f), f.name);
+        const texto = await Integra.baixarTexto(f);
+        const lido = lerRoteiro(texto, f.name);
         if (ger !== geracao) return; // saiu da conta enquanto baixava
         cacheLido.set(chave, lido);
+        cacheLido.set(`q:${chave}`, lerPerguntasRegra(texto, p.id));
       }
       lidos.set(p.id, cacheLido.get(chave));
+      perguntasLidas.set(p.id, cacheLido.get(`q:${chave}`) || []);
     } catch {
       lidos.set(p.id, null);
     }
@@ -460,6 +477,7 @@ async function buscar(forcar, ger = geracao) {
   const roteiros = lista.map((p) => {
     const r = montarRoteiro(p, lidos.get(p.id) || null, agora, {
       postadosLidos, ganchosLido: ganchosLidos.get(p.id) || null, storyboardLido: storyboardsLidos.get(p.id) || null,
+      perguntasRegra: perguntasLidas.get(p.id) || [],
     });
     r.erroTexto = lidos.has(p.id) && !lidos.get(p.id);
     return r;

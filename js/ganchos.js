@@ -4,7 +4,7 @@
 // central, tipo decisao_gancho, com o Drive como reserva) e vale a primeira escolha VÁLIDA de cada versão (como no
 // motor: um arquivo inválido antes não bloqueia uma escolha válida depois; escolhaValida).
 //
-//   lerGanchos(texto)                  o arquivo do motor → {id, versao, titulo, opcoes:[{n, fala, tela, porque}]}
+//   lerGanchos(texto)                  o arquivo do motor → {id, versao, titulo, opcoes:[{n, fala, tela, porque}], regras}
 //   escolhaValida(lida, {id, versao, opcoes})  a escolha lida vale sozinha? (os critérios do motor)
 //   estadoDosGanchos(r, {local, agora}) em que pé está a escolha (escolher | escolhido | outros | sem-texto)
 //   planejarEscolhaGancho(...)          nome e conteúdo do arquivo da escolha, conferindo se ela já existe
@@ -14,6 +14,7 @@
 import { idValido, ehTeste } from './parse.js';
 import { podeDecidir } from './controle.js';
 import { ESCOLHAS_GANCHO, nomeEscolhaGancho, textoEscolhaGancho } from './pedidos-motor.js';
+import { lerPerguntasRegra, problemaRegras, regrasValidas } from './regras.js';
 
 export { ESCOLHAS_GANCHO };
 /** Depois de 2 h sem resposta do motor, a espera ganha o tom de alerta; o registro otimista deixa de valer. */
@@ -33,11 +34,12 @@ function valor(v) {
 }
 
 /**
- * `<id> ganchos vN.md` → {id, versao, titulo, opcoes}. Cabeçalho: só id, versao e titulo. Corpo: só as seções
- * `## Gancho 1..3` e, em cada uma, as linhas `fala:`, `tela:` e `por que:`. Opção sem fala fica de fora.
+ * `<id> ganchos vN.md` → {id, versao, titulo, opcoes, regras}. Cabeçalho: só id, versao e titulo. Corpo: só as seções
+ * `## Gancho 1..3` e, em cada uma, as linhas `fala:`, `tela:` e `por que:`. Opção sem fala fica de fora. `regras`: as
+ * perguntas de regra, se o arquivo trouxer a seção "## Regra que esbarra no seu pedido" (js/regras.js).
  */
 export function lerGanchos(texto) {
-  const out = { id: '', versao: 0, titulo: '', opcoes: [] };
+  const out = { id: '', versao: 0, titulo: '', opcoes: [], regras: [] };
   const s = String(texto ?? '');
   const fm = s.match(/^﻿?---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/);
   let corpo = s;
@@ -71,6 +73,7 @@ export function lerGanchos(texto) {
     }
   }
   out.opcoes = [...porN.values()].filter((o) => o.fala).sort((a, b) => a.n - b.n);
+  out.regras = lerPerguntasRegra(corpo, idValido(out.id) ? out.id : '');
   return out;
 }
 
@@ -82,8 +85,9 @@ export function quemDecide(quem, id) {
 
 /**
  * A escolha lida (lerEscolhaGancho) vale sozinha? Os critérios do motor (fila_roteiro.escolha_invalida): id e versão do
- * conteúdo iguais aos do nome (ou vazios), escolha 1|2|3|outros, quem que decide e, em 1|2|3, o gancho está nas
- * opções daquela versão (quando elas foram lidas). Só uma escolha válida conta para "a primeira de cada versão".
+ * conteúdo iguais aos do nome (ou vazios), escolha 1|2|3|outros, quem que decide, em `regras` só perguntas deste
+ * roteiro com resposta mudar|so_neste|manter e, em 1|2|3, o gancho está nas opções daquela versão (quando elas foram
+ * lidas). Só uma escolha válida conta para "a primeira de cada versão".
  */
 export function escolhaValida(lida, { id, versao, opcoes = null } = {}) {
   if (!lida || typeof lida !== 'object') return false;
@@ -91,6 +95,7 @@ export function escolhaValida(lida, { id, versao, opcoes = null } = {}) {
   if (lida.versao && Number(lida.versao) !== Number(versao)) return false;
   if (!ESCOLHAS_GANCHO.includes(String(lida.escolha))) return false;
   if (!quemDecide(lida.quem, id)) return false;
+  if (problemaRegras(lida.regras, id)) return false;
   if (lida.escolha !== 'outros' && Array.isArray(opcoes) && opcoes.length
       && !opcoes.some((o) => String(o.n) === String(lida.escolha))) return false;
   return true;
@@ -154,10 +159,10 @@ export function ganchosParaEscolher(roteiros = [], locais = {}, agora = new Date
 
 /**
  * Plano da escolha: nome e conteúdo de `<id> gancho vN.md`. `existentes`: os arquivos de rascunhos* lidos agora
- * (vale a primeira escolha de cada versão, como na central). → {ok:true, nome, conteudo, payload} |
- * {ok:false, motivo, mensagem}.
+ * (vale a primeira escolha de cada versão, como na central). `regras`: as respostas dela às perguntas de regra.
+ * → {ok:true, nome, conteudo, payload} | {ok:false, motivo, mensagem}.
  */
-export function planejarEscolhaGancho({ id, versao, escolha, observacoes = '', email = '', existentes = [], agora = new Date() } = {}) {
+export function planejarEscolhaGancho({ id, versao, escolha, observacoes = '', regras = [], email = '', existentes = [], agora = new Date() } = {}) {
   if (!idValido(id)) return { ok: false, motivo: 'id-invalido', mensagem: `Id inválido: ${id}` };
   const v = Number(versao);
   if (!Number.isInteger(v) || v < 1) return { ok: false, motivo: 'versao-invalida', mensagem: `Versão inválida: ${versao}` };
@@ -170,8 +175,8 @@ export function planejarEscolhaGancho({ id, versao, escolha, observacoes = '', e
   }
   return {
     ok: true, nome,
-    conteudo: textoEscolhaGancho({ id, versao: v, escolha: e, observacoes: obs, quem: email, quando: agora }),
-    payload: { id, versao: v, escolha: e, observacoes: obs },
+    conteudo: textoEscolhaGancho({ id, versao: v, escolha: e, observacoes: obs, regras, quem: email, quando: agora }),
+    payload: { id, versao: v, escolha: e, observacoes: obs, regras: regrasValidas(regras, id) },
   };
 }
 

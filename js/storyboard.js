@@ -5,7 +5,8 @@
 // decisao_storyboard, com o Drive como reserva) e vale a primeira decisão VÁLIDA de cada versão (como no motor: um
 // arquivo inválido antes não bloqueia uma decisão válida depois; decisaoValida).
 //
-//   lerStoryboard(texto)              o .md do motor → {id, versao, redes, notas, mudancas, quadros:{ig:[…], tt:[…]}}
+//   lerStoryboard(texto)              o .md do motor → {id, versao, redes, notas, mudancas, quadros:{ig:[…], tt:[…]},
+//                                     regras (as perguntas de regra; js/regras.js)}
 //   estadoDoStoryboard(r, {local})    em que pé está a decisão (decidir | aprovado | ajustar | sem-texto)
 //   planejarDecisaoStoryboard(…)      nome e conteúdo do arquivo da decisão, conferindo se ela já existe
 //   lerDecisaoStoryboard(texto)       a decisão gravada (para mostrar o que ela pediu)
@@ -16,6 +17,7 @@
 import { idValido, yamlTexto } from './parse.js';
 import { isoBrasilia } from './pedidos-motor.js';
 import { quemDecide } from './ganchos.js';
+import { lerPerguntasRegra, linhasRegras, lerRegrasYaml, problemaRegras, regrasValidas } from './regras.js';
 
 export const DECISOES_STORYBOARD = Object.freeze(['aprovar', 'ajustar']);
 export const REDES_STORYBOARD = Object.freeze(['ig', 'tt', 'ambas']);
@@ -44,13 +46,14 @@ function valor(v) {
 }
 
 /**
- * `<id> storyboard vN.md` → {id, versao, redes, notas, mudancas, quadros}. Cabeçalho: só id, versao e redes. Corpo: só
- * "## Para você conferir" (itens "- "), "## O que mudou" (tabela) e as seções "## Instagram" / "## TikTok" com
- * "### Quadro N" e, em cada uma, as linhas arquivo, tempo, acontece, na tela e por que. Quadro sem arquivo válido
- * (ig-NN.jpg / tt-NN.jpg da própria rede) fica de fora.
+ * `<id> storyboard vN.md` → {id, versao, redes, notas, mudancas, quadros, regras}. Cabeçalho: só id, versao e redes.
+ * Corpo: só "## Para você conferir" (itens "- "), "## O que mudou" (tabela), "## Regra que esbarra no seu pedido" (as
+ * perguntas de regra, js/regras.js) e as seções "## Instagram" / "## TikTok" com "### Quadro N" e, em cada uma, as
+ * linhas arquivo, tempo, acontece, na tela e por que. Quadro sem arquivo válido (ig-NN.jpg / tt-NN.jpg da própria rede)
+ * fica de fora.
  */
 export function lerStoryboard(texto) {
-  const out = { id: '', versao: 0, redes: [], notas: [], mudancas: [], quadros: { ig: [], tt: [] } };
+  const out = { id: '', versao: 0, redes: [], notas: [], mudancas: [], quadros: { ig: [], tt: [] }, regras: [] };
   const s = String(texto ?? '');
   const fm = s.match(/^﻿?---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/);
   let corpo = s;
@@ -114,6 +117,7 @@ export function lerStoryboard(texto) {
       .sort((a, b) => a.n - b.n);
   }
   if (!out.redes.length) out.redes = ['ig', 'tt'].filter((r) => out.quadros[r].length);
+  out.regras = lerPerguntasRegra(corpo, idValido(out.id) ? out.id : '');
   return out;
 }
 
@@ -154,9 +158,9 @@ export function pedidosDoQuadro(quadros = {}, rede, n, pedido, ambas = false) {
 }
 
 /** A decisão gravada (só os campos combinados) → {id, versao, decisao, ajustes:[{rede, quadro, tempo, pedido}],
-    observacoes, quem}. */
+    observacoes, quem, regras:[{id, resposta}]}. */
 export function lerDecisaoStoryboard(texto) {
-  const out = { id: '', versao: 0, decisao: '', ajustes: [], observacoes: '', quem: '' };
+  const out = { id: '', versao: 0, decisao: '', ajustes: [], observacoes: '', quem: '', regras: lerRegrasYaml(texto) };
   const m = String(texto ?? '').match(/^﻿?---\r?\n([\s\S]*?)\r?\n---/);
   if (!m) return out;
   let dentro = false;
@@ -189,8 +193,9 @@ export function lerDecisaoStoryboard(texto) {
 
 /**
  * A decisão lida (lerDecisaoStoryboard) vale sozinha? Os critérios do motor (storyboard.invalida): id e versão do
- * conteúdo iguais aos do nome (ou vazios), decisão aprovar|ajustar, ajustar com algum pedido, quem que decide. Só uma
- * decisão válida conta para "a primeira de cada versão".
+ * conteúdo iguais aos do nome (ou vazios), decisão aprovar|ajustar, ajustar com algum pedido, quem que decide e, em
+ * `regras`, só perguntas deste roteiro com resposta mudar|so_neste|manter. Só uma decisão válida conta para "a primeira
+ * de cada versão".
  */
 export function decisaoValida(lida, { id, versao } = {}) {
   if (!lida || typeof lida !== 'object') return false;
@@ -198,6 +203,7 @@ export function decisaoValida(lida, { id, versao } = {}) {
   if (lida.versao && Number(lida.versao) !== Number(versao)) return false;
   if (!DECISOES_STORYBOARD.includes(lida.decisao)) return false;
   if (lida.decisao === 'ajustar' && !(lida.ajustes || []).length && !lida.observacoes) return false;
+  if (problemaRegras(lida.regras, id)) return false;
   return quemDecide(lida.quem, id);
 }
 
@@ -260,8 +266,9 @@ export function storyboardsParaDecidir(roteiros = [], locais = {}, agora = new D
     && estadoDoStoryboard(r, { local: locais?.[r.id] || null, agora }).estado === 'decidir');
 }
 
-/** Conteúdo do arquivo da decisão (lista fechada de campos; textos entre aspas, sem quebra de linha). */
-export function textoDecisaoStoryboard({ id, versao, decisao, ajustes = [], observacoes = '', quem = '', quando = null } = {}) {
+/** Conteúdo do arquivo da decisão (lista fechada de campos; textos entre aspas, sem quebra de linha). `regras`: as
+    respostas dela às perguntas de regra ([{id, resposta}]; só as válidas entram). */
+export function textoDecisaoStoryboard({ id, versao, decisao, ajustes = [], observacoes = '', regras = [], quem = '', quando = null } = {}) {
   const linhas = ['---', `id: ${String(id).trim()}`, `versao: ${Number(versao) || 0}`, `decisao: ${decisao}`];
   if (decisao === 'ajustar' && ajustes.length) {
     linhas.push('ajustes:');
@@ -272,17 +279,17 @@ export function textoDecisaoStoryboard({ id, versao, decisao, ajustes = [], obse
       linhas.push(`    pedido: ${yamlTexto(String(a.pedido).slice(0, MAX_PEDIDO))}`);
     }
   }
-  linhas.push(`observacoes: ${yamlTexto(String(observacoes || '').slice(0, MAX_PEDIDO))}`, `quem: ${String(quem || '').trim().toLowerCase()}`,
-    `quando: ${isoBrasilia(quando || new Date())}`, '---');
+  linhas.push(`observacoes: ${yamlTexto(String(observacoes || '').slice(0, MAX_PEDIDO))}`, ...linhasRegras(regras, String(id).trim()),
+    `quem: ${String(quem || '').trim().toLowerCase()}`, `quando: ${isoBrasilia(quando || new Date())}`, '---');
   return linhas.join('\n') + '\n';
 }
 
 /**
  * Plano da decisão: nome e conteúdo de `<id> decisao storyboard vN.md`. `existentes`: os arquivos de 4-Revisao lidos
- * agora (vale a primeira decisão de cada versão, como na central). → {ok:true, nome, conteudo, payload} |
- * {ok:false, motivo, mensagem}.
+ * agora (vale a primeira decisão de cada versão, como na central). `regras`: as respostas dela às perguntas de regra.
+ * → {ok:true, nome, conteudo, payload} | {ok:false, motivo, mensagem}.
  */
-export function planejarDecisaoStoryboard({ id, versao, decisao, ajustes = [], observacoes = '', email = '', existentes = [], agora = new Date() } = {}) {
+export function planejarDecisaoStoryboard({ id, versao, decisao, ajustes = [], observacoes = '', regras = [], email = '', existentes = [], agora = new Date() } = {}) {
   if (!idValido(id)) return { ok: false, motivo: 'id-invalido', mensagem: `Id inválido: ${id}` };
   const v = Number(versao);
   if (!Number.isInteger(v) || v < 1) return { ok: false, motivo: 'versao-invalida', mensagem: `Versão inválida: ${versao}` };
@@ -301,8 +308,8 @@ export function planejarDecisaoStoryboard({ id, versao, decisao, ajustes = [], o
   }
   return {
     ok: true, nome,
-    conteudo: textoDecisaoStoryboard({ id, versao: v, decisao, ajustes: lista, observacoes: obs, quem: email, quando: agora }),
-    payload: { id, versao: v, decisao, ajustes: lista, observacoes: obs },
+    conteudo: textoDecisaoStoryboard({ id, versao: v, decisao, ajustes: lista, observacoes: obs, regras, quem: email, quando: agora }),
+    payload: { id, versao: v, decisao, ajustes: lista, observacoes: obs, regras: regrasValidas(regras, id) },
   };
 }
 

@@ -34,3 +34,4 @@ import('./desempenho.test.mjs');
 import('./ganchos.test.mjs');
 import('./storyboard.test.mjs');
 import('./primeira-valida.test.mjs');
+import('./regras.test.mjs');

@@ -17,7 +17,7 @@ import {
 import { estadoDasPautas } from './selecao.js';
 import { estadoDoCandidato, planejarEstadoCandidato, mesclarEstadosApp } from './candidatos.js';
 import { janelaRodar, janelaDetalhes, NOTA_PONTE_DESLIGADA, classeJanelaRodar } from './componentes/execucao.js';
-import { pendentesDe, janelaPrevia } from './telas/videos.js';
+import { pendentesDe, janelaPrevia, perguntasDaPrevia } from './telas/videos.js';
 import { recarregarResultados, modeloNumero } from './telas/resultados.js';
 import { NUMEROS } from './desempenho.js';
 import {
@@ -30,7 +30,8 @@ import { chaveIdemEnvio, mapaDeEnvios } from './envios.js';
 import {
   estadoDaDecisaoRoteiro, bloqueioDaDecisao, chaveIdemDecisao, versoesDo, extrasDaDecisao, textoDaDecisaoAceita,
 } from './decisoes-roteiro.js';
-import { versaoVistaDe, janelaGancho } from './telas/roteiros.js';
+import { versaoVistaDe, janelaGancho, chaveRegrasDoRascunho } from './telas/roteiros.js';
+import { RESPOSTAS_REGRA, ridValido, chaveRespostas, decisaoComRegras, extrasDasRegras } from './regras.js';
 import { estadoDosGanchos, textoDaEscolhaAceita } from './ganchos.js';
 import { lerEnviados, guardarEnviado } from './enviados.js';
 import { estadoDoStoryboard, textoDaDecisaoStoryboardAceita, pedidosDoQuadro } from './storyboard.js';
@@ -244,16 +245,17 @@ function pintarJanela() {
     html = janelaPrevia({
       id: j.id, versao: j.versao, decisao: j.decisao, ajustes: j.ajustes, teste: j.teste,
       execucoes: execucoesLidas().execucoes || [], enviando: j.enviando, erro: j.erro,
+      regras: j.regras, perguntas: j.perguntas, virou: j.virou, pedidoRegras: j.pedidoRegras,
     });
   } else if (j.tipo === 'storyboard') {
     html = janelaStoryboard({
       id: j.id, versao: j.versao, decisao: j.decisao, ajustes: j.ajustes, observacoes: j.observacoes, teste: j.teste,
-      enviando: j.enviando, erro: j.erro,
+      enviando: j.enviando, erro: j.erro, regras: j.regras, perguntas: j.perguntas, virou: j.virou,
     });
   } else if (j.tipo === 'gancho') {
     html = janelaGancho({
       id: j.id, versao: j.versao, escolha: j.escolha, opcao: j.opcao, observacoes: j.observacoes, teste: j.teste,
-      enviando: j.enviando, erro: j.erro,
+      enviando: j.enviando, erro: j.erro, regras: j.regras, perguntas: j.perguntas,
     });
   } else if (j.tipo === 'cand-excluir') {
     html = janelaExcluirCandidato({ c: j.c, situacao: j.situacao, enviando: j.enviando, erro: j.erro });
@@ -293,8 +295,10 @@ function adicionarPedidoDoQuadro(r, valor) {
   return true;
 }
 
-/** "Aprovar o storyboard" / "Enviar os pedidos": confere de novo (o botão pode estar velho) e abre a confirmação. */
-function abrirDecisaoStoryboard(el, decisao) {
+/** "Aprovar o storyboard" / "Enviar os pedidos": confere de novo (o botão pode estar velho) e abre a confirmação. Com
+    as respostas às perguntas de regra: vão junto e, se alguma libera o pedido, "Aprovar" vira pedido de mudança
+    (js/regras.js decisaoComRegras); sem outro pedido, vai o pedido que esperava a regra (em observações). */
+function abrirDecisaoStoryboard(el, tocada) {
   const r = rot(el.dataset.id);
   if (!r || r.etapa !== 'storyboard' || !podeDecidir(Integra.email())) return;
   const st = estadoDoStoryboard(r, { local: estado.storyboardsEnviados[r.id] || null, agora: new Date() });
@@ -302,22 +306,28 @@ function abrirDecisaoStoryboard(el, decisao) {
   // pedido digitado num quadro e ainda não adicionado: entra na lista ao enviar; aprovar espera ela decidir
   const aberto = estado.sbQuadro[r.id];
   if (aberto && (rascunho[`sb-pedido-${r.id}`] || '').trim()) {
-    if (decisao === 'aprovar') {
+    if (tocada === 'aprovar') {
       avisar('Há um pedido escrito num quadro: toque em “Adicionar à lista” ou em “Cancelar” antes de aprovar.');
       return;
     }
     adicionarPedidoDoQuadro(r, aberto);
     desenhar();
   }
+  if (tocada === 'aprovar' && pedidosDoStoryboard(r).length) { avisar('Envie ou tire os pedidos da lista antes de aprovar.'); return; }
+  const perguntas = r.storyboard.regras || [];
+  const chaveRegras = chaveRespostas('sb', r.id, r.storyboard.versao);
+  const dc = decisaoComRegras({ decisao: tocada, perguntas, respostas: estado.respostasRegra[chaveRegras], id: r.id, alvo: 'storyboard' });
+  const { decisao } = dc;
   const ajustes = decisao === 'ajustar' ? pedidosDoStoryboard(r).map((a) => ({ ...a })) : [];
-  const observacoes = decisao === 'ajustar' ? (rascunho[`sb-obs-${r.id}`] || '').trim() : '';
-  if (decisao === 'aprovar' && pedidosDoStoryboard(r).length) { avisar('Envie ou tire os pedidos da lista antes de aprovar.'); return; }
+  let observacoes = decisao === 'ajustar' ? (rascunho[`sb-obs-${r.id}`] || '').trim() : '';
+  if (decisao === 'ajustar' && !ajustes.length && !observacoes) observacoes = dc.pedido;
   if (decisao === 'ajustar' && !ajustes.length && !observacoes) {
     avisar('Toque em “Pedir mudança neste quadro” no quadro que quer mudar, ou escreva um pedido geral.');
     return;
   }
   estado.janela = {
     tipo: 'storyboard', id: r.id, versao: r.storyboard.versao, decisao, ajustes, observacoes, teste: r.teste,
+    regras: dc.regras, perguntas, virou: dc.virou, chaveRegras,
     desde: r.storyboard.arquivo?.createdTime || null, enviando: false, erro: '',
   };
   pintarJanela();
@@ -535,7 +545,8 @@ export const ACOES = {
     desenhar();
   },
   /* Etapa 2: "Enviar N ajustes ao motor" grava "<id> ajustes vN.md" (parse.gerarAjustes). Por
-     enquanto, a lista vira texto simples para ela colar no chat do Diretor. */
+     enquanto, a lista vira texto simples para ela colar no chat do Diretor. Nunca leva as respostas às perguntas de
+     regra: só o arquivo gravado pelo app, na conta dela, responde (chat não vale; a tela avisa). */
   async 'ajustes-copiar'(el) {
     const r = rot(el.dataset.id);
     if (!r) return;
@@ -549,12 +560,21 @@ export const ACOES = {
   },
 
   /* -- vídeos: decisão da prévia em 4-Revisao (FLAGS.revisaoPeloApp) -- */
+  // "Aprovar a vN": com uma resposta que libera o pedido que esperava a regra, vira ajuste (a aprovação não leva o
+  // campo `regras` e o pedido ficaria de fora); vai a lista que ela juntou ou, sem lista, o pedido que esperava a regra.
   'previa-aprovar'(el) {
     const r = rot(el.dataset.id);
     const v = r && ultima(r);
     if (!r || !v || !FLAGS.revisaoPeloApp || !podeDecidir(Integra.email())) return;
     Players.parar();
-    estado.janela = { tipo: 'previa', id: r.id, versao: v.n, decisao: 'aprovar', ajustes: [], teste: r.teste, enviando: false, erro: '' };
+    const perguntas = perguntasDaPrevia(r, v);
+    const chaveRegras = chaveRespostas('pv', r.id, v.n);
+    const dc = decisaoComRegras({ decisao: 'aprovar', perguntas, respostas: estado.respostasRegra[chaveRegras], id: r.id, alvo: 'previa' });
+    const ajustes = dc.decisao === 'ajustar' ? pendentesDe(r, v).map((a) => ({ ...a })) : [];
+    estado.janela = {
+      tipo: 'previa', id: r.id, versao: v.n, decisao: dc.decisao, ajustes, teste: r.teste, enviando: false, erro: '',
+      regras: dc.regras, perguntas, virou: dc.virou, pedidoRegras: dc.pedido, chaveRegras,
+    };
     pintarJanela();
   },
   'ajustes-enviar'(el) {
@@ -566,7 +586,13 @@ export const ACOES = {
     if (!lista.length) return;
     desenhar();
     Players.parar();
-    estado.janela = { tipo: 'previa', id: r.id, versao: v.n, decisao: 'ajustar', ajustes: lista.map((a) => ({ ...a })), teste: r.teste, enviando: false, erro: '' };
+    const perguntas = perguntasDaPrevia(r, v);
+    const chaveRegras = chaveRespostas('pv', r.id, v.n);
+    const dc = decisaoComRegras({ decisao: 'ajustar', perguntas, respostas: estado.respostasRegra[chaveRegras], id: r.id, alvo: 'previa' });
+    estado.janela = {
+      tipo: 'previa', id: r.id, versao: v.n, decisao: 'ajustar', ajustes: lista.map((a) => ({ ...a })), teste: r.teste, enviando: false, erro: '',
+      regras: dc.regras, perguntas, virou: false, pedidoRegras: dc.pedido, chaveRegras,
+    };
     pintarJanela();
   },
   async 'previa-gravar'(el) {
@@ -577,14 +603,18 @@ export const ACOES = {
     j.erro = '';
     pintarJanela();
     try {
+      // sem ajuste na lista (o "Aprovar" que virou ajuste), vai o pedido que esperava a regra, se ela não escreveu outro
+      const digitadas = (rascunho['pv-obs'] || '').trim();
+      const observacoes = digitadas || (j.decisao === 'ajustar' && !(j.ajustes || []).length ? j.pedidoRegras || '' : '');
       const res = await Integra.drive.gravarDecisaoPrevia({
-        id: j.id, decisao: j.decisao, versao: j.versao, ajustes: j.ajustes, observacoes: (rascunho['pv-obs'] || '').trim(),
+        id: j.id, decisao: j.decisao, versao: j.versao, ajustes: j.ajustes, observacoes, regras: j.regras || [],
       });
       if (estado.janela !== j) return;
       if (!res.ok) { j.enviando = false; j.erro = res.mensagem; pintarJanela(); return; }
       const r = rot(j.id);
       const v = r?.video.versoes.find((x) => x.n === j.versao);
       if (v && j.decisao === 'ajustar') pendentesDe(r, v).length = 0;
+      if (j.chaveRegras) delete estado.respostasRegra[j.chaveRegras];
       limparCampos('pv-obs');
       fecharJanela();
       avisar(res.viaCentral ? `“${res.nome}” enviado ao motor pela central: ele recebe em segundos.`
@@ -670,6 +700,7 @@ export const ACOES = {
       fecharJanela();
       if (j.acao === 'decidir-roteiro') {
         delete estado.decisaoRoteiro[j.idAlvo];
+        if (j.chaveRegras) delete estado.respostasRegra[j.chaveRegras];
         limparCampos(`rp-${j.idAlvo}`, `rm-${j.idAlvo}`, `ro-${j.idAlvo}`);
         // Registro otimista até a releitura de Execuções mostrar a linha (js/decisoes-roteiro.js).
         estado.decisoesEnviadas[j.idAlvo] = { desde: Date.now(), chave: j.chaveIdem, decisao: j.payload.decisao, versao: j.payload.versao };
@@ -898,6 +929,20 @@ export const ACOES = {
   },
   'candidatos-excluidos'() { estado.verExcluidos = !estado.verExcluidos; desenhar(); },
 
+  /* -- pergunta de regra (storyboard, prévia, rascunho, ganchos): "Mudar a regra", "Só neste vídeo" ou "Manter".
+        Fica na memória até a decisão sair (estado.respostasRegra); tocar de novo na mesma resposta desfaz. -- */
+  'regra-responder'(el) {
+    if (!podeDecidir(Integra.email())) return;
+    const chave = String(el.dataset.chave || '');
+    const [rid, resposta] = String(el.dataset.valor || '').split('|');
+    const id = chave.split(':')[1] || '';
+    if (!id || !ridValido(rid, id) || !RESPOSTAS_REGRA.includes(resposta)) return;
+    const atuais = (estado.respostasRegra[chave] ||= {});
+    if (atuais[rid] === resposta) delete atuais[rid];
+    else atuais[rid] = resposta;
+    desenhar();
+  },
+
   /* -- roteiros: decisão do rascunho (arquivo no Drive; o motor atende) -- */
   'roteiro-escolher'(el) {
     if (!podeDecidir(Integra.email())) return;
@@ -939,11 +984,19 @@ export const ACOES = {
     const est = estadoDaDecisaoRoteiro({ execucoes, projeto: r, agora, local: estado.decisoesEnviadas[id] || null });
     if (est.bloqueia) { avisar(est.explicacao || est.texto); desenhar(); return; }
     const versao = versaoVistaDe(r, estado.versaoRoteiroVista);
-    const decisao = estado.decisaoRoteiro[id];
+    // As respostas às perguntas de regra do rascunho vão junto; "Aprovar" com uma que libera o pedido vira "mudar"
+    // (aprovado, o roteiro é final e o pedido ficaria de fora), com o pedido que esperava a regra.
+    const perguntas = r.perguntasRegra || [];
+    const chaveRegras = chaveRegrasDoRascunho(r);
+    const dc = decisaoComRegras({ decisao: estado.decisaoRoteiro[id], perguntas, respostas: estado.respostasRegra[chaveRegras], id, alvo: 'roteiro' });
+    const { decisao } = dc;
     const rep = bloqueioDaDecisao(execucoes, { id, decisao, versao, agora });
     if (!rep.livre) { avisar(rep.mensagem); desenhar(); return; }
+    // "Pedir mudança" sem texto, com uma resposta que libera o pedido: vai o pedido que esperava a regra
+    const digitado = String(rascunho[`rp-${id}`] || '').trim();
+    const pedido = dc.virou ? dc.pedido : digitado || (decisao === 'mudar' ? dc.pedido : '');
     const plano = planejarDecisaoRoteiro({
-      id, versao, decisao, pedido: rascunho[`rp-${id}`], motivo: rascunho[`rm-${id}`], observacao: rascunho[`ro-${id}`],
+      id, versao, decisao, pedido, motivo: rascunho[`rm-${id}`], observacao: rascunho[`ro-${id}`],
     });
     if (!plano.ok) {
       estado.erros = {};
@@ -954,9 +1007,9 @@ export const ACOES = {
       return;
     }
     abrirRodar({
-      rotina: 'roteirista-decisao', acao: 'decidir-roteiro', idAlvo: id, payload: plano.payload,
-      chaveIdem: chaveIdemDecisao(plano.payload, execucoes),
-      extras: extrasDaDecisao(plano, versoesDo(r)),
+      rotina: 'roteirista-decisao', acao: 'decidir-roteiro', idAlvo: id, payload: { ...plano.payload, regras: dc.regras },
+      chaveIdem: chaveIdemDecisao(plano.payload, execucoes), chaveRegras,
+      extras: [...extrasDasRegras(perguntas, dc.regras, dc.virou), ...extrasDaDecisao(plano, versoesDo(r))],
     });
   },
 
@@ -971,9 +1024,14 @@ export const ACOES = {
     const escolha = el.dataset.valor;
     const opcao = escolha === 'outros' ? null : g.opcoes.find((o) => String(o.n) === escolha);
     if (escolha !== 'outros' && !opcao) return;
+    // as respostas às perguntas de regra (se os ganchos trouxerem) vão com a escolha; a escolha não muda
+    const perguntas = g.regras || [];
+    const chaveRegras = chaveRespostas('gc', r.id, g.versao);
+    const dc = decisaoComRegras({ decisao: escolha, perguntas, respostas: estado.respostasRegra[chaveRegras], id: r.id, alvo: 'gancho' });
     estado.janela = {
       tipo: 'gancho', id: r.id, versao: g.versao, escolha, opcao,
       observacoes: escolha === 'outros' ? (rascunho[`go-${r.id}`] || '').trim() : '', teste: r.teste,
+      regras: dc.regras, perguntas, chaveRegras,
       desde: g.arquivo?.createdTime || null, enviando: false, erro: '',
     };
     pintarJanela();
@@ -987,10 +1045,11 @@ export const ACOES = {
     pintarJanela();
     try {
       const res = await Integra.drive.gravarEscolhaGancho({
-        id: j.id, versao: j.versao, escolha: j.escolha, observacoes: j.observacoes, desde: j.desde,
+        id: j.id, versao: j.versao, escolha: j.escolha, observacoes: j.observacoes, regras: j.regras || [], desde: j.desde,
       });
       if (estado.janela !== j) return;
       if (!res.ok) { j.enviando = false; j.erro = res.mensagem; pintarJanela(); return; }
+      if (j.chaveRegras) delete estado.respostasRegra[j.chaveRegras];
       // Registro otimista até a releitura do Drive mostrar a escolha (js/ganchos.js), também no aparelho.
       lembrarEnviado('ganchos', j.id, { versao: j.versao, escolha: j.escolha, desde: Date.now() });
       limparCampos(`go-${j.id}`);
@@ -1058,10 +1117,12 @@ export const ACOES = {
     pintarJanela();
     try {
       const res = await Integra.drive.gravarDecisaoStoryboard({
-        id: j.id, versao: j.versao, decisao: j.decisao, ajustes: j.ajustes, observacoes: j.observacoes, desde: j.desde,
+        id: j.id, versao: j.versao, decisao: j.decisao, ajustes: j.ajustes, observacoes: j.observacoes, regras: j.regras || [],
+        desde: j.desde,
       });
       if (estado.janela !== j) return;
       if (!res.ok) { j.enviando = false; j.erro = res.mensagem; pintarJanela(); return; }
+      if (j.chaveRegras) delete estado.respostasRegra[j.chaveRegras];
       // Registro otimista até a releitura do Drive mostrar a decisão (js/storyboard.js), também no aparelho.
       lembrarEnviado('storyboards', j.id, { versao: j.versao, decisao: j.decisao, desde: Date.now() });
       const r = rot(j.id);

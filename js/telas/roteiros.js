@@ -6,6 +6,9 @@
 // Antes do rascunho (etapa 'ganchos', desde 15/11/2026): o detalhe mostra os 3 ganchos que o motor propôs, cada um
 // com a fala, o texto de tela e o porquê, e "Escolher o gancho N"; o aside "Sua escolha" tem "Quero outros 3" (com
 // observação). Tocar abre a confirmação (janelaGancho); confirmado, o app grava "<id> gancho vN.md" (js/ganchos.js).
+// Pergunta de regra (plano de mídia, §6): quando o rascunho (ou os ganchos) traz "## Regra que esbarra no seu pedido",
+// o aside mostra as perguntas com "Mudar a regra", "Só neste vídeo" e "Manter" (js/componentes/regras.js); a resposta
+// vai com a decisão (`regras`). No rascunho, "Aprovar" com uma resposta que libera o pedido vira pedido de mudança.
 
 import { esc, ic, NOME_REDE, validade } from '../util.js';
 import { estado } from '../estado.js';
@@ -16,6 +19,8 @@ import { enviosAoRoteirista, textoDoEnvio } from '../envios.js';
 import { estadoDaDecisaoRoteiro, bloqueioDaDecisao, versoesDo, TOM_DECISAO } from '../decisoes-roteiro.js';
 import { estadoDosGanchos } from '../ganchos.js';
 import { nomeEscolhaGancho } from '../pedidos-motor.js';
+import { chaveRespostas } from '../regras.js';
+import { blocoRegras, listaRespostas, avisoViraPedido, algumaLibera } from '../componentes/regras.js';
 import { moldura } from '../componentes/janelas.js';
 import { podeDecidir, DECISOES_ROTEIRO, MOTIVOS_ROTEIRO } from '../controle.js';
 import { faixaExecucao, historicoComExecucoes, blocoHistorico } from '../componentes/execucao.js';
@@ -207,12 +212,21 @@ function painelFontes(r) {
 
 /* ---- Detalhe ---- */
 
+/** A chave das respostas às perguntas de regra do rascunho (as perguntas vêm do rascunho mais novo). */
+export const chaveRegrasDoRascunho = (r) => {
+  const versoes = versoesDo(r);
+  return chaveRespostas('rt', r.id, versoes.length ? versoes[versoes.length - 1] : (r.versaoRoteiro || 1));
+};
+
 /**
  * Decisão do rascunho no aside (puro: recebe a conta, a escolha e as Execuções).
  * Aprovar / Pedir mudança (campo do pedido) / Recusar (motivo da lista curta + observação) e o
- * botão que abre a confirmação. A conta que não decide vê tudo desabilitado, com a nota.
+ * botão que abre a confirmação. A conta que não decide vê tudo desabilitado, com a nota. Com perguntas de regra no
+ * rascunho, elas vêm antes dos botões; "Aprovar" com uma resposta que libera o pedido vira pedido de mudança.
  */
-export function decisaoDoRascunho(r, { email = '', escolha = '', exec = {}, erros = {}, agora = new Date(), vista = 0, locais = {} } = {}) {
+export function decisaoDoRascunho(r, {
+  email = '', escolha = '', exec = {}, erros = {}, agora = new Date(), vista = 0, locais = {}, respostasRegra = estado.respostasRegra,
+} = {}) {
   const fontes = resumoFontes(r);
   const decide = podeDecidir(email);
   const id = esc(r.id);
@@ -247,6 +261,11 @@ export function decisaoDoRascunho(r, { email = '', escolha = '', exec = {}, erro
   const pedirDeNovo = decide && (d.estado === 'falhou' || d.estado === 'sem-versao-nova') && d.decisao
     ? `<button type="button" class="botao contorno menor" data-acao="roteiro-repetir" data-id="${id}" data-valor="${esc(d.decisao)}" data-versao="${Number(d.versao) || v}">${ic('atualizar', 16)} Pedir de novo</button>` : '';
   const antiga = v !== ultima;
+  const perguntas = r.perguntasRegra || [];
+  const chave = chaveRegrasDoRascunho(r);
+  const respostas = respostasRegra?.[chave] || {};
+  const vira = esc_ === 'aprovar' && algumaLibera(perguntas, respostas, r.id);
+  const regras = blocoRegras({ perguntas, respostas, chave, pode: decide && !travado, depois: 'A resposta vai junto com a sua decisão sobre o rascunho.' });
   return `
     <h2>Sua decisão</h2>
     <p class="apagado pequeno">Rascunho v${v}${antiga ? ` (a mais nova é a v${ultima})` : ''}.${fontes ? ` ${esc(fontes)}${antiga ? ` (na v${ultima})` : ''}.` : ''}</p>
@@ -254,12 +273,14 @@ export function decisaoDoRascunho(r, { email = '', escolha = '', exec = {}, erro
     ${d.estado !== 'livre' && d.texto ? `<p class="meta">${seloDaDecisao(d)}</p>` : ''}
     ${faixaExecucao({ rotina: 'roteirista-decisao', rotulo: 'Decisão pelo app', idAlvo: r.id, dados: exec, agora })}
     ${notas.length || pedirDeNovo ? `<div class="pilha" style="gap:.5rem" role="status">${notas.map((n) => `<p class="pequeno apagado">${esc(n)}</p>`).join('')}${pedirDeNovo ? `<p>${pedirDeNovo}</p>` : ''}</div>` : ''}
+    ${regras}
     <div class="decisao empilhada" role="group" aria-label="Decisão sobre o rascunho v${v}">
       ${botao('aprovar', ic('check', 18))}${botao('mudar')}${botao('recusar')}
     </div>
     ${decide ? '' : `<p class="pequeno apagado">${esc('Só a conta da Robertta decide.')}</p>`}
     ${detalhe}
-    ${esc_ ? `<button type="button" class="botao primario cheio" data-acao="roteiro-confirmar" data-id="${id}">${esc(esc_ === 'aprovar' ? `Aprovar a v${v}` : esc_ === 'mudar' ? `Pedir a mudança na v${v}` : `Recusar o rascunho v${v}`)}</button>` : ''}`;
+    ${avisoViraPedido(vira, 'um rascunho novo')}
+    ${esc_ ? `<button type="button" class="botao primario cheio" data-acao="roteiro-confirmar" data-id="${id}">${esc(vira ? 'Refazer o rascunho com o seu pedido' : esc_ === 'aprovar' ? `Aprovar a v${v}` : esc_ === 'mudar' ? `Pedir a mudança na v${v}` : `Recusar o rascunho v${v}`)}</button>` : ''}`;
 }
 
 /* ---- Ganchos antes do roteiro (etapa 'ganchos') ---- */
@@ -305,16 +326,23 @@ export function painelGanchos(r, { email = '', local = null, agora = new Date() 
     }).join('')}</ol>`;
 }
 
-/** O aside "Sua escolha" (puro): o estado, "Quero outros 3" com a observação e como funciona. */
-export function escolhaDosGanchos(r, { email = '', local = null, agora = new Date() } = {}) {
+/** O aside "Sua escolha" (puro): o estado, as perguntas de regra (se os ganchos trouxerem), "Quero outros 3" com a
+    observação e como funciona. */
+export function escolhaDosGanchos(r, { email = '', local = null, agora = new Date(), respostasRegra = estado.respostasRegra } = {}) {
   const st = estadoDosGanchos(r, { local, agora });
   const decide = podeDecidir(email);
   const pode = decide && !st.bloqueia;
   const id = esc(r.id);
+  const chave = chaveRespostas('gc', r.id, r.propostaGanchos?.versao || 1);
+  const regras = st.estado === 'escolher' ? blocoRegras({
+    perguntas: r.propostaGanchos?.regras, respostas: respostasRegra?.[chave] || {}, chave, pode,
+    depois: 'A resposta vai junto com a escolha do gancho.',
+  }) : '';
   return `
     <h2>Sua escolha</h2>
     ${st.estado === 'escolher' ? '<p class="apagado pequeno">Toque em “Escolher” no gancho que abre melhor o vídeo. Antes de mandar, o app pede confirmação.</p>'
     : `<p class="meta">${selo(st.texto, st.tom)}</p><p class="pequeno apagado" role="status">${esc(st.explicacao)}</p>`}
+    ${regras}
     <div class="pilha" style="gap:.625rem">
       <h3 style="margin:0">Nenhum serve?</h3>
       ${campo({ modelo: `go-${r.id}`, rotulo: 'O que você quer nos novos ganchos', tipo: 'textarea', linhas: 2, opcional: true, exemplo: 'Ex.: mais leve, sem pergunta', attrs: pode ? '' : 'disabled' })}
@@ -324,8 +352,9 @@ export function escolhaDosGanchos(r, { email = '', local = null, agora = new Dat
     <p class="pequeno apagado">Depois da escolha, o motor escreve o rascunho v1; ele passa pela checagem de fontes e volta aqui para você aprovar, pedir mudança ou recusar.</p>`;
 }
 
-/** Janela de confirmação da escolha (puro). `opcao`: o gancho escolhido ({n, fala, tela}); null em "outros". */
-export function janelaGancho({ id, versao, escolha, opcao = null, observacoes = '', teste = false, enviando = false, erro = '' } = {}) {
+/** Janela de confirmação da escolha (puro). `opcao`: o gancho escolhido ({n, fala, tela}); null em "outros". `regras` e
+    `perguntas`: as respostas dela às perguntas de regra, que vão junto. */
+export function janelaGancho({ id, versao, escolha, opcao = null, observacoes = '', regras = [], perguntas = [], teste = false, enviando = false, erro = '' } = {}) {
   const outros = escolha === 'outros';
   const v = Number(versao) || 1;
   const nome = nomeEscolhaGancho(id, v);
@@ -337,6 +366,7 @@ export function janelaGancho({ id, versao, escolha, opcao = null, observacoes = 
   const corpo = `${teste ? `<p class="meta">${selo('Teste')}<span class="pequeno apagado">Id de teste: o motor trata como teste.</span></p>` : ''}
     ${opcao ? `<blockquote class="gancho-citado"><p>${esc(opcao.fala)}</p>${opcao.tela ? `<p class="pequeno apagado">Na tela: ${esc(opcao.tela)}</p>` : ''}</blockquote>` : ''}
     <dl class="confirmacao">${itens.map(([a, b]) => `<div><dt>${esc(a)}</dt><dd>${esc(b)}</dd></div>`).join('')}</dl>
+    ${listaRespostas(perguntas, regras)}
     ${erro ? `<p class="nota atencao" role="alert">${ic('alerta')}<span>${esc(erro)}</span></p>` : ''}`;
   const rotulo = outros ? 'Pedir outros 3' : `Usar o gancho ${Number(escolha)}`;
   const rodape = `<button type="button" class="botao calmo" data-acao="fechar-janela">${erro ? 'Fechar' : 'Cancelar'}</button>${erro ? ''

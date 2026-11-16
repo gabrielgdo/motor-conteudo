@@ -75,7 +75,8 @@ só para o TikTok; os demais, para os dois. Sem `[GANCHO TT]`, o gancho é o mes
   com `id`, `versao`, `titulo` no cabeçalho e as seções `## Gancho 1..3`, cada uma só com `fala:` (o que ela diz nos
   3 primeiros segundos), `tela:` (texto curto na tela) e `por que:` (uma linha). O app só lê (`js/ganchos.js`).
 - Ela escolhe no app: `2-Roteiros/rascunhos/<id> gancho v<N>.md` (N = a versão dos ganchos), com `id`, `versao`,
-  `escolha` (`1` | `2` | `3` | `outros`), `observacoes`, `quem`, `quando`. Pela central (tipo `decisao_gancho`), com o
+  `escolha` (`1` | `2` | `3` | `outros`), `observacoes`, `regras` (só se ela respondeu uma pergunta de regra; ver
+  "Regra que esbarra no pedido dela"), `quem`, `quando`. Pela central (tipo `decisao_gancho`), com o
   Drive como reserva; vale a primeira escolha VÁLIDA de cada versão (como no motor: um arquivo inválido antes não
   bloqueia; o app mostra essa). Só a conta que decide escolhe.
 - Com `1`, `2` ou `3`, o motor escreve o `rascunho v1` com a fala do gancho abrindo o roteiro; com `outros`, os
@@ -93,11 +94,12 @@ com um id, o motor descobre o roteiro pela fala (preparo sem IA, antes do /edita
 - O motor (`/editar`, depois `/storyboard`) entrega quadros parados da mesma montagem que vira vídeo:
   `<id> storyboard v<N>/` (`ig-01.jpg`…, `tt-01.jpg`…, 540x960) e `<id> storyboard v<N>.md`. O app só lê
   (`js/storyboard.js`, lista fechada): cabeçalho `id`, `versao`, `redes`; seções `## Para você conferir` (itens),
-  `## O que mudou` (tabela rede | quadro | pedido | o que foi feito | ok) e `## Instagram` / `## TikTok` com
-  `### Quadro N` e as linhas `arquivo:`, `tempo:`, `acontece:`, `na tela:`, `por que:`.
+  `## O que mudou` (tabela rede | quadro | pedido | o que foi feito | ok), `## Regra que esbarra no seu pedido` (as
+  perguntas de regra, antes dos quadros; ver abaixo) e `## Instagram` / `## TikTok` com `### Quadro N` e as linhas
+  `arquivo:`, `tempo:`, `acontece:`, `na tela:`, `por que:`.
 - Ela aprova ou pede mudança por quadro no app: `4-Revisao/<id> decisao storyboard v<N>.md` com `id`, `versao`,
   `decisao` (`aprovar` | `ajustar`), `ajustes` (lista com `rede` ig | tt | ambas, `quadro`, `tempo`, `pedido`),
-  `observacoes`, `quem`, `quando`. Pela central (tipo `decisao_storyboard`), com o Drive como reserva; vale a
+  `observacoes`, `regras` (só se ela respondeu uma pergunta de regra), `quem`, `quando`. Pela central (tipo `decisao_storyboard`), com o Drive como reserva; vale a
   primeira decisão VÁLIDA de cada versão (como no motor; o app mostra essa); só a conta que decide. Enviada e ainda
   não no Drive: o app guarda o registro no aparelho (2 h) e confere a central antes de outro envio (bloqueia um
   pedido `novo`, ou `entregue` há menos de 2 h; depois disso, sem o arquivo no Drive, ela decide de novo).
@@ -108,9 +110,10 @@ com um id, o motor descobre o roteiro pela fala (preparo sem IA, antes do /edita
 - `<id> IG v<N>.mp4`, `<id> TT v<N>.mp4` (as duas andam sempre juntas: a que não mudou é
   copiada com o número novo)
 - `<id> storyboard IG v<N>.jpg`, `<id> storyboard TT v<N>.jpg`
-- `<id> notas v<N>.md`
+- `<id> notas v<N>.md` (o resumo do motor; no fim, às vezes, a seção `## Regra que esbarra no seu pedido`: o app
+  mostra o resumo sem ela e as perguntas com os botões)
 
-## Pedido de ajustes (o Diretor salva)
+## Pedido de ajustes (o app grava; antes, o Diretor)
 `4-Revisao/<id> ajustes v<N>.md`
 ```
 ---
@@ -126,8 +129,49 @@ ajustes:
     tempo: "0:12"
     pedido: tirar o zoom
 observacoes: texto livre (opcional)
+regras:                 # só se ela respondeu uma pergunta de regra nas notas
+  - id: S46-01-R1
+    resposta: mudar     # mudar | so_neste | manter
+quem: <e-mail da conta> # desde a v37; sem quem, o motor não aceita "mudar" numa regra
+quando: 2026-11-16T10:00:00-03:00
 ---
 ```
+Sem ajuste na lista (o "Aprovar" que virou ajuste, abaixo), vai `ajustes: []` com o pedido em `observacoes`; o motor
+aceita (precisa de um ajuste ou de observações).
+
+## Regra que esbarra no pedido dela (desde a v37; plano de mídia, §6)
+Quando um pedido dela esbarra numa regra que ela pode mudar, o motor faz o que a regra deixa e pergunta. A seção é do
+`bin/regras.py` (nunca à mão) e aparece no storyboard (antes de `## Instagram`), no fim das notas da prévia, no fim do
+rascunho e, se houver, nos ganchos:
+```
+## Regra que esbarra no seu pedido
+### S47-01-R1
+pedido: "pôr a pergunta num cartão" (IG, quadro 4)
+regra: estilo/limites.md:28 — "Nunca caixa, tarja, cartão ou faixa com texto"
+feito agora: a pergunta em Lora solta com sombra, no mesmo lugar
+texto novo: "[ambos] Cartão com texto só quando ela pedir no storyboard; o resto continua em letra solta."
+pergunta: mudar a regra, fazer só neste vídeo ou manter?
+```
+- O app lê só os blocos `### <id>-R<n>` do próprio roteiro e só as linhas `pedido`, `regra`, `feito agora`,
+  `texto novo` e `pergunta` (`js/regras.js`); bloco sem pedido, regra ou texto novo fica de fora. Numa pergunta feita de
+  novo (o mesmo id), o motor põe o porquê antes da pergunta e o app mostra esse porquê.
+- Na tela: o pedido dela, a regra (onde mora e o texto de agora), o que o motor fez e como a regra fica, com 3 botões:
+  "Mudar a regra" (`mudar`), "Só neste vídeo" (`so_neste`) e "Manter" (`manter`). O id da pergunta não aparece; a
+  configuração fixa do estilo (`estilo/travas.json`, `<chave> = <valor>`) aparece em palavras.
+- A resposta vai no campo `regras` da decisão que ela manda em seguida: storyboard, ajustes da prévia, decisão de
+  roteiro (`2-Roteiros/rascunhos/<id> decisao v<N>.md`, entre `motivo` e `quem`) ou escolha do gancho. Só `id` e
+  `resposta`, só das perguntas que ela respondeu:
+  ```
+  regras:
+    - id: S47-01-R1
+      resposta: mudar
+  ```
+- "Aprovar" com uma resposta que libera o pedido ("Mudar a regra" ou "Só neste vídeo") vira pedido de mudança
+  (`ajustar` no storyboard e na prévia, `mudar` no roteiro), com aviso na tela: aprovado, o pedido ficaria de fora
+  (e a aprovação da prévia nem tem o campo). Sem outro pedido, vai o pedido que esperava a regra (em `observacoes`; no
+  roteiro, em `pedido`). A escolha do gancho não muda. "Manter" com "Aprovar" segue aprovação (na prévia, sem o campo).
+- O "Copiar a lista" (cole no chat do Diretor) e a ponte nunca levam as respostas: só a decisão gravada pelo app, na
+  conta dela, responde.
 
 ## Aprovação (o Diretor salva)
 `4-Revisao/<id> aprovado.md`

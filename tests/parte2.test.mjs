@@ -39,6 +39,9 @@ observacoes: texto livre (opcional)
       { versao: 'ambas', tempo: '0:12', pedido: 'tirar o zoom', como: '' },
     ],
     observacoes: 'texto livre (opcional)',
+    quem: '',
+    quando: '',
+    regras: [],
   });
 });
 

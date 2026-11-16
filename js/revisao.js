@@ -8,6 +8,11 @@
 // contrato (parse.js: gerarAprovacao / gerarAjustes). Não há "recusar" a prévia: só aprovar ou
 // ajustar. Ids T podem ser decididos aqui (o motor trata os testes); só Decisões e Desempenho
 // recusam ids T.
+//
+// O pedido de ajustes leva `quem` (o e-mail da conta) e `quando` (−03:00), como as outras decisões, e, quando ela
+// respondeu uma pergunta de regra nas notas da prévia, o campo `regras` (js/regras.js). A aprovação
+// (`<id> aprovado.md`) não tem esse campo: "aprovar" com uma resposta que libera o pedido vira "ajustar" antes de chegar
+// aqui (regras.decisaoComRegras).
 
 import { gerarAprovacao, gerarAjustes, parseRevisao, idValido, horaCurta, formatarData, hojeISO, lerDataHora } from './parse.js';
 import { podeDecidir } from './controle.js';
@@ -30,14 +35,14 @@ function quandoCriado(arquivo, agora) {
 /**
  * O arquivo a criar em 4-Revisao, ou a recusa.
  *   id, decisao ('aprovar' | 'ajustar'), versao (a prévia vista: versao_aprovada ou versao_base),
- *   ajustes [{versao: ig|tt|ambas, tempo, pedido, como}] (só no ajustar), observacoes,
- *   arquivosExistentes (listagem de 4-Revisao: nomes ou arquivos do Drive {name, createdTime}),
- *   email, agora.
+ *   ajustes [{versao: ig|tt|ambas, tempo, pedido, como}] (só no ajustar), observacoes, regras [{id, resposta}] (só no
+ *   ajustar), arquivosExistentes (listagem de 4-Revisao: nomes ou arquivos do Drive {name, createdTime}),
+ *   email (vai em `quem`), agora (vai em `quando`).
  * Recusa quando: a conta não decide; já existe `<id> aprovado.md` (nada mais a gravar); o nome
  * já existe (também com caixa diferente, que o motor lê igual); dados fora do contrato.
  */
 export function planejarArquivoRevisao({
-  id, decisao, versao, ajustes = [], observacoes = '', arquivosExistentes = [], email, agora = new Date(),
+  id, decisao, versao, ajustes = [], observacoes = '', regras = [], arquivosExistentes = [], email, agora = new Date(),
 } = {}) {
   if (!podeDecidir(email)) return { ok: false, motivo: 'sem-permissao', mensagem: 'Só a conta da Robertta decide.' };
   if (!idValido(id)) return { ok: false, motivo: 'id-invalido', mensagem: `Id inválido: ${id}` };
@@ -63,7 +68,7 @@ export function planejarArquivoRevisao({
   try {
     conteudo = decisao === 'aprovar'
       ? gerarAprovacao({ id, versao, observacoes })
-      : gerarAjustes({ id, versaoBase: versao, ajustes, observacoes });
+      : gerarAjustes({ id, versaoBase: versao, ajustes, observacoes, regras, quem: email, quando: agora });
   } catch (e) {
     return { ok: false, motivo: 'dados-invalidos', mensagem: e.message };
   }

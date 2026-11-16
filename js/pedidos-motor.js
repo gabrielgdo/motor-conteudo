@@ -1,6 +1,10 @@
 // Pedidos e decisões gravados no Drive para o Motor Reels (puro: sem DOM, sem rede).
 // O app escreve estes arquivos; o vigia é quem roda /radar e /roteirizar. Não passa pela ponte
 // (Radar e Roteirista). Campos desconhecidos no pedido são ignorados (não são instruções).
+// A decisão de roteiro e a escolha do gancho levam, quando ela respondeu, o campo `regras` (as respostas dela às
+// perguntas de regra; js/regras.js).
+
+import { linhasRegras, lerRegrasYaml } from './regras.js';
 
 const TIPOS = Object.freeze(['busca', 'selecao', 'pauta-completa']);
 const DECISOES_ROTEIRO = Object.freeze(['aprovar', 'mudar', 'recusar']);
@@ -153,11 +157,11 @@ export function textoPedidoBusca(pedido = {}) {
 }
 
 /**
- * Arquivo de decisão de roteiro (YAML). quem deve ser o e-mail de quem está logado, ou "chat".
- * O motor ignora se quem não for o e-mail dela ou "chat" (e, no teste, "test").
+ * Arquivo de decisão de roteiro (YAML). quem deve ser o e-mail de quem está logado.
+ * O motor ignora se quem não for o e-mail dela (e, no teste, "test"). `regras`: as respostas dela às perguntas de regra.
  */
 export function textoDecisaoRoteiro({
-  id, versao, decisao, pedido = '', motivo = '', quem = '', quando = null,
+  id, versao, decisao, pedido = '', motivo = '', regras = [], quem = '', quando = null,
 } = {}) {
   const dec = minusc(decisao);
   return [
@@ -167,6 +171,7 @@ export function textoDecisaoRoteiro({
     `decisao: ${DECISOES_ROTEIRO.includes(dec) ? dec : texto(decisao)}`,
     `pedido: ${yamlEsc(pedido)}`,
     `motivo: ${yamlEsc(motivo)}`,
+    ...linhasRegras(regras, texto(id)),
     `quem: ${minusc(quem)}`,
     `quando: ${isoBrasilia(quando || new Date())}`,
     '---',
@@ -175,10 +180,11 @@ export function textoDecisaoRoteiro({
 }
 
 export function lerDecisaoRoteiro(textoMd = '') {
-  const out = { id: '', versao: 0, decisao: '', pedido: '', motivo: '', quem: '', quando: '' };
+  const out = { id: '', versao: 0, decisao: '', pedido: '', motivo: '', quem: '', quando: '', regras: lerRegrasYaml(textoMd) };
   const m = String(textoMd || '').match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!m) return out;
   for (const linha of m[1].split(/\r?\n/)) {
+    if (/^\s/.test(linha)) continue; // só campos de topo (os itens de `regras` são indentados)
     const l = linha.trim();
     if (!l.includes(':')) continue;
     const chave = minusc(l.split(':')[0]);
@@ -195,7 +201,8 @@ export function lerDecisaoRoteiro(textoMd = '') {
 }
 
 /* Escolha do gancho (desde 15/11/2026): 2-Roteiros/rascunhos/<id> gancho vN.md, N = a versão dos ganchos escolhida.
-   Lista fechada: id, versao, escolha (1 | 2 | 3 | outros), observacoes, quem, quando. */
+   Lista fechada: id, versao, escolha (1 | 2 | 3 | outros), observacoes, regras (as respostas às perguntas de regra, só
+   quando ela respondeu), quem, quando. */
 
 export const ESCOLHAS_GANCHO = Object.freeze(['1', '2', '3', 'outros']);
 
@@ -209,7 +216,7 @@ export function parseNomeEscolhaGancho(nome) {
   return m ? { id: m[1], versao: Number(m[2]) } : null;
 }
 
-export function textoEscolhaGancho({ id, versao, escolha, observacoes = '', quem = '', quando = null } = {}) {
+export function textoEscolhaGancho({ id, versao, escolha, observacoes = '', regras = [], quem = '', quando = null } = {}) {
   const e = minusc(escolha);
   return [
     '---',
@@ -217,6 +224,7 @@ export function textoEscolhaGancho({ id, versao, escolha, observacoes = '', quem
     `versao: ${Number(versao) || 0}`,
     `escolha: ${ESCOLHAS_GANCHO.includes(e) ? e : texto(escolha)}`,
     `observacoes: ${yamlEsc(observacoes)}`,
+    ...linhasRegras(regras, texto(id)),
     `quem: ${minusc(quem)}`,
     `quando: ${isoBrasilia(quando || new Date())}`,
     '---',
@@ -225,7 +233,7 @@ export function textoEscolhaGancho({ id, versao, escolha, observacoes = '', quem
 }
 
 export function lerEscolhaGancho(textoMd = '') {
-  const out = { id: '', versao: 0, escolha: '', observacoes: '', quem: '', quando: '' };
+  const out = { id: '', versao: 0, escolha: '', observacoes: '', quem: '', quando: '', regras: lerRegrasYaml(textoMd) };
   const m = String(textoMd || '').match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!m) return out;
   for (const linha of m[1].split(/\r?\n/)) {

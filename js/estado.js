@@ -35,6 +35,9 @@ const inicial = () => ({
   sbQuadro: {},
   sbAmpliado: {},
   storyboardsEnviados: {},
+  // Perguntas de regra (plano de mídia, §6; só em memória): as respostas dela por decisão, até a decisão sair
+  // ("<tipo>:<id>:v<N>" -> {<id da pergunta>: 'mudar' | 'so_neste' | 'manter'}; js/regras.js chaveRespostas).
+  respostasRegra: {},
   candidatosVisiveis: 30, // chip Candidatos: quantos cartões aparecem antes do "Mostrar mais"
   janela: null, // janela de confirmação aberta: {tipo, ...} (js/acoes.js)
   // Envio ao Roteirista aceito pela ponte e ainda não visto em Execuções (registro otimista, só em

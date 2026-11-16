@@ -3,6 +3,8 @@
 // Nada aqui toca DOM, rede ou armazenamento — tudo testável com `node --test`.
 
 import { TIMEZONE } from './config.js';
+import { linhasRegras, lerRegrasYaml } from './regras.js';
+import { isoBrasilia } from './pedidos-motor.js';
 
 /* ------------------------------------------------------------------ ids */
 
@@ -293,12 +295,17 @@ export function gerarAprovacao({ id, versao, observacoes = '' }) {
 
 export const VERSOES_AJUSTE = ['ig', 'tt', 'ambas'];
 
-/** Conteúdo de `4-Revisao/<id> ajustes v<N>.md`. */
-export function gerarAjustes({ id, versaoBase, ajustes, observacoes = '' }) {
+/**
+ * Conteúdo de `4-Revisao/<id> ajustes v<N>.md` (formatos.md do motor, "Pedido de ajustes"). `quem` (o e-mail da conta,
+ * como nas outras decisões; sem ele o motor não aceita "Mudar a regra") e `quando` (ISO com −03:00) entram quando
+ * dados; o app sempre dá os dois (revisao.planejarArquivoRevisao). `regras`: as respostas dela às perguntas de regra.
+ * Sem ajuste na lista, vale um pedido geral em `observacoes` (`ajustes: []`).
+ */
+export function gerarAjustes({ id, versaoBase, ajustes, observacoes = '', regras = [], quem = '', quando = null }) {
   exigirId(id);
   const v = exigirVersao(versaoBase);
-  if (!Array.isArray(ajustes) || ajustes.length === 0) throw new Error('Inclua pelo menos um ajuste.');
-  const linhas = ['---', `id: ${id}`, `versao_base: ${v}`, 'decisao: ajustar', 'ajustes:'];
+  if (!Array.isArray(ajustes) || (ajustes.length === 0 && !String(observacoes || '').trim())) throw new Error('Inclua pelo menos um ajuste.');
+  const linhas = ['---', `id: ${id}`, `versao_base: ${v}`, 'decisao: ajustar', ajustes.length ? 'ajustes:' : 'ajustes: []'];
   for (const a of ajustes) {
     const versao = String(a.versao || '').toLowerCase();
     if (!VERSOES_AJUSTE.includes(versao)) throw new Error(`Versão de ajuste inválida: ${a.versao}`);
@@ -308,7 +315,10 @@ export function gerarAjustes({ id, versaoBase, ajustes, observacoes = '' }) {
     linhas.push(`    pedido: ${yamlTexto(a.pedido)}`);
     if (String(a.como || '').trim()) linhas.push(`    como: ${yamlTexto(a.como)}`);
   }
-  linhas.push(`observacoes: ${yamlTexto(observacoes)}`, '---');
+  linhas.push(`observacoes: ${yamlTexto(observacoes)}`, ...linhasRegras(regras, id));
+  if (String(quem || '').trim()) linhas.push(`quem: ${String(quem).trim().toLowerCase()}`);
+  if (quando) linhas.push(`quando: ${isoBrasilia(quando)}`);
+  linhas.push('---');
   return linhas.join('\n') + '\n';
 }
 
@@ -676,8 +686,8 @@ const numeroDaVersao = (v) => {
 
 /**
  * Lê `4-Revisao/<id> ajustes v<N>.md` (frontmatter de formatos.md) →
- * {id, versaoBase, decisao, ajustes:[{versao, tempo, pedido, como}], observacoes}, ou null sem frontmatter.
- * Só os campos do contrato; o resto é ignorado. Itens sem pedido nem tempo ficam de fora.
+ * {id, versaoBase, decisao, ajustes:[{versao, tempo, pedido, como}], observacoes, quem, quando, regras}, ou null sem
+ * frontmatter. Só os campos do contrato; o resto é ignorado. Itens sem pedido nem tempo ficam de fora.
  */
 export function parseAjustes(texto) {
   if (typeof texto !== 'string') return null;
@@ -689,7 +699,7 @@ export function parseAjustes(texto) {
   for (let j = i + 1; j < linhas.length; j++) if (linhas[j].trim() === '---') { fim = j; break; }
   if (fim < 0) return null;
 
-  const out = { id: '', versaoBase: null, decisao: '', ajustes: [], observacoes: '' };
+  const out = { id: '', versaoBase: null, decisao: '', ajustes: [], observacoes: '', quem: '', quando: '', regras: lerRegrasYaml(linhas.slice(i).join('\n')) };
   const itens = [];
   let naLista = false;
   let atual = null;
@@ -705,6 +715,8 @@ export function parseAjustes(texto) {
       else if (k === 'versao_base') out.versaoBase = numeroDaVersao(v);
       else if (k === 'decisao') out.decisao = v.toLowerCase();
       else if (k === 'observacoes') out.observacoes = v;
+      else if (k === 'quem') out.quem = v.toLowerCase();
+      else if (k === 'quando') out.quando = v;
       continue;
     }
     if (!naLista) continue;

@@ -3,15 +3,20 @@
 //   - à esquerda, os quadros em grade, uma seção por rede (Instagram, TikTok), cada um com o tempo, o que acontece, o
 //     texto na tela e o porquê; tocar na imagem amplia; "Pedir mudança" abre, no próprio quadro, o campo do pedido
 //     (só nesta rede ou nas duas) e "Adicionar à lista";
-//   - à direita, "Está bom assim?": a faixa do motor, a lista de pedidos (com "tirar"), observações, "Enviar os
-//     pedidos" e "Aprovar o storyboard" (desligado enquanto houver pedido na lista); depois de enviar, o estado
-//     (mudanças enviadas ou aprovado) com o que ela pediu.
+//   - à direita, as perguntas de regra, se o storyboard trouxer (um pedido dela esbarrou numa regra: "Mudar a regra",
+//     "Só neste vídeo" ou "Manter"; js/componentes/regras.js), e "Está bom assim?": a faixa do motor, a lista de
+//     pedidos (com "tirar"), observações, "Enviar os pedidos" e "Aprovar o storyboard" (desligado enquanto houver
+//     pedido na lista; com uma resposta que libera o pedido, vira "Refazer o storyboard com o seu pedido", porque
+//     aprovado o pedido ficaria de fora); depois de enviar, o estado (mudanças enviadas ou aprovado) com o que ela
+//     pediu.
 // Tudo o que vem do Drive passa por esc(); as imagens são endereços blob: gerados no app (componentes/quadros.js).
 
 import { esc, ic, NOME_REDE } from '../util.js';
 import { estado } from '../estado.js';
 import { podeDecidir } from '../controle.js';
 import { estadoDoStoryboard, nomeDecisaoStoryboard, quadroMaisPerto, segundosDoQuadro } from '../storyboard.js';
+import { chaveRespostas } from '../regras.js';
+import { blocoRegras, listaRespostas, avisoViraPedido, algumaLibera } from '../componentes/regras.js';
 import { Quadros } from '../componentes/quadros.js';
 import { moldura } from '../componentes/janelas.js';
 import { campo, segmento, selo, vazio, linkDoDrive } from './pecas.js';
@@ -119,32 +124,43 @@ export function painelDecisaoStoryboard(r, { email = '', local = null, agora = n
   if (st.estado !== 'decidir') {
     const dec = sb.decisao || null;
     const pediu = dec?.ajustes?.length ? `<div><h3 style="margin-bottom:.625rem">O que você pediu</h3><ul class="pedidos">${dec.ajustes.map((a) => `<li><div>${textoPedidoStoryboard(a)}</div></li>`).join('')}</ul></div>` : '';
+    const respondeu = listaRespostas(sb.regras, dec?.regras);
     return `<section class="painel pilha ordem-2" aria-labelledby="t-sb-estado"><h2 id="t-sb-estado">${esc(st.texto)}</h2>
       <p class="meta">${selo(st.estado === 'sem-texto' ? 'Sem leitura' : st.estado === 'ajustar' ? 'Com o motor' : 'Renderizando', st.tom)}</p>
       <p class="pequeno" role="status">${esc(st.explicacao)}</p>
       ${faixa}
       ${pediu}
       ${dec?.observacoes ? `<p class="pequeno apagado">${esc(dec.observacoes)}</p>` : ''}
+      ${respondeu}
     </section>`;
   }
   const pedidos = pedidosDoStoryboard(r);
   const n = pedidos.length;
-  return `
+  const chave = chaveRespostas('sb', r.id, v);
+  const respostas = estado.respostasRegra?.[chave] || {};
+  // "Mudar a regra" ou "Só neste vídeo": aprovado, o pedido que esperava a regra ficaria de fora; vai como mudança
+  const vira = !n && algumaLibera(sb.regras, respostas, r.id);
+  const regras = (sb.regras || []).length ? `<section class="painel pilha ordem-2" aria-label="Regra que esbarrou no seu pedido">
+      ${blocoRegras({ perguntas: sb.regras, respostas, chave, pode: decide, depois: 'A resposta vai junto com a sua decisão do storyboard.' })}
+    </section>` : '';
+  return `${regras}
     <section class="painel pilha ordem-2" aria-labelledby="t-sb-aprovar"><h2 id="t-sb-aprovar">Está bom assim?</h2>
       ${faixa}
-      <p class="apagado pequeno">Aprovar manda o motor renderizar as prévias v1 do Instagram e do TikTok. Para mudar algo, toque em “Pedir mudança neste quadro” no quadro que quer mudar.</p>
+      <p class="apagado pequeno">${vira ? '' : 'Aprovar manda o motor renderizar as prévias v1 do Instagram e do TikTok. '}Para mudar algo, toque em “Pedir mudança neste quadro” no quadro que quer mudar.</p>
       ${n ? `<div class="pilha" style="gap:.5rem"><h3 style="margin:0">Pedidos de mudança (${n})</h3>
         <ul class="pedidos" aria-label="Pedidos de mudança">${pedidos.map((a, i) => `<li><div>${textoPedidoStoryboard(a)}</div><button type="button" class="redondo" data-acao="sb-remover" data-id="${id}" data-valor="${i}" aria-label="Tirar este pedido da lista">${ic('lixo', 18)}</button></li>`).join('')}</ul></div>` : ''}
       ${campo({ modelo: `sb-obs-${r.id}`, rotulo: n ? 'Mais alguma coisa (vale para o vídeo todo)' : 'Pedido geral', tipo: 'textarea', linhas: 2, opcional: true, exemplo: 'Ex.: menos texto na tela', attrs: decide ? '' : 'disabled' })}
       <button type="button" class="botao primario cheio" data-acao="sb-enviar" data-id="${id}"${decide ? '' : ' disabled'}>${ic('enviar')} ${n ? `Enviar ${n === 1 ? 'o pedido' : `os ${n} pedidos`} de mudança` : 'Enviar o pedido geral'}</button>
-      <button type="button" class="botao ${n ? 'calmo' : 'primario'} cheio" data-acao="sb-aprovar" data-id="${id}"${decide && !n ? '' : ' disabled'}>${ic('check')} Aprovar o storyboard v${v}</button>
+      ${decide ? avisoViraPedido(vira, `o storyboard v${v + 1}`) : ''}
+      <button type="button" class="botao ${n ? 'calmo' : 'primario'} cheio" data-acao="sb-aprovar" data-id="${id}"${decide && !n ? '' : ' disabled'}>${ic('check')} ${vira ? 'Refazer o storyboard com o seu pedido' : `Aprovar o storyboard v${v}`}</button>
       ${n && decide ? '<p class="pequeno apagado">Envie ou tire os pedidos da lista antes de aprovar.</p>' : ''}
       ${decide ? '' : `<p class="pequeno apagado">${NOTA_SO_ROBERTTA}</p>`}
     </section>`;
 }
 
-/** Janela de confirmação (puro): "Aprovar o storyboard?" ou "Enviar os pedidos de mudança?". */
-export function janelaStoryboard({ id, versao, decisao, ajustes = [], observacoes = '', teste = false, enviando = false, erro = '' } = {}) {
+/** Janela de confirmação (puro): "Aprovar o storyboard?" ou "Enviar os pedidos de mudança?". `regras`, `perguntas` e
+    `virou`: as respostas dela às perguntas de regra (e se o "Aprovar" virou pedido de mudança por causa delas). */
+export function janelaStoryboard({ id, versao, decisao, ajustes = [], observacoes = '', regras = [], perguntas = [], virou = false, teste = false, enviando = false, erro = '' } = {}) {
   const v = Number(versao) || 1;
   const aprovar = decisao === 'aprovar';
   const nome = nomeDecisaoStoryboard(id, v);
@@ -153,11 +169,13 @@ export function janelaStoryboard({ id, versao, decisao, ajustes = [], observacoe
       ['Depois', 'Nas prévias em vídeo, você ainda pode pedir ajustes, como antes.']]
     : [['O que vai acontecer', `O app manda os pedidos ao motor (“${nome}”). Ele muda a montagem e faz o storyboard v${v + 1}, só com quadros; nenhum vídeo é renderizado.`],
       ['Depois', `O storyboard v${v + 1} aparece aqui para você ver de novo.`]];
+  if (virou) itens.unshift(['Por que vai como pedido de mudança', 'Você escolheu fazer o pedido que esperava a regra. Aprovando agora, ele ficaria de fora; por isso o app manda como pedido de mudança, e você aprova o storyboard novo depois.']);
   itens.push(['Se já tiver sido decidido', `Vale a primeira decisão do storyboard v${v}: logo antes de enviar, o app confere 4-Revisao.`]);
   const lista = aprovar ? '' : `<ul class="pedidos">${ajustes.map((a) => `<li><div>${textoPedidoStoryboard(a)}</div></li>`).join('')}${observacoes ? `<li><div><strong>Geral:</strong> ${esc(observacoes)}</div></li>` : ''}</ul>`;
   const corpo = `${teste ? `<p class="meta">${selo('Teste')}<span class="pequeno apagado">Id de teste: o motor trata como teste.</span></p>` : ''}
     <dl class="confirmacao">${itens.map(([a, b]) => `<div><dt>${esc(a)}</dt><dd>${esc(b)}</dd></div>`).join('')}</dl>
     ${lista}
+    ${listaRespostas(perguntas, regras)}
     ${erro ? `<p class="nota atencao" role="alert">${ic('alerta')}<span>${esc(erro)}</span></p>` : ''}`;
   const rotulo = aprovar ? `Aprovar o storyboard v${v}` : `Enviar ${ajustes.length === 1 ? 'o pedido' : ajustes.length ? `os ${ajustes.length} pedidos` : 'o pedido geral'}`;
   const rodape = `<button type="button" class="botao calmo" data-acao="fechar-janela">${erro ? 'Fechar' : 'Cancelar'}</button>${erro ? ''

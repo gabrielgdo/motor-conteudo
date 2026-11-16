@@ -11,6 +11,8 @@
 //   drive.criarArquivo                       arquivo de texto numa pasta do motor
 //   drive.gravarDecisaoPrevia                aprovado.md / ajustes vN.md em 4-Revisao, conferindo
 //                                            os nomes imediatamente antes (revisao.js)
+//   (as decisões de prévia, roteiro, gancho e storyboard levam `regras`, as respostas dela às perguntas de regra;
+//    a ponte, não: Integra.ponte.decidirRoteiro só manda os campos de sempre)
 //   ponte.disparar / ponte.decidirRoteiro    atrás de FLAGS.ponte e PONTE_URL (config.js);
 //                                            desligada, erro com codigo 'ponte-desligada'
 //   central.enviarSePuder                    pedido ao motor pela central (Supabase, js/central.js); os
@@ -339,11 +341,11 @@ export const Integra = {
     /** Decisão da prévia (aprovar | ajustar) → `<id> aprovado.md` ou `<id> ajustes vN.md` em
         4-Revisao. Confere os nomes imediatamente antes (vale a primeira decisão gravada; o Drive
         aceita nomes repetidos). → {ok:true, arquivo, nome} | {ok:false, motivo, mensagem}. */
-    async gravarDecisaoPrevia({ id, decisao, versao, ajustes = [], observacoes = '' } = {}) {
+    async gravarDecisaoPrevia({ id, decisao, versao, ajustes = [], observacoes = '', regras = [] } = {}) {
       if (!FLAGS.revisaoPeloApp) throw new ErroIntegra('Decidir a prévia pelo app está desligado.', 'desligado');
       const arquivosExistentes = await Integra.drive.listarRevisao(true);
       const plano = planejarArquivoRevisao({
-        id, decisao, versao, ajustes, observacoes, arquivosExistentes, email: auth.emailAtual(), agora: new Date(),
+        id, decisao, versao, ajustes, observacoes, regras, arquivosExistentes, email: auth.emailAtual(), agora: new Date(),
       });
       if (!plano.ok) return plano;
       const c = await Integra.central.enviarSePuder({ tipo: 'decisao_previa', nome: plano.nome, conteudo_id: id, conteudo: plano.conteudo });
@@ -433,8 +435,8 @@ export const Integra = {
       return { ok: true, nome, gravado: itens.length };
     },
 
-    /** 2-Roteiros/rascunhos/<id> decisao vN.md com quem (e-mail logado) e quando. */
-    async gravarDecisaoRoteiro({ id, versao, decisao, pedido = '', motivo = '' } = {}) {
+    /** 2-Roteiros/rascunhos/<id> decisao vN.md com quem (e-mail logado), quando e, se ela respondeu, as regras. */
+    async gravarDecisaoRoteiro({ id, versao, decisao, pedido = '', motivo = '', regras = [] } = {}) {
       const email = auth.emailAtual();
       if (!C.podeDecidir(email)) throw new ErroIntegra('Só a conta da Robertta decide.', 'sem-permissao');
       if (!idValido(id)) throw new ErroIntegra(`Id inválido: ${id}`, 'id-invalido');
@@ -446,7 +448,7 @@ export const Integra = {
       const pasta = (await drive.listar(raiz)).find((f) => f.mimeType === 'application/vnd.google-apps.folder' && f.name.trim().toLowerCase() === 'rascunhos');
       if (!pasta) throw new ErroIntegra('Não encontrei 2-Roteiros/rascunhos.', 'pasta-desconhecida');
       const nome = PM.nomeDecisaoRoteiro(id, v);
-      const texto = PM.textoDecisaoRoteiro({ id, versao: v, decisao, pedido, motivo, quem: email });
+      const texto = PM.textoDecisaoRoteiro({ id, versao: v, decisao, pedido, motivo, regras, quem: email });
       const c = await Integra.central.enviarSePuder({ tipo: 'decisao_roteiro', nome, conteudo_id: id, conteudo: texto });
       if (c) return { ok: true, nome, viaCentral: true };
       try {
@@ -461,7 +463,7 @@ export const Integra = {
         15/11/2026). Só a conta que decide. Vale a primeira escolha válida de cada versão: confere as pastas rascunhos* logo
         antes (a central também não regrava). Central primeiro (tipo decisao_gancho), Drive como reserva.
         → {ok:true, nome, viaCentral?} | {ok:false, motivo, mensagem}. */
-    async gravarEscolhaGancho({ id, versao, escolha, observacoes = '', desde = null } = {}) {
+    async gravarEscolhaGancho({ id, versao, escolha, observacoes = '', regras = [], desde = null } = {}) {
       const email = auth.emailAtual();
       if (!C.podeDecidir(email)) throw new ErroIntegra('Só a conta da Robertta escolhe o gancho.', 'sem-permissao');
       const raiz = (await drive.pastas()).roteiros;
@@ -469,7 +471,7 @@ export const Integra = {
       const pasta = pastas.find((f) => f.name.trim().toLowerCase() === 'rascunhos') || pastas[0];
       if (!pasta) throw new ErroIntegra('Não encontrei 2-Roteiros/rascunhos.', 'pasta-desconhecida');
       const existentes = (await Promise.all(pastas.map((p) => drive.listar(p.id)))).flat();
-      const plano = G.planejarEscolhaGancho({ id, versao, escolha, observacoes, email, existentes, agora: new Date() });
+      const plano = G.planejarEscolhaGancho({ id, versao, escolha, observacoes, regras, email, existentes, agora: new Date() });
       if (!plano.ok) return plano;
       // já enviada pela central e ainda não no Drive (o app recarregou no meio): a segunda sumiria sem aviso
       if (await Integra.central.jaPedido({ tipo: 'decisao_gancho', nome: plano.nome, desde })) {
@@ -497,11 +499,11 @@ export const Integra = {
         Só a conta que decide. Vale a primeira decisão válida de cada versão: confere 4-Revisao logo antes (a central também não
         regrava). Central primeiro (tipo decisao_storyboard), Drive como reserva.
         → {ok:true, nome, viaCentral?} | {ok:false, motivo, mensagem}. */
-    async gravarDecisaoStoryboard({ id, versao, decisao, ajustes = [], observacoes = '', desde = null } = {}) {
+    async gravarDecisaoStoryboard({ id, versao, decisao, ajustes = [], observacoes = '', regras = [], desde = null } = {}) {
       const email = auth.emailAtual();
       if (!C.podeDecidir(email)) throw new ErroIntegra('Só a conta da Robertta decide.', 'sem-permissao');
       const existentes = await Integra.drive.listarRevisao(true);
-      const plano = SB.planejarDecisaoStoryboard({ id, versao, decisao, ajustes, observacoes, email, existentes, agora: new Date() });
+      const plano = SB.planejarDecisaoStoryboard({ id, versao, decisao, ajustes, observacoes, regras, email, existentes, agora: new Date() });
       if (!plano.ok) return plano;
       // já enviada pela central e ainda não no Drive (o app recarregou no meio): a segunda sumiria sem aviso
       if (await Integra.central.jaPedido({ tipo: 'decisao_storyboard', nome: plano.nome, desde })) {

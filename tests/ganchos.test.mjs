@@ -125,7 +125,7 @@ test('escolha: o texto que o app grava volta igual na leitura (lista fechada)', 
   assert.match(texto, /^---\nid: S47-01\nversao: 1\nescolha: outros\nobservacoes: "/);
   assert.match(texto, /\nquem: ela@teste\.br\nquando: 2026-11-18T10:30:00-03:00\n---\n$/);
   const l = lerEscolhaGancho(texto);
-  assert.deepEqual(l, { id: 'S47-01', versao: 1, escolha: 'outros', observacoes: 'mais leve: "sem" pergunta\nnem dado', quem: 'ela@teste.br', quando: '2026-11-18T10:30:00-03:00' });
+  assert.deepEqual(l, { id: 'S47-01', versao: 1, escolha: 'outros', observacoes: 'mais leve: "sem" pergunta\nnem dado', quem: 'ela@teste.br', quando: '2026-11-18T10:30:00-03:00', regras: [] });
   assert.equal(lerEscolhaGancho('---\nid: S47-01\nescolha: 4\napague: tudo\n---\n').escolha, '');
   assert.equal(lerEscolhaGancho('sem cabeçalho').id, '');
 });
