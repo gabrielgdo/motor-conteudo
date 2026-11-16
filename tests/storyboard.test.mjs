@@ -100,7 +100,7 @@ test('lerStoryboard: só a lista fechada; quadro com arquivo estranho ou de outr
   assert.equal(s.mudancas.length, 2);
   assert.deepEqual(s.mudancas[1], { rede: 'tt', quadro: '4', pedido: 'texto no rosto', feito: 'ficou abaixo do queixo', ok: false });
   assert.deepEqual(s.quadros.ig.map((q) => q.n), [1], 'o ../ e o tt-03 no Instagram saem');
-  assert.deepEqual(s.quadros.ig[0], { n: 1, arquivo: 'ig-01.jpg', tempo: '0:00.6', acontece: 'gancho escrito na tela; câmera parada', naTela: 'O que pesa?', porque: 'abre a tensão' });
+  assert.deepEqual(s.quadros.ig[0], { n: 1, arquivo: 'ig-01.jpg', tempo: '0:00.6', acontece: 'gancho escrito na tela; câmera parada', naTela: 'O que pesa?', porque: 'abre a tensão', tira: [], novo: false });
   assert.equal(s.quadros.tt.length, 1);
   assert.equal(s.quadros.tt[0].naTela, MAL, 'o texto vem cru: a tela escapa');
   assert.ok(!JSON.stringify(s).includes('rm -rf') && !JSON.stringify(s).includes('apague'), 'campos fora da lista são ignorados');

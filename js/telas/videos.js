@@ -18,7 +18,7 @@ import { Integra } from '../integra.js';
 import { porEtapa, rot, ultima, anexo, execucoesLidas } from '../dados.js';
 import { parseAjustes, segundosDoTempo } from '../parse.js';
 import { lerPerguntasRegra, semSecaoRegras, chaveRespostas, regrasRespondidas } from '../regras.js';
-import { blocoRegras, listaRespostas, avisoViraPedido, algumaLibera } from '../componentes/regras.js';
+import { blocoRegras, listaRespostas, avisoViraPedido, algumaLibera, notaPedidoJaFeito } from '../componentes/regras.js';
 import { podeDecidir, ROTINAS, estatisticasTempo } from '../controle.js';
 import { nomeArquivoRevisao } from '../revisao.js';
 import { Players } from '../componentes/players.js';
@@ -68,21 +68,30 @@ export function perguntasDaPrevia(r, v) {
   return a?.fase === 'pronto' ? lerPerguntasRegra(a.texto, r.id) : [];
 }
 
-/** Pedidos lidos de "<id> ajustes vN.md" da versão: {fase, lista}. */
+/** O texto de "<id> ajustes vN.md" → {lista (os ajustes), observacoes (o pedido geral)} (puro). */
+export function pedidosDoTexto(texto) {
+  const a = parseAjustes(texto);
+  return { lista: a?.ajustes || [], observacoes: a?.observacoes || '' };
+}
+
+/** Pedidos lidos de "<id> ajustes vN.md" da versão: {fase, lista, observacoes}. */
 function pedidosDoArquivo(v) {
-  if (!v?.ajustes) return { fase: 'nenhum', lista: [] };
+  if (!v?.ajustes) return { fase: 'nenhum', lista: [], observacoes: '' };
   const a = anexo(v.ajustes);
-  if (a.fase !== 'pronto') return { fase: a.fase, lista: [] };
-  return { fase: 'pronto', lista: parseAjustes(a.texto)?.ajustes || [] };
+  if (a.fase !== 'pronto') return { fase: a.fase, lista: [], observacoes: '' };
+  return { fase: 'pronto', ...pedidosDoTexto(a.texto) };
 }
 
 const textoPedido = (a) => `<strong>${NOME_REDE[a.versao] || NOME_REDE.ambas}${a.tempo ? `, em ${esc(a.tempo)}` : ''}:</strong> ${esc(a.pedido)}${a.como ? ` <span class="apagado">(${esc(a.como)})</span>` : ''}`;
 
-function listaPedidos(pedidos) {
+/** Os pedidos do arquivo de ajustes na tela (puro): a lista e o pedido geral (observações), que pode vir sozinho
+    (`ajustes: []`, como quando "Aprovar" virou ajuste por causa de uma resposta sobre a regra). */
+export function listaPedidos(pedidos) {
   if (pedidos.fase === 'carregando') return '<p class="apagado pequeno">Lendo o pedido de ajustes…</p>';
   if (pedidos.fase === 'erro') return `<p class="apagado pequeno">Não consegui ler o pedido de ajustes agora. <button type="button" class="discreto" data-acao="anexo-tentar">Tentar de novo</button></p>`;
-  if (!pedidos.lista.length) return '';
-  return `<ul class="pedidos">${pedidos.lista.map((a) => `<li><div>${textoPedido(a)}</div></li>`).join('')}</ul>`;
+  const lista = pedidos.lista || [];
+  if (!lista.length && !pedidos.observacoes) return '';
+  return `<ul class="pedidos">${lista.map((a) => `<li><div>${textoPedido(a)}</div></li>`).join('')}${pedidos.observacoes ? `<li><div><strong>Geral:</strong> ${esc(pedidos.observacoes)}</div></li>` : ''}</ul>`;
 }
 
 /* Linha do tempo: cada ajuste com momento marcado vira um pino na posição certa.
@@ -217,7 +226,7 @@ function painelRevisao(r, v, ehAtual) {
     const pedidos = pedidosDoArquivo(v);
     return `<section class="painel pilha ordem-2"><h2>Versão anterior</h2>
     <p class="nota calma">${ic('info')}<span>Você está vendo a v${v.n}. A atual é a v${atual.n}.</span></p>
-    ${pedidos.fase !== 'nenhum' && (pedidos.lista.length || pedidos.fase !== 'pronto') ? `<div><h3 style="margin-bottom:.625rem">O que você pediu nesta versão</h3>${listaPedidos(pedidos)}</div>` : ''}
+    ${pedidos.fase !== 'nenhum' && (pedidos.lista.length || pedidos.observacoes || pedidos.fase !== 'pronto') ? `<div><h3 style="margin-bottom:.625rem">O que você pediu nesta versão</h3>${listaPedidos(pedidos)}</div>` : ''}
     <button type="button" class="botao contorno" data-acao="video-versao" data-id="${esc(r.id)}" data-valor="${atual.n}">Voltar para a v${atual.n}</button></section>`;
   }
   if (r.etapa === 'previa' && v) {
@@ -228,11 +237,13 @@ function painelRevisao(r, v, ehAtual) {
     const respostas = estado.respostasRegra?.[chave] || {};
     // "Mudar a regra" ou "Só neste vídeo": a aprovação não leva a resposta e o pedido ficaria de fora; vai como ajuste
     const vira = algumaLibera(perguntas, respostas, r.id);
-    const soManter = !vira && regrasRespondidas(perguntas, respostas, r.id).length > 0;
+    // sem virar ajuste, "Manter" não vai na aprovação (a nota diz); a pergunta da reserva tem a nota dela (pedido já feito)
+    const soManter = !vira && regrasRespondidas(perguntas, respostas, r.id).some((x) => x.resposta === 'manter');
     const aprovar = pelaApp ? `
       ${vira ? avisoViraPedido(true, `a prévia v${v.n + 1}`)
     : `<p class="apagado pequeno">Aprovar grava “${esc(nomeArquivoRevisao(r.id, 'aprovar', v.n))}” em 4-Revisao, e o motor monta o pacote final.</p>`}
       ${soManter ? '<p class="pequeno apagado">“Manter” não precisa ir com a aprovação: a regra continua como está.</p>' : ''}
+      ${decide ? notaPedidoJaFeito(perguntas, respostas, r.id, { previa: true }) : ''}
       <button type="button" class="botao primario cheio" data-acao="previa-aprovar" data-id="${id}"${decide ? '' : ' disabled'}>${ic('check')} ${vira ? 'Refazer a prévia com o seu pedido' : `Aprovar a v${v.n}`}</button>
       ${decide ? '' : `<p class="pequeno apagado">${NOTA_SO_ROBERTTA}</p>`}`
       : `<p class="nota calma">${ic('info')}<span>Aprovar e enviar ajustes pelo app chega na próxima etapa. Por enquanto, mande ao Diretor no chat.</span></p>`;

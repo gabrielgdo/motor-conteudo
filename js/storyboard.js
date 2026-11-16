@@ -6,7 +6,9 @@
 // arquivo inválido antes não bloqueia uma decisão válida depois; decisaoValida).
 //
 //   lerStoryboard(texto)              o .md do motor → {id, versao, redes, notas, mudancas, quadros:{ig:[…], tt:[…]},
-//                                     regras (as perguntas de regra; js/regras.js)}
+//                                     regras (as perguntas de regra; js/regras.js)}; cada quadro com a tira da peça de
+//                                     motion que entra nele (tira, novo; desde 16/11/2026)
+//   lerTira(valor, rede)              a linha "- tira:" de um quadro → os arquivos válidos da tira
 //   estadoDoStoryboard(r, {local})    em que pé está a decisão (decidir | aprovado | ajustar | sem-texto)
 //   planejarDecisaoStoryboard(…)      nome e conteúdo do arquivo da decisão, conferindo se ela já existe
 //   lerDecisaoStoryboard(texto)       a decisão gravada (para mostrar o que ela pediu)
@@ -27,6 +29,10 @@ const MAX_CAMPO = 400;
 const MAX_PEDIDO = 1000;
 const REDE_DA_SECAO = { instagram: 'ig', tiktok: 'tt' };
 const RE_ARQUIVO = /^(ig|tt)-\d{2}\.jpe?g$/i;
+// a tira de uma peça (bin/storyboard.py do motor): <rede>-p<NN>-<K>.jpg, NN a ordem da peça no vídeo, K de 1 a 6
+const RE_TIRA = /^(ig|tt)-p(\d{2,3})-([1-9])\.jpe?g$/i;
+/** De 4 a 6 imagens por peça no motor; o app mostra no máximo 6. */
+export const MAX_TIRA = 6;
 
 const ms = (d) => (d instanceof Date ? d.getTime() : d == null || d === '' ? NaN : new Date(d).getTime());
 const limpo = (v, max = MAX_CAMPO) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
@@ -46,11 +52,33 @@ function valor(v) {
 }
 
 /**
+ * A linha `- tira: ig-p01-1.jpg, ig-p01-2.jpg, …` de um quadro da rede `rede` → os arquivos da tira, na ordem do
+ * arquivo. Só nomes de tira (`<rede>-pNN-K.jpg`) da própria rede e da mesma peça (a do primeiro nome válido), sem
+ * repetir e no máximo MAX_TIRA; o resto (caminho, quadro, outra rede, outra peça) sai. → [] se nada servir.
+ */
+export function lerTira(v, rede) {
+  const out = [];
+  let peca = '';
+  for (const parte of valor(v).split(',')) {
+    const nome = parte.trim();
+    const m = nome.match(RE_TIRA);
+    if (!m || m[1].toLowerCase() !== rede || (peca && m[2] !== peca)) continue;
+    if (out.some((x) => x.toLowerCase() === nome.toLowerCase())) continue;
+    peca = m[2];
+    out.push(nome);
+    if (out.length === MAX_TIRA) break;
+  }
+  return out;
+}
+
+/**
  * `<id> storyboard vN.md` → {id, versao, redes, notas, mudancas, quadros, regras}. Cabeçalho: só id, versao e redes.
  * Corpo: só "## Para você conferir" (itens "- "), "## O que mudou" (tabela), "## Regra que esbarra no seu pedido" (as
  * perguntas de regra, js/regras.js) e as seções "## Instagram" / "## TikTok" com "### Quadro N" e, em cada uma, as
- * linhas arquivo, tempo, acontece, na tela e por que. Quadro sem arquivo válido (ig-NN.jpg / tt-NN.jpg da própria rede)
- * fica de fora.
+ * linhas arquivo, tempo, acontece, na tela e por que, e no quadro em que uma peça de motion entra, "- tira:" (as
+ * imagens da peça; lerTira) e "- novo: sim" (a peça é sob medida deste vídeo; só vale com a tira). Cada quadro sai com
+ * `tira` ([] sem a linha) e `novo` (false sem ela). Quadro sem arquivo válido (ig-NN.jpg / tt-NN.jpg da própria rede)
+ * fica de fora; a tira não é quadro e não mexe na numeração.
  */
 export function lerStoryboard(texto) {
   const out = { id: '', versao: 0, redes: [], notas: [], mudancas: [], quadros: { ig: [], tt: [] }, regras: [] };
@@ -73,6 +101,7 @@ export function lerStoryboard(texto) {
   let rede = '';
   let quadro = null;
   const vistos = { ig: new Set(), tt: new Set() };
+  const vistasPeca = new Set();
   for (const bruta of corpo.split(/\r?\n/)) {
     const linha = bruta.trim();
     const h2 = linha.match(/^##\s+(.+?)\s*$/);
@@ -87,7 +116,8 @@ export function lerStoryboard(texto) {
     const h3 = linha.match(/^###\s+Quadro\s+(\d+)\s*$/i);
     if (h3) {
       const n = Number(h3[1]);
-      quadro = secao === 'quadros' && n >= 1 && n <= 30 && !vistos[rede].has(n) ? { n, arquivo: '', tempo: '', acontece: '', naTela: '', porque: '' } : null;
+      quadro = secao === 'quadros' && n >= 1 && n <= 30 && !vistos[rede].has(n)
+        ? { n, arquivo: '', tempo: '', acontece: '', naTela: '', porque: '', tira: [], novo: false } : null;
       if (quadro) { vistos[rede].add(n); out.quadros[rede].push(quadro); }
       continue;
     }
@@ -107,6 +137,16 @@ export function lerStoryboard(texto) {
       continue;
     }
     if (secao !== 'quadros' || !quadro) continue;
+    // a peça que entra neste quadro: a tira e se ela é nova (vale a primeira linha de cada)
+    const p = linha.match(/^(?:[-*•]\s+)?(tira|novo)\s*:\s*(.*)$/i);
+    if (p) {
+      const k = p[1].toLowerCase();
+      if (vistasPeca.has(`${k}:${rede}:${quadro.n}`)) continue;
+      vistasPeca.add(`${k}:${rede}:${quadro.n}`);
+      if (k === 'tira') quadro.tira = lerTira(p[2], rede);
+      else quadro.novo = valor(p[2]).toLowerCase() === 'sim';
+      continue;
+    }
     const c = linha.match(/^(arquivo|tempo|acontece|na\s+tela|por\s*qu[eê])\s*:\s*(.*)$/i);
     if (!c) continue;
     const k = /^na/i.test(c[1]) ? 'naTela' : /^por/i.test(c[1]) ? 'porque' : c[1].toLowerCase();
@@ -115,6 +155,7 @@ export function lerStoryboard(texto) {
   for (const r of ['ig', 'tt']) {
     out.quadros[r] = out.quadros[r].filter((q) => RE_ARQUIVO.test(q.arquivo) && q.arquivo.toLowerCase().startsWith(`${r}-`))
       .sort((a, b) => a.n - b.n);
+    for (const q of out.quadros[r]) q.novo = q.novo && q.tira.length > 0;   // "novo" só com a tira
   }
   if (!out.redes.length) out.redes = ['ig', 'tt'].filter((r) => out.quadros[r].length);
   out.regras = lerPerguntasRegra(corpo, idValido(out.id) ? out.id : '');
@@ -318,7 +359,8 @@ export function textoDaDecisaoStoryboardAceita(id, { decisao, versao, ajustes = 
   const por = viaCentral ? 'pela central: ele recebe em segundos' : 'pelo Drive: ele pega o arquivo em alguns minutos';
   if (decisao === 'ajustar') {
     const n = ajustes.length;
-    return `${id}: ${n === 1 ? '1 pedido de mudança enviado' : `${n} pedidos de mudança enviados`} ao motor ${por}. O storyboard v${Number(versao) + 1} aparece aqui quando ficar pronto.`;
+    const quantos = n > 1 ? `${n} pedidos de mudança enviados` : n === 1 ? '1 pedido de mudança enviado' : 'pedido de mudança enviado';
+    return `${id}: ${quantos} ao motor ${por}. O storyboard v${Number(versao) + 1} aparece aqui quando ficar pronto.`;
   }
   return `${id}: storyboard v${versao} aprovado e enviado ao motor ${por}. Ele renderiza as prévias do Instagram e do TikTok.`;
 }

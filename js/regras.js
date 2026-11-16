@@ -20,10 +20,12 @@
 // O arquivo é DADO: só a lista fechada de linhas é lida e tudo vai para a tela por esc(). O id da pergunta nunca
 // aparece na tela.
 //
-//   lerPerguntasRegra(texto, id)   a seção → [{rid, pedido, onde, arquivo, linha, regra, feito, novo, pergunta, motivo}]
+//   lerPerguntasRegra(texto, id)   a seção → [{rid, pedido, onde, arquivo, linha, regra, feito, novo, pergunta, motivo,
+//                                  reserva}]
 //   semSecaoRegras(texto)          o texto sem a seção (o resumo do motor não mostra o bloco cru)
 //   regrasRespondidas(…)           as respostas dela às perguntas da tela → [{id, resposta}]
 //   decisaoComRegras(…)            aprovar com um pedido liberado vira pedido de mudança (e o que vai no arquivo)
+//   efeitoDaResposta(resposta, …)  o que a resposta faz, em uma linha (com o pedido já feito ou o rascunho recusado)
 //   regrasValidas(regras, id)      só as respostas que podem ir num arquivo (pergunta deste roteiro, resposta da lista)
 //   linhasRegras(regras, id)       as linhas YAML do campo `regras` (nenhuma, se ela não respondeu)
 //   lerRegrasYaml(texto)           o campo lido de volta, como o motor lê (fila_roteiro.ler_regras)
@@ -43,6 +45,9 @@ const TITULO = /^##\s+Regra que esbarra no seu pedido\s*$/i;
 const RID = /^(S\d{2}-\d{2}|T\d{2}(?:-\d{2})?|R\d{3})-R(\d+)$/;
 // a pergunta de sempre (bin/regras.py: PERGUNTA e o fim de cada DE_NOVO); numa pergunta feita de novo, o porquê vem antes
 const PERGUNTA = /\s*mudar a regra, fazer s[óo] neste v[íi]deo ou manter\?\s*$/i;
+// o porquê da pergunta que voltou porque a resposta ("Mudar a regra") veio pela reserva do Drive (bin/regras.py,
+// DE_NOVO["reserva"]): ela valeu só para este vídeo e o pedido já foi feito naquela decisão
+const RESERVA = 'sua resposta nao veio pelo app';
 const MAX = { pedido: 1000, onde: 120, arquivo: 120, texto: 800, feito: 400, pergunta: 400 };
 const MAX_PEDIDO = 1000;   // observacoes (storyboard e prévia) e pedido (roteiro)
 
@@ -75,6 +80,7 @@ function lerRegra(v) {
  * perguntas, na ordem do arquivo. Só os blocos `### <id>-R<n>` (com `id`, só os deste roteiro; um id repetido vale uma
  * vez) e só as linhas pedido, regra, feito agora, texto novo e pergunta. Bloco sem pedido, regra ou texto novo fica de
  * fora (não dá para responder). `motivo`: numa pergunta feita de novo, o porquê que o motor escreveu antes da pergunta.
+ * `reserva`: o porquê é o da reserva do Drive (a resposta de antes valeu só para este vídeo e o pedido já foi feito).
  */
 export function lerPerguntasRegra(texto, id = '') {
   const out = [];
@@ -107,7 +113,10 @@ export function lerPerguntasRegra(texto, id = '') {
     else if (k === 'texto novo' && !atual.novo) atual.novo = linha1(v.replace(/^"(.*)"$/, '$1'), MAX.texto);
     else if (k === 'pergunta' && !atual.pergunta) atual.pergunta = linha1(v, MAX.pergunta);
   }
-  for (const q of out) q.motivo = q.pergunta.replace(PERGUNTA, '').trim();
+  for (const q of out) {
+    q.motivo = q.pergunta.replace(PERGUNTA, '').trim();
+    q.reserva = semAcento(q.motivo).toLowerCase().startsWith(RESERVA);
+  }
   return out.filter((q) => q.pedido && q.regra && q.novo);
 }
 
@@ -166,11 +175,12 @@ function regraFixa(q) {
     const texto = (b) => (b ? 'Os vídeos podem ter música.' : 'Os vídeos saem sem música.');
     return { literal: false, onde: 'Música nos vídeos', texto: texto(valor), novo: typeof novo === 'boolean' ? texto(novo) : linha1(q.novo, MAX.texto) };
   }
+  // outra chave: em palavras simples, sem a chave nem o valor em JSON
   return {
-    literal: true,
+    literal: false,
     onde: 'Configuração fixa do estilo',
-    texto: q.regra,
-    novo: sai ? `${chave} deixa de valer` : q.novo.replace(/\btravas?\b/gi, 'regra'),
+    texto: 'Uma configuração fixa do estilo não deixa fazer o seu pedido.',
+    novo: sai || novo === null ? 'Essa configuração deixa de valer.' : 'Essa configuração muda para deixar o seu pedido.',
   };
 }
 
@@ -194,6 +204,25 @@ export const chaveRespostas = (tipo, id, versao) => `${tipo}:${String(id ?? '').
 /** A resposta libera o pedido que esperava a regra? ("Mudar a regra" e "Só neste vídeo" sim; "Manter" não.) */
 export const liberaPedido = (resposta) => resposta === 'mudar' || resposta === 'so_neste';
 
+/** A resposta libera um pedido que ainda está por fazer? Numa pergunta da reserva, não: o pedido já foi feito. */
+export const liberaNesta = (q, resposta) => liberaPedido(resposta) && !!q && !q.reserva;
+
+/** A pergunta de id `rid` na lista, ou null. */
+export const perguntaDe = (perguntas, rid) => (perguntas || []).find((q) => q?.rid === rid) || null;
+
+/**
+ * O que a resposta faz, em uma linha (a tela mostra embaixo dos botões). `reserva`: a pergunta voltou e o pedido já foi
+ * feito neste vídeo; `decisao`: a decisão escolhida na tela ('recusar' no rascunho: o pedido não é feito). '' sem
+ * resposta válida.
+ */
+export function efeitoDaResposta(resposta, { reserva = false, decisao = '' } = {}) {
+  if (!RESPOSTAS_REGRA.includes(resposta)) return '';
+  const regra = resposta === 'mudar' ? 'A regra muda (para os próximos vídeos também).' : 'A regra continua como está.';
+  if (decisao === 'recusar') return resposta === 'manter' ? regra : `${regra} Com o rascunho recusado, o seu pedido não é feito.`;
+  if (reserva) return `${regra} O seu pedido já foi feito neste vídeo.`;
+  return EFEITO_RESPOSTA[resposta];
+}
+
 /** As respostas dela às perguntas que estão na tela → [{id, resposta}], na ordem das perguntas. Só as respondidas. */
 export function regrasRespondidas(perguntas = [], respostas = {}, id = '') {
   const out = [];
@@ -206,28 +235,30 @@ export function regrasRespondidas(perguntas = [], respostas = {}, id = '') {
 
 /**
  * O pedido que vai junto quando nada mais vai (o arquivo precisa de um pedido): os pedidos que esperavam a regra e que
- * a resposta dela libera. '' se nenhuma resposta libera.
+ * a resposta dela libera (fora os da reserva, já feitos). '' se nenhuma resposta libera.
  */
 export function textoDoPedidoDasRegras(perguntas = [], regras = []) {
-  const livres = (regras || []).filter((r) => liberaPedido(r.resposta))
-    .map((r) => (perguntas || []).find((q) => q.rid === r.id)).filter(Boolean);
+  const livres = (regras || []).map((r) => ({ q: perguntaDe(perguntas, r.id), resposta: r?.resposta }))
+    .filter(({ q, resposta }) => liberaNesta(q, resposta)).map(({ q }) => q);
   if (!livres.length) return '';
   const um = livres.length === 1;
   const lista = livres.map((q) => `"${q.pedido}"${q.onde ? ` (${q.onde})` : ''}`).join('; ');
   const texto = `${um ? 'Fazer o pedido que esperava' : 'Fazer os pedidos que esperavam'} a resposta sobre a regra: ${lista}.`;
-  return texto.length <= MAX_PEDIDO ? texto : `Fazer os ${livres.length} pedidos que esperavam a resposta sobre a regra.`;
+  if (texto.length <= MAX_PEDIDO) return texto;
+  return um ? 'Fazer o pedido que esperava a resposta sobre a regra.' : `Fazer os ${livres.length} pedidos que esperavam a resposta sobre a regra.`;
 }
 
 /**
  * O que vai de fato numa decisão com as respostas dela. `alvo`: 'storyboard' | 'previa' | 'roteiro' | 'gancho'.
  * "Aprovar" com alguma resposta que libera o pedido ("Mudar a regra" ou "Só neste vídeo") vira pedido de mudança
  * (ajustar no storyboard e na prévia, mudar no roteiro): aprovado, o pedido não sairia nesta versão (o motor o deixaria
- * como pendência nas notas) e, na prévia, a aprovação nem leva o campo `regras`. A escolha do gancho não vira nada.
+ * como pendência nas notas) e, na prévia, a aprovação nem leva o campo `regras`. A escolha do gancho não vira nada, e
+ * a pergunta da reserva também não (o pedido dela já foi feito; a resposta só decide a regra).
  * → {decisao, regras (as que vão no arquivo), virou, pedido (o texto de textoDoPedidoDasRegras)}.
  */
 export function decisaoComRegras({ decisao, perguntas = [], respostas = {}, id = '', alvo = '' } = {}) {
   const regras = regrasRespondidas(perguntas, respostas, id);
-  const virou = alvo !== 'gancho' && decisao === 'aprovar' && regras.some((r) => liberaPedido(r.resposta));
+  const virou = alvo !== 'gancho' && decisao === 'aprovar' && regras.some((r) => liberaNesta(perguntaDe(perguntas, r.id), r.resposta));
   const final = virou ? (alvo === 'roteiro' ? 'mudar' : 'ajustar') : decisao;
   // a aprovação da prévia (<id> aprovado.md) não tem o campo: só "Manter" chega aqui, e manter não muda nada
   const noArquivo = alvo === 'previa' && final === 'aprovar' ? [] : regras;

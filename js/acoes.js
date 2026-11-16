@@ -1101,6 +1101,21 @@ export const ACOES = {
     estado.sbAmpliado[id] = estado.sbAmpliado[id] === el.dataset.valor ? '' : el.dataset.valor;
     desenhar();
   },
+  // a tira de uma peça de motion: tocar numa miniatura abre a tela cheia nela, deslizando pela tira (telacheia.js)
+  'sb-tira'(el) {
+    const r = rot(el.dataset.id);
+    const [rede, n, i] = String(el.dataset.valor || '').split(':');
+    const q = (r?.storyboard?.quadros?.[rede] || []).find((x) => x.n === Number(n));
+    if (!q?.tira?.length) return;
+    const total = q.tira.length;
+    TelaCheia.abrirTira({
+      titulo: `${NOME_REDE[rede]} · quadro ${q.n} · animação`,
+      itens: q.tira.map((t, k) => ({ file: t.file, alt: `Animação do quadro ${q.n} do ${NOME_REDE[rede]}, imagem ${k + 1} de ${total}` })),
+      inicio: Number(i) || 0, botao: el, fonte: Quadros,
+      seletor: `[data-acao="sb-tira"][data-id="${CSS.escape(r.id)}"][data-valor="${CSS.escape(el.dataset.valor)}"]`,
+    });
+  },
+  'tira-passo'(el) { TelaCheia.passoTira(Number(el.dataset.valor)); },
   'sb-tentar'() {
     Quadros.tentar();
     tentarAnexosDeNovo();

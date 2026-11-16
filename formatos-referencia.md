@@ -97,6 +97,13 @@ com um id, o motor descobre o roteiro pela fala (preparo sem IA, antes do /edita
   `## O que mudou` (tabela rede | quadro | pedido | o que foi feito | ok), `## Regra que esbarra no seu pedido` (as
   perguntas de regra, antes dos quadros; ver abaixo) e `## Instagram` / `## TikTok` com `### Quadro N` e as linhas
   `arquivo:`, `tempo:`, `acontece:`, `na tela:`, `por que:`.
+- A tira da peça de motion (desde a v38): no quadro em que uma peça entra, o motor escreve
+  `- tira: ig-p01-1.jpg, ig-p01-2.jpg, …` (4 a 6 imagens da peça do começo ao fim, na mesma pasta dos quadros;
+  `p01` é a ordem da peça no vídeo) e, se a peça foi feita para este vídeo, `- novo: sim`. A tira não é quadro: a
+  numeração dos quadros não muda. O app só aceita nomes `<rede>-pNN-K.jpg` da rede do quadro e da mesma peça, sem
+  repetir, até 6; `novo` só vale com a tira. Na tela: uma fileira de miniaturas embaixo do quadro (tocar abre a tela
+  cheia, que desliza pela tira) e o selo discreto "novo" ("peça nova, feita para este vídeo"). As imagens da tira
+  baixam depois dos quadros; o app só guarda a pasta lida quando todas as imagens (quadros e tiras) chegaram.
 - Ela aprova ou pede mudança por quadro no app: `4-Revisao/<id> decisao storyboard v<N>.md` com `id`, `versao`,
   `decisao` (`aprovar` | `ajustar`), `ajustes` (lista com `rede` ig | tt | ambas, `quadro`, `tempo`, `pedido`),
   `observacoes`, `regras` (só se ela respondeu uma pergunta de regra), `quem`, `quando`. Pela central (tipo `decisao_storyboard`), com o Drive como reserva; vale a
@@ -170,6 +177,10 @@ pergunta: mudar a regra, fazer só neste vídeo ou manter?
   (`ajustar` no storyboard e na prévia, `mudar` no roteiro), com aviso na tela: aprovado, o pedido ficaria de fora
   (e a aprovação da prévia nem tem o campo). Sem outro pedido, vai o pedido que esperava a regra (em `observacoes`; no
   roteiro, em `pedido`). A escolha do gancho não muda. "Manter" com "Aprovar" segue aprovação (na prévia, sem o campo).
+- Pergunta que voltou porque a resposta anterior veio pela reserva do Drive (o porquê começa com "sua resposta não veio
+  pelo app"; v38): o pedido já foi feito naquela decisão, então "Aprovar" não vira pedido de mudança e o pedido não vai
+  de novo em `observacoes`; uma nota diz que o pedido já foi feito (na prévia, que a aprovação não leva a resposta e,
+  para mudar a regra, ela manda a resposta com um ajuste). Com "Recusar" no rascunho, a tela não promete o pedido.
 - O "Copiar a lista" (cole no chat do Diretor) e a ponte nunca levam as respostas: só a decisão gravada pelo app, na
   conta dela, responde.
 

@@ -205,7 +205,8 @@ function perguntasDoId(lista, id) {
 
 /**
  * O storyboard na etapa 'storyboard' (js/storyboard.js decide o estado): a versão mais nova, os quadros lidos do .md
- * (cada um com o arquivo da imagem achado na pasta) e a decisão em vigor para essa versão: a primeira VÁLIDA (como no
+ * (cada um com o arquivo da imagem achado na pasta e, se uma peça de motion entra nele, a tira: [{arquivo, file}], com
+ * `novo`) e a decisão em vigor para essa versão: a primeira VÁLIDA (como no
  * motor; js/storyboard.js decisaoValida). `lidoS`: {md: lerStoryboard(...)|null, arquivos: [arquivos da pasta],
  * decisao: lerDecisaoStoryboard(...)|null (a válida), decisaoArq: o arquivo dela|null, decisaoIncerta, erro} ou null
  * (não baixado).
@@ -219,7 +220,10 @@ export function storyboardDe(p, lidoS = null) {
   const porNome = new Map((lidoS?.arquivos || []).map((f) => [String(f.name || '').trim().toLowerCase(), f]));
   const quadros = { ig: [], tt: [] };
   for (const rede of ['ig', 'tt']) {
-    for (const q of md?.quadros?.[rede] || []) quadros[rede].push({ ...q, file: porNome.get(q.arquivo.toLowerCase()) || null });
+    for (const q of md?.quadros?.[rede] || []) {
+      const tira = (q.tira || []).map((arquivo) => ({ arquivo, file: porNome.get(arquivo.toLowerCase()) || null }));
+      quadros[rede].push({ ...q, file: porNome.get(q.arquivo.toLowerCase()) || null, tira, novo: !!q.novo && tira.length > 0 });
+    }
   }
   return {
     versao: p.ultimoStoryboard.v,
@@ -448,10 +452,11 @@ async function buscar(forcar, ger = geracao) {
         const arquivos = sb.pasta ? await Integra.drive.listarStoryboard(sb.pasta) : [];
         if (ger !== geracao) return;
         lidoSb = { md, arquivos };
-        // o motor sobe os arquivos fora de ordem (o .md pode chegar antes das imagens): com quadro faltando, não guarda
-        // (a próxima leitura, o "Atualizar" ou o "Tentar de novo" listam a pasta de novo)
+        // o motor sobe os arquivos fora de ordem (o .md pode chegar antes das imagens): com quadro (ou imagem da tira)
+        // faltando, não guarda (a próxima leitura, o "Atualizar" ou o "Tentar de novo" listam a pasta de novo)
         const nomes = new Set(arquivos.map((f) => String(f.name || '').trim().toLowerCase()));
-        const completo = ['ig', 'tt'].every((r) => (md.quadros[r] || []).every((q) => nomes.has(q.arquivo.toLowerCase())));
+        const completo = ['ig', 'tt'].every((r) => (md.quadros[r] || []).every((q) => [q.arquivo, ...(q.tira || [])]
+          .every((a) => nomes.has(a.toLowerCase()))));
         if (completo) cacheLido.set(chave, lidoSb);
       }
       // vale a primeira decisão VÁLIDA da versão (como no motor); os arquivos vêm do mais velho para o mais novo

@@ -2,13 +2,16 @@
 // vídeo, o motor entrega quadros parados da mesma montagem que vira vídeo. Aqui:
 //   - à esquerda, os quadros em grade, uma seção por rede (Instagram, TikTok), cada um com o tempo, o que acontece, o
 //     texto na tela e o porquê; tocar na imagem amplia; "Pedir mudança" abre, no próprio quadro, o campo do pedido
-//     (só nesta rede ou nas duas) e "Adicionar à lista";
+//     (só nesta rede ou nas duas) e "Adicionar à lista"; no quadro em que uma peça de motion entra (desde
+//     16/11/2026), a tira dela numa fileira de miniaturas embaixo da imagem (tocar abre a tela cheia, que desliza pela
+//     tira; componentes/telacheia.js) e, se a peça foi feita para este vídeo, o selo "novo" (a legenda no topo diz o
+//     que ele quer dizer);
 //   - à direita, as perguntas de regra, se o storyboard trouxer (um pedido dela esbarrou numa regra: "Mudar a regra",
 //     "Só neste vídeo" ou "Manter"; js/componentes/regras.js), e "Está bom assim?": a faixa do motor, a lista de
 //     pedidos (com "tirar"), observações, "Enviar os pedidos" e "Aprovar o storyboard" (desligado enquanto houver
 //     pedido na lista; com uma resposta que libera o pedido, vira "Refazer o storyboard com o seu pedido", porque
-//     aprovado o pedido ficaria de fora); depois de enviar, o estado (mudanças enviadas ou aprovado) com o que ela
-//     pediu.
+//     aprovado o pedido ficaria de fora; numa pergunta da reserva, o pedido já foi feito e uma nota diz isso); depois
+//     de enviar, o estado (mudanças enviadas ou aprovado) com o que ela pediu.
 // Tudo o que vem do Drive passa por esc(); as imagens são endereços blob: gerados no app (componentes/quadros.js).
 
 import { esc, ic, NOME_REDE } from '../util.js';
@@ -16,7 +19,7 @@ import { estado } from '../estado.js';
 import { podeDecidir } from '../controle.js';
 import { estadoDoStoryboard, nomeDecisaoStoryboard, quadroMaisPerto, segundosDoQuadro } from '../storyboard.js';
 import { chaveRespostas } from '../regras.js';
-import { blocoRegras, listaRespostas, avisoViraPedido, algumaLibera } from '../componentes/regras.js';
+import { blocoRegras, listaRespostas, avisoViraPedido, algumaLibera, notaPedidoJaFeito } from '../componentes/regras.js';
 import { Quadros } from '../componentes/quadros.js';
 import { moldura } from '../componentes/janelas.js';
 import { campo, segmento, selo, vazio, linkDoDrive } from './pecas.js';
@@ -33,6 +36,44 @@ export function pedidosDoStoryboard(r) {
 
 const nomeRede = (rede) => (rede === 'ambas' ? 'Instagram e TikTok' : NOME_REDE[rede] || rede);
 export const textoPedidoStoryboard = (a) => `<strong>${esc(nomeRede(a.rede))}${a.quadro ? `, quadro ${Number(a.quadro)}` : ''}${a.tempo ? ` (${esc(a.tempo)})` : ''}:</strong> ${esc(a.pedido)}`;
+
+/** O que o selo "novo" quer dizer (na dica do selo, no leitor de tela e na legenda do topo). */
+export const LEGENDA_NOVO = 'peça nova, feita para este vídeo';
+
+/** O selo "novo" (puro): discreto, com a explicação na dica e para o leitor de tela (`explicar`; na legenda do topo,
+    o texto ao lado já explica). */
+export const seloNovo = (explicar = true) => (explicar
+  ? `<span class="selo neutro novo" title="${LEGENDA_NOVO}">novo<span class="vh">: ${LEGENDA_NOVO}</span></span>`
+  : '<span class="selo neutro novo">novo</span>');
+
+/** Uma miniatura da tira: botão que abre a tela cheia nela; a imagem que falta (ou falhou) diz isso, sem botão. */
+function miniatura(r, rede, q, it, i, total) {
+  const st = Quadros.estado(it.file);
+  if (st === 'sem-arquivo' || st === 'erro') {
+    const msg = `Imagem ${i + 1} de ${total} da animação ${st === 'erro' ? 'não baixou' : 'ainda não chegou ao Drive'}`;
+    return `<span class="tira-item falta" role="img" aria-label="${esc(msg)}" title="${esc(msg)}">${ic('alerta', 14)}</span>`;
+  }
+  const url = Quadros.url(it.file, { depois: true }); // os quadros baixam primeiro
+  const rotulo = `Animação do quadro ${q.n} do ${NOME_REDE[rede]}, imagem ${i + 1} de ${total}: ver em tela cheia`;
+  return `<button type="button" class="tira-item" data-acao="sb-tira" data-id="${esc(r.id)}" data-valor="${rede}:${q.n}:${i}" aria-label="${esc(rotulo)}">${url ? `<img src="${esc(url)}" alt="" width="540" height="960" decoding="async">` : ''}</button>`;
+}
+
+/**
+ * A tira da peça de motion que entra no quadro (puro; '' sem tira): o rótulo "Animação" (com o selo "novo", se a
+ * peça foi feita para este vídeo) e as imagens da peça numa fileira que rola de lado. Imagem que não chegou: o aviso e
+ * "Tentar de novo".
+ */
+export function tiraDoQuadro(r, rede, q) {
+  const itens = q?.tira || [];
+  if (!itens.length) return '';
+  const total = itens.length;
+  const falta = itens.some((it) => ['sem-arquivo', 'erro'].includes(Quadros.estado(it.file)));
+  return `<div class="tira">
+    <p class="tira-rotulo">Animação${q.novo ? ` ${seloNovo()}` : ''}</p>
+    <ol class="tira-lista" aria-label="${esc(`Animação do quadro ${q.n} do ${NOME_REDE[rede]}, ${total} imagens`)}">${itens.map((it, i) => `<li>${miniatura(r, rede, q, it, i, total)}</li>`).join('')}</ol>
+    ${falta ? `<p class="pequeno apagado">Falta imagem da animação. <button type="button" class="discreto" data-acao="sb-tentar">Tentar de novo</button></p>` : ''}
+  </div>`;
+}
 
 function imagem(r, rede, q) {
   const st = Quadros.estado(q.file);
@@ -82,6 +123,7 @@ function gradeDaRede(r, rede, rotulo, { pode, pedidos }) {
       const editando = aberto === `${rede}:${q.n}`;
       return `<li class="quadro${ampliado || editando ? ' ampliado' : ''}${pedido ? ' com-pedido' : ''}">
         ${imagem(r, rede, q)}
+        ${tiraDoQuadro(r, rede, q)}
         <dl class="quadro-dados">
           ${q.acontece ? `<div><dt>Acontece</dt><dd>${esc(q.acontece)}</dd></div>` : ''}
           ${q.naTela ? `<div><dt>Na tela</dt><dd>${esc(q.naTela)}</dd></div>` : ''}
@@ -106,11 +148,13 @@ export function painelQuadros(r, { email = '', local = null, agora = new Date() 
   const pode = podeDecidir(email) && !st.bloqueia;
   const pedidos = pedidosDoStoryboard(r);
   const notas = sb.notas?.length ? `<div class="pilha" style="gap:.375rem"><h3 style="margin:0">Para você conferir</h3><ul class="pedidos">${sb.notas.map((n) => `<li><div>${esc(n)}</div></li>`).join('')}</ul></div>` : '';
+  const novo = ['ig', 'tt'].some((rede) => (sb.quadros?.[rede] || []).some((q) => q.novo && q.tira?.length));
+  const legenda = novo ? `<p class="pequeno apagado legenda-novo">${seloNovo(false)} ${esc(LEGENDA_NOVO.charAt(0).toUpperCase() + LEGENDA_NOVO.slice(1))}.</p>` : '';
   const mudou = sb.mudancas?.length ? `<div class="pilha" style="gap:.375rem"><h3 style="margin:0">O que mudou desde a v${Number(sb.versao) - 1}</h3><ul class="pedidos">${sb.mudancas.map((x) => `<li><div>${x.ok ? '' : `${selo('Não aplicado', 'alerta')} `}<strong>${esc(x.rede)}${x.quadro ? `, quadro ${esc(x.quadro)}` : ''}:</strong> ${esc(x.pedido)} <span class="apagado">→ ${esc(x.feito)}</span></div></li>`).join('')}</ul></div>` : '';
   return `
     <h2 id="t-storyboard">Storyboard v${Number(sb.versao) || 1}</h2>
     <p class="apagado pequeno">Quadros parados da mesma montagem que vira vídeo: a legenda e as animações como vão sair. Nenhum vídeo foi renderizado ainda; as prévias só saem depois que você aprovar.</p>
-    ${notas}${mudou}
+    ${legenda}${notas}${mudou}
     ${REDES.map(([rede, rotulo]) => gradeDaRede(r, rede, rotulo, { pode, pedidos })).join('')}`;
 }
 
@@ -152,6 +196,7 @@ export function painelDecisaoStoryboard(r, { email = '', local = null, agora = n
       ${campo({ modelo: `sb-obs-${r.id}`, rotulo: n ? 'Mais alguma coisa (vale para o vídeo todo)' : 'Pedido geral', tipo: 'textarea', linhas: 2, opcional: true, exemplo: 'Ex.: menos texto na tela', attrs: decide ? '' : 'disabled' })}
       <button type="button" class="botao primario cheio" data-acao="sb-enviar" data-id="${id}"${decide ? '' : ' disabled'}>${ic('enviar')} ${n ? `Enviar ${n === 1 ? 'o pedido' : `os ${n} pedidos`} de mudança` : 'Enviar o pedido geral'}</button>
       ${decide ? avisoViraPedido(vira, `o storyboard v${v + 1}`) : ''}
+      ${decide && !n ? notaPedidoJaFeito(sb.regras, respostas, r.id) : ''}
       <button type="button" class="botao ${n ? 'calmo' : 'primario'} cheio" data-acao="sb-aprovar" data-id="${id}"${decide && !n ? '' : ' disabled'}>${ic('check')} ${vira ? 'Refazer o storyboard com o seu pedido' : `Aprovar o storyboard v${v}`}</button>
       ${n && decide ? '<p class="pequeno apagado">Envie ou tire os pedidos da lista antes de aprovar.</p>' : ''}
       ${decide ? '' : `<p class="pequeno apagado">${NOTA_SO_ROBERTTA}</p>`}

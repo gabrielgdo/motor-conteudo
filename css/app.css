@@ -386,6 +386,19 @@ html[data-tema="dia"] .nav-conta{background:var(--vinho)}
 .quadro-dados dt{font-weight:600;color:var(--tinta-3);font-size:.78125rem}
 .quadro-dados dd{margin:0;overflow-wrap:anywhere}
 .quadro .vazio-img{padding:1rem;text-align:center;font-size:.8125rem;cursor:default}
+/* A tira da peça de motion (16/11/2026): as imagens da peça numa fileira que rola de lado, embaixo do quadro; tocar
+   abre a tela cheia. O selo "novo" (peça feita para este vídeo) é discreto: contorno, letra pequena. */
+.tira{display:grid;gap:.25rem;min-width:0}
+.tira-rotulo{margin:0;display:flex;flex-wrap:wrap;align-items:center;gap:.375rem;font-size:.78125rem;font-weight:600;color:var(--tinta-3)}
+.tira-lista{list-style:none;margin:0;padding:0 0 .25rem;min-width:0;display:flex;gap:.25rem;overflow-x:auto;overscroll-behavior-x:contain;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch}
+.tira-lista li{flex:0 0 auto;scroll-snap-align:start}
+.tira-item{position:relative;display:grid;place-items:center;width:2.75rem;min-width:44px;aspect-ratio:9/16;padding:0;border:0;border-radius:.375rem;overflow:hidden;background:var(--fio);color:var(--tinta-3);cursor:zoom-in;font:inherit}
+.tira-item img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.tira-item.falta{cursor:default;color:var(--alerta)}
+.tira-item:focus-visible{outline:2px solid var(--acento);outline-offset:2px}
+.quadro.ampliado .tira-item{width:4.5rem}
+.selo.novo{padding:.0625rem .4375rem;font-size:.6875rem;font-weight:600;letter-spacing:.02em}
+.legenda-novo{display:flex;flex-wrap:wrap;align-items:center;gap:.375rem}
 .bloco{padding-top:1.375rem;margin-top:1.375rem;border-top:1px solid var(--fio)}
 .bloco h3{margin-bottom:.625rem}
 .bloco-cab{display:flex;align-items:center;justify-content:space-between;gap:.625rem;margin-bottom:.625rem}
@@ -903,3 +916,19 @@ dialog.telacheia.sem-modal[open]{position:fixed;inset:0;z-index:300;margin:0;hei
 .tc-video{display:block;aspect-ratio:9/16;width:auto;max-width:100%;object-fit:contain;border-radius:1.25rem;background:#0B0607;box-shadow:0 0 0 1px rgba(239,214,206,.18),0 1.5rem 4rem rgba(0,0,0,.6);
   height:min(92vh,calc(100vh - 6.5rem),calc((100vw - 2rem) * 16 / 9));
   height:min(92dvh,calc(100dvh - 6.5rem - env(safe-area-inset-top) - env(safe-area-inset-bottom)),calc((100vw - 2rem - env(safe-area-inset-left) - env(safe-area-inset-right)) * 16 / 9))}
+/* Tela cheia da tira do storyboard: uma imagem por tela, deslizar troca (rolagem com encaixe); embaixo, anterior,
+   o contador e próxima */
+.tc-tira{flex:1;min-height:0;display:flex;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;overscroll-behavior-x:contain;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.tc-tira::-webkit-scrollbar{display:none}
+.tc-tira:focus-visible{outline:2px solid var(--acento);outline-offset:-2px}
+.tc-tira-item{flex:0 0 100%;min-width:0;margin:0;display:grid;place-items:center;scroll-snap-align:center;scroll-snap-stop:always;padding:0 calc(env(safe-area-inset-right) + 1rem) 0 calc(env(safe-area-inset-left) + 1rem)}
+.tc-img{display:block;aspect-ratio:9/16;width:auto;max-width:100%;object-fit:contain;border-radius:1.25rem;background:#0B0607;box-shadow:0 0 0 1px rgba(239,214,206,.18),0 1.5rem 4rem rgba(0,0,0,.6);
+  height:min(86vh,calc(100vh - 10.5rem),calc((100vw - 2rem) * 16 / 9));
+  height:min(86dvh,calc(100dvh - 10.5rem - env(safe-area-inset-top) - env(safe-area-inset-bottom)),calc((100vw - 2rem - env(safe-area-inset-left) - env(safe-area-inset-right)) * 16 / 9))}
+.tc-img-vazia{display:grid;place-items:center;padding:1rem;text-align:center;font-size:.875rem;color:#F6ECE6}
+.tc-rodape{flex-shrink:0;display:flex;align-items:center;justify-content:center;gap:1rem;padding:.75rem 1rem calc(env(safe-area-inset-bottom) + 1rem)}
+.tc-passo{width:2.75rem;height:2.75rem;min-width:44px;min-height:44px;padding:0;border-radius:50%;border:1px solid rgba(239,214,206,.22);background:rgba(11,6,7,.72);color:#fff;display:grid;place-items:center;cursor:pointer;transition:background .2s}
+.tc-passo:hover:not([disabled]){background:rgba(11,6,7,.9)}
+.tc-passo[disabled]{opacity:.35;cursor:default}
+.tc-passo:focus-visible{outline:2px solid var(--acento);outline-offset:2px}
+.tc-conta{margin:0;min-width:4.5rem;text-align:center;font-size:.875rem;font-weight:600;font-variant-numeric:tabular-nums}

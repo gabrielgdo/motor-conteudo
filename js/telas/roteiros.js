@@ -20,7 +20,7 @@ import { estadoDaDecisaoRoteiro, bloqueioDaDecisao, versoesDo, TOM_DECISAO } fro
 import { estadoDosGanchos } from '../ganchos.js';
 import { nomeEscolhaGancho } from '../pedidos-motor.js';
 import { chaveRespostas } from '../regras.js';
-import { blocoRegras, listaRespostas, avisoViraPedido, algumaLibera } from '../componentes/regras.js';
+import { blocoRegras, listaRespostas, avisoViraPedido, algumaLibera, notaPedidoJaFeito } from '../componentes/regras.js';
 import { moldura } from '../componentes/janelas.js';
 import { podeDecidir, DECISOES_ROTEIRO, MOTIVOS_ROTEIRO } from '../controle.js';
 import { faixaExecucao, historicoComExecucoes, blocoHistorico } from '../componentes/execucao.js';
@@ -265,7 +265,8 @@ export function decisaoDoRascunho(r, {
   const chave = chaveRegrasDoRascunho(r);
   const respostas = respostasRegra?.[chave] || {};
   const vira = esc_ === 'aprovar' && algumaLibera(perguntas, respostas, r.id);
-  const regras = blocoRegras({ perguntas, respostas, chave, pode: decide && !travado, depois: 'A resposta vai junto com a sua decisão sobre o rascunho.' });
+  // o que cada resposta faz depende da decisão escolhida: com "Recusar", o pedido não é feito
+  const regras = blocoRegras({ perguntas, respostas, chave, pode: decide && !travado, depois: 'A resposta vai junto com a sua decisão sobre o rascunho.', decisao: esc_ });
   return `
     <h2>Sua decisão</h2>
     <p class="apagado pequeno">Rascunho v${v}${antiga ? ` (a mais nova é a v${ultima})` : ''}.${fontes ? ` ${esc(fontes)}${antiga ? ` (na v${ultima})` : ''}.` : ''}</p>
@@ -280,6 +281,7 @@ export function decisaoDoRascunho(r, {
     ${decide ? '' : `<p class="pequeno apagado">${esc('Só a conta da Robertta decide.')}</p>`}
     ${detalhe}
     ${avisoViraPedido(vira, 'um rascunho novo')}
+    ${esc_ === 'aprovar' ? notaPedidoJaFeito(perguntas, respostas, r.id) : ''}
     ${esc_ ? `<button type="button" class="botao primario cheio" data-acao="roteiro-confirmar" data-id="${id}">${esc(vira ? 'Refazer o rascunho com o seu pedido' : esc_ === 'aprovar' ? `Aprovar a v${v}` : esc_ === 'mudar' ? `Pedir a mudança na v${v}` : `Recusar o rascunho v${v}`)}</button>` : ''}`;
 }
 
