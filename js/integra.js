@@ -299,10 +299,12 @@ export const Integra = {
     /** Situação de um pedido enviado pela central → {status, motivo, entregue_em} | null. */
     pedido: (id) => central().pedido(id),
 
-    /** A central já tem, desde `desde`, um pedido deste arquivo ainda não visto no Drive (novo ou entregue)? A decisão
-        só aparece no Drive quando o motor sobe o arquivo; nesse intervalo, um segundo envio seria descartado em silêncio
-        (vale a primeira). → true | false | null (sem central ou erro: não dá para saber; quem chama segue como antes).
-        Nunca lança. */
+    /** A central já tem, desde `desde`, um pedido deste arquivo que ainda vai chegar ao Drive (`novo`, ou `entregue` há
+        menos de 2 h: central.pedidoRecente)? Quem chama só pergunta quando o arquivo ainda não está no Drive (o
+        planejar* confere antes). A decisão só aparece no Drive quando o motor sobe o arquivo; nesse intervalo, um
+        segundo envio seria descartado em silêncio (vale a primeira). Entregue há mais de 2 h e sem o arquivo: ele se
+        perdeu, e ela pode decidir de novo. → true | false | null (sem central ou erro: não dá para saber; quem chama
+        segue como antes). Nunca lança. */
     async jaPedido({ tipo, nome, desde = null }) {
       if (!FLAGS.central || !(await Integra.central.conectar())) return null;
       try { return await central().pedidoRecente(CT.arquivoDoPedido(tipo, nome), desde); } catch { return null; }

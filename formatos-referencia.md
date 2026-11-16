@@ -99,7 +99,8 @@ com um id, o motor descobre o roteiro pela fala (preparo sem IA, antes do /edita
   `decisao` (`aprovar` | `ajustar`), `ajustes` (lista com `rede` ig | tt | ambas, `quadro`, `tempo`, `pedido`),
   `observacoes`, `quem`, `quando`. Pela central (tipo `decisao_storyboard`), com o Drive como reserva; vale a
   primeira decisão VÁLIDA de cada versão (como no motor; o app mostra essa); só a conta que decide. Enviada e ainda
-  não no Drive: o app guarda o registro no aparelho (2 h) e confere a central antes de outro envio.
+  não no Drive: o app guarda o registro no aparelho (2 h) e confere a central antes de outro envio (bloqueia um
+  pedido `novo`, ou `entregue` há menos de 2 h; depois disso, sem o arquivo no Drive, ela decide de novo).
 - `ajustar` → storyboard v<N+1> (só quadros); `aprovar` → as prévias v1 (IG e TT). O aviso `storyboard` manda push
   para quem decide e quem vê.
 

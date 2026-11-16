@@ -13,6 +13,8 @@
 export const CHAVE_SESSAO = 'motor.central.sessao';
 export const MOTOR_OUVINDO_MS = 3 * 60 * 1000; // no Grok, o motor grava o sinal de vida a cada ~60 s
 export const MOTOR_OUVINDO_MODAL_MS = 15 * 60 * 1000; // na Modal, a cada passada (a central acorda; relógio de 5 min)
+/** Pedido entregue há menos disto e ainda sem o arquivo no Drive: o arquivo está subindo (pedidoRecente). */
+export const JANELA_ENTREGUE_MS = 2 * 60 * 60 * 1000;
 const FOLGA_TOKEN_MS = 2 * 60 * 1000;
 
 /** Os mesmos formatos da regra arquivo_do_tipo no banco e do bin/central.py (os três precisam bater: o teste do
@@ -140,10 +142,16 @@ export function criarCentral({ url, chave, fetch: f = globalThis.fetch, storage 
       if (!Array.isArray(l) || !l[0]?.id) throw new ErroCentral('A central não confirmou o pedido.', 'sem-id');
       return { id: l[0].id };
     },
-    /** Há pedido `novo` ou `entregue` deste arquivo, criado desde `desde` (data; null = qualquer data)? → true | false.
-        A conta que decide pode ler os pedidos (regra pedidos_ler). */
-    async pedidoRecente(arquivo, desde = null) {
-      let q = `pedidos?arquivo=eq.${encodeURIComponent(arquivo)}&status=in.(novo,entregue)&select=id&limit=1`;
+    /** Há um pedido deste arquivo, criado desde `desde` (data; null = qualquer data), que ainda vai chegar ao Drive?
+        `novo` sempre conta (o motor ainda vai receber); `entregue` só se a entrega foi nas últimas
+        `janelaEntregueMs` (2 h, o tempo de o arquivo subir). Depois disso, um pedido entregue cujo arquivo não está no
+        Drive se perdeu (o contêiner morreu antes de subir), e ela pode decidir de novo. → true | false. A conta que
+        decide pode ler os pedidos (regra pedidos_ler). */
+    async pedidoRecente(arquivo, desde = null, { janelaEntregueMs = JANELA_ENTREGUE_MS } = {}) {
+      const limite = new Date(agora() - janelaEntregueMs).toISOString();
+      let q = `pedidos?arquivo=eq.${encodeURIComponent(arquivo)}`
+        + `&or=${encodeURIComponent(`(status.eq.novo,and(status.eq.entregue,entregue_em.gte."${limite}"))`)}`
+        + '&select=id&limit=1';
       const t = desde ? new Date(desde) : null;
       if (t && !Number.isNaN(t.getTime())) q += `&criado_em=gte.${encodeURIComponent(t.toISOString())}`;
       const l = await rest('GET', q);

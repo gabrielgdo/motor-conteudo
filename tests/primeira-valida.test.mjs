@@ -12,7 +12,7 @@ import { decisaoValida, lerDecisaoStoryboard, textoDecisaoStoryboard, estadoDoSt
 import { lerEscolhaGancho, textoEscolhaGancho } from '../js/pedidos-motor.js';
 import { lerEnviados, guardarEnviado, CHAVE_ENVIADOS, VALIDADE_ENVIADOS_MS } from '../js/enviados.js';
 import { chaveParaApagar } from '../js/auth.js';
-import { criarCentral, CHAVE_SESSAO, arquivoDoPedido } from '../js/central.js';
+import { criarCentral, CHAVE_SESSAO, arquivoDoPedido, JANELA_ENTREGUE_MS } from '../js/central.js';
 
 const ROBERTTA = ALLOWED[0];
 const GABRIEL = ALLOWED[1];
@@ -165,25 +165,45 @@ test('o registro do aparelho mantém a tela em "escolhido" depois de recarregar 
 
 /* ------------------------------------------------------------ central: já há pedido deste arquivo? */
 
-test('central.pedidoRecente: pedido novo ou entregue do arquivo, desde a data dada (só leitura)', async () => {
+test('central.pedidoRecente: novo sempre; entregue só nas últimas 2 h; desde a data dada (só leitura)', async () => {
   const st = armazenamento();
   st.setItem(CHAVE_SESSAO, JSON.stringify({ access_token: 'A1', refresh_token: 'R', email: ROBERTTA, expira: 9e15 }));
-  const chamadas = [];
-  let resposta = [{ id: 'p1' }];
-  const fetch = async (url, op) => {
-    chamadas.push({ metodo: op.method, url: new URL(url) });
-    return { ok: true, status: 200, text: async () => JSON.stringify(resposta) };
-  };
-  const c = criarCentral({ url: 'https://x', chave: 'k', fetch, storage: st, agora: () => 0 });
+  const AGORA_MS = Date.parse('2026-11-18T14:00:00.000Z');
   const arquivo = arquivoDoPedido('decisao_storyboard', 'S47-01 decisao storyboard v2.md');
-  assert.equal(await c.pedidoRecente(arquivo, '2026-11-18T12:00:00.000Z'), true);
+  let pedidos = [];
+  const chamadas = [];
+  // PostgREST falso que entende a consulta que o app faz: arquivo=eq., criado_em=gte. e o or (novo | entregue recente)
+  const fetch = async (url, op) => {
+    const u = new URL(url);
+    chamadas.push({ metodo: op.method, url: u });
+    const arq = (u.searchParams.get('arquivo') || '').replace(/^eq\./, '');
+    const desde = (u.searchParams.get('criado_em') || '').replace(/^gte\./, '');
+    const m = (u.searchParams.get('or') || '').match(/^\(status\.eq\.novo,and\(status\.eq\.entregue,entregue_em\.gte\."([^"]+)"\)\)$/);
+    assert.ok(m, `or fora do formato: ${u.searchParams.get('or')}`);
+    const l = pedidos.filter((p) => p.arquivo === arq && (!desde || p.criado_em >= desde)
+      && (p.status === 'novo' || (p.status === 'entregue' && p.entregue_em >= m[1])));
+    return { ok: true, status: 200, text: async () => JSON.stringify(l.slice(0, 1).map((p) => ({ id: p.id }))) };
+  };
+  const c = criarCentral({ url: 'https://x', chave: 'k', fetch, storage: st, agora: () => AGORA_MS });
+  const desde = '2026-11-18T09:00:00.000Z';   // o .md do storyboard v2
+  const base = { arquivo, criado_em: '2026-11-18T10:00:00.000Z' };
+  pedidos = [{ ...base, id: 'p1', status: 'novo', entregue_em: null }];
+  assert.equal(await c.pedidoRecente(arquivo, desde), true, 'novo: o motor ainda vai receber, bloqueia');
   const u = chamadas[0].url;
   assert.equal(chamadas[0].metodo, 'GET');
   assert.equal(u.pathname, '/rest/v1/pedidos');
-  assert.equal(u.searchParams.get('arquivo'), `eq.${arquivo}`);
-  assert.equal(u.searchParams.get('status'), 'in.(novo,entregue)');
-  assert.equal(u.searchParams.get('criado_em'), 'gte.2026-11-18T12:00:00.000Z');
-  resposta = [];
-  assert.equal(await c.pedidoRecente(arquivo, null), false);
-  assert.equal(chamadas[1].url.searchParams.get('criado_em'), null, 'sem data: qualquer pedido do arquivo');
+  assert.equal(u.searchParams.get('status'), null);
+  assert.equal(u.searchParams.get('or'), '(status.eq.novo,and(status.eq.entregue,entregue_em.gte."2026-11-18T12:00:00.000Z"))');
+  assert.equal(u.searchParams.get('criado_em'), `gte.${desde}`);
+  pedidos = [{ ...base, id: 'p2', status: 'entregue', entregue_em: '2026-11-18T13:30:00.000Z' }];
+  assert.equal(await c.pedidoRecente(arquivo, desde), true, 'entregue há 30 min, ainda sem o arquivo no Drive: subindo');
+  pedidos = [{ ...base, id: 'p3', status: 'entregue', entregue_em: '2026-11-18T11:00:00.000Z' }];
+  assert.equal(await c.pedidoRecente(arquivo, desde), false, 'entregue há 3 h e o arquivo não está no Drive: se perdeu, ela decide de novo');
+  pedidos = [{ ...base, id: 'p4', status: 'erro', entregue_em: null }];
+  assert.equal(await c.pedidoRecente(arquivo, desde), false, 'recusado pelo motor não bloqueia');
+  pedidos = [{ ...base, id: 'p5', status: 'novo', criado_em: '2026-11-18T08:00:00.000Z' }];
+  assert.equal(await c.pedidoRecente(arquivo, desde), false, 'pedido de antes desta versão (um T reaproveitado) não bloqueia');
+  assert.equal(await c.pedidoRecente(arquivo, null), true, 'sem data: qualquer pedido do arquivo');
+  assert.equal(chamadas.at(-1).url.searchParams.get('criado_em'), null);
+  assert.equal(JANELA_ENTREGUE_MS, 2 * 60 * 60 * 1000);
 });
