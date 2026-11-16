@@ -1,7 +1,10 @@
 // Etapa de um projeto (de montarProjetos, js/model.js) no vocabulário do desenho aprovado:
-// 'ganchos' | 'rascunho' | 'aprovado' | 'recebido' | 'previa' | 'ajustes' | 'video-aprovado' | 'pronto' | 'arquivado' | ''.
-// Puro: sem rede, sem DOM. Ordem de precedência: pronto > video-aprovado > ajustes > previa >
-// recebido > aprovado > rascunho > ganchos > ''.
+// 'ganchos' | 'rascunho' | 'aprovado' | 'recebido' | 'storyboard' | 'previa' | 'ajustes' | 'video-aprovado' | 'pronto' |
+// 'arquivado' | ''. Puro: sem rede, sem DOM. Ordem de precedência: pronto > video-aprovado > ajustes > previa >
+// storyboard > recebido > aprovado > rascunho > ganchos > ''.
+//
+// 'storyboard' (desde 15/11/2026): o motor entregou quadros parados ("<id> storyboard vN.md" e a pasta) e ainda não há
+// prévia em vídeo; ela aprova ou pede mudança por quadro no app (js/storyboard.js). Com a prévia v1, vira 'previa'.
 //
 // 'ganchos' (desde 15/11/2026): o motor propôs 3 ganchos ("<id> ganchos vN.md") e ainda não há rascunho nem roteiro;
 // ela escolhe um no app ("<id> gancho vN.md") e o rascunho v1 nasce dele. Com o rascunho, a etapa vira 'rascunho'.
@@ -29,9 +32,9 @@
 // 8. o desenho aprovado também lista 'mudanca' e 'recusado', que não se deduzem das listagens do Drive;
 //    não são devolvidos. Projeto só com "<id> fontes.md" → ''.
 
-import { ehPreviaNova, ehAprovadoSemBruto, ehRoteiroParaAprovar, ehGanchosParaEscolher } from './model.js';
+import { ehPreviaNova, ehAprovadoSemBruto, ehRoteiroParaAprovar, ehGanchosParaEscolher, ehStoryboardSemPrevia } from './model.js';
 
-export const ETAPAS = ['ganchos', 'rascunho', 'aprovado', 'recebido', 'previa', 'ajustes', 'video-aprovado', 'pronto', 'arquivado'];
+export const ETAPAS = ['ganchos', 'rascunho', 'aprovado', 'recebido', 'storyboard', 'previa', 'ajustes', 'video-aprovado', 'pronto', 'arquivado'];
 
 /** Maior versão de rascunho ("<id> rascunho vN.md" em qualquer rascunhos*), ou null. */
 export function versaoRascunho(p) {
@@ -58,6 +61,7 @@ export function etapaDe(p) {
   if (p.aprovado) return 'video-aprovado';
   if (ajustePendente(p)) return 'ajustes';
   if (ehPreviaNova(p)) return 'previa';
+  if (ehStoryboardSemPrevia(p)) return 'storyboard';
   if (p.brutos.length && versaoPreviaAtual(p) === null) return 'recebido';
   if (ehAprovadoSemBruto(p)) return 'aprovado';
   if (ehRoteiroParaAprovar(p)) return 'rascunho';

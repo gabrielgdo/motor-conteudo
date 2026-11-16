@@ -27,13 +27,14 @@ import * as drive from './drive.js';
 import * as sheet from './sheet.js';
 import { CONFIG, FLAGS, PONTE_URL, REVISAO_FOLDER, PASTAS, ROOT_FOLDER, CENTRAL } from './config.js';
 import * as CT from './central.js';
-import { idValido, idCandidatoValido } from './parse.js';
+import { idValido, idCandidatoValido, parsePastaStoryboard } from './parse.js';
 import * as C from './controle.js';
 import * as S from './selecao.js';
 import { lerCandidatos, criarArquivosDoApp } from './candidatos.js';
 import { planejarArquivoRevisao } from './revisao.js';
 import * as PM from './pedidos-motor.js';
 import * as G from './ganchos.js';
+import * as SB from './storyboard.js';
 import * as DS from './desempenho.js';
 // Envio do vídeo bruto (ponto 7): upload.js só é importado aqui; as regras ficam em envio-video.js.
 import { criarUpload } from './upload.js';
@@ -464,6 +465,31 @@ export const Integra = {
       try {
         await drive.criarArquivoTexto(plano.nome, plano.conteudo, pasta.id);
       } finally { drive.invalidarCache(); }
+      return { ok: true, nome: plano.nome };
+    },
+
+    /** Os quadros de uma pasta de storyboard ("<id> storyboard vN", filha de 4-Revisao, como veio da listagem): só
+        arquivos; nunca uma pasta qualquer pelo id. */
+    async listarStoryboard(pasta) {
+      if (!pasta?.id || !parsePastaStoryboard(pasta.name) || !(pasta.parents || []).includes(REVISAO_FOLDER)) {
+        throw new ErroIntegra('Pasta de storyboard fora de 4-Revisao.', 'pasta-invalida');
+      }
+      return (await drive.listar(pasta.id)).filter((f) => f.mimeType !== 'application/vnd.google-apps.folder');
+    },
+
+    /** 4-Revisao/<id> decisao storyboard vN.md: aprovar o storyboard ou pedir mudanças por quadro (desde 15/11/2026).
+        Só a conta que decide. Vale a primeira decisão de cada versão: confere 4-Revisao logo antes (a central também não
+        regrava). Central primeiro (tipo decisao_storyboard), Drive como reserva.
+        → {ok:true, nome, viaCentral?} | {ok:false, motivo, mensagem}. */
+    async gravarDecisaoStoryboard({ id, versao, decisao, ajustes = [], observacoes = '' } = {}) {
+      const email = auth.emailAtual();
+      if (!C.podeDecidir(email)) throw new ErroIntegra('Só a conta da Robertta decide.', 'sem-permissao');
+      const existentes = await Integra.drive.listarRevisao(true);
+      const plano = SB.planejarDecisaoStoryboard({ id, versao, decisao, ajustes, observacoes, email, existentes, agora: new Date() });
+      if (!plano.ok) return plano;
+      const c = await Integra.central.enviarSePuder({ tipo: 'decisao_storyboard', nome: plano.nome, conteudo_id: id, conteudo: plano.conteudo });
+      if (c) return { ok: true, nome: plano.nome, viaCentral: true };
+      await Integra.drive.criarArquivo('revisao', plano.nome, plano.conteudo);
       return { ok: true, nome: plano.nome };
     },
 

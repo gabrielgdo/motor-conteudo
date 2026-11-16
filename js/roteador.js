@@ -6,6 +6,7 @@ import { $, ic } from './util.js';
 import { estado } from './estado.js';
 import { porEtapa, semPostar, estadoDados } from './dados.js';
 import { ganchosParaEscolher } from './ganchos.js';
+import { storyboardsParaDecidir } from './storyboard.js';
 import { vInicio } from './telas/inicio.js';
 import { vPautas, contarParaDecidir } from './telas/pautas.js';
 import { vRoteiros, vRoteiro } from './telas/roteiros.js';
@@ -31,7 +32,7 @@ export const NAVEGACAO = [
   { rota: 'pautas', rotulo: 'Pautas', icone: 'pautas', conta: () => contarParaDecidir() }, // pautas para decidir (aba Seleção)
   // rascunhos para decidir + ganchos para escolher (só os que esperam por ela)
   { rota: 'roteiros', rotulo: 'Roteiros', icone: 'roteiros', conta: () => porEtapa('rascunho').length + ganchosParaEscolher(porEtapa('ganchos'), estado.ganchosEnviados).length },
-  { rota: 'videos', rotulo: 'Vídeos', icone: 'videos', conta: () => porEtapa('previa').length },
+  { rota: 'videos', rotulo: 'Vídeos', icone: 'videos', conta: () => porEtapa('previa').length + storyboardsParaDecidir(porEtapa('storyboard'), estado.storyboardsEnviados).length },
   { rota: 'prontos', rotulo: 'Prontos', icone: 'prontos', conta: () => semPostar().length },
   { rota: 'resultados', rotulo: 'Resultados', icone: 'resultados', soLateral: true, conta: () => 0 }, // no celular, fica na busca rápida
 ];

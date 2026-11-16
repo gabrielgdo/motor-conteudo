@@ -12,7 +12,7 @@
 // que ficava numa subpasta ("motor-novo-").
 
 const PREFIXO = 'motor-app-';
-const VERSAO = `${PREFIXO}v34`;
+const VERSAO = `${PREFIXO}v35`;
 const CACHES_ANTIGOS = ['motor-shell-', 'motor-novo-', PREFIXO];
 
 const ARQUIVOS = [
@@ -50,6 +50,7 @@ const ARQUIVOS = [
   './js/revisao.js',
   './js/pedidos-motor.js',
   './js/ganchos.js',
+  './js/storyboard.js',
   './js/versao.js',
   './js/saida.js',
   './js/telas/pecas.js',
@@ -58,6 +59,7 @@ const ARQUIVOS = [
   './js/telas/pautas.js',
   './js/telas/roteiros.js',
   './js/telas/videos.js',
+  './js/telas/storyboard.js',
   './js/telas/enviar.js',
   './js/telas/prontos.js',
   './js/telas/resultados.js',
@@ -65,6 +67,7 @@ const ARQUIVOS = [
   './js/componentes/paleta.js',
   './js/componentes/tele.js',
   './js/componentes/players.js',
+  './js/componentes/quadros.js',
   './js/componentes/telacheia.js',
   './js/componentes/downloads.js',
   './js/componentes/grafico.js',

@@ -21,6 +21,8 @@ const NOMES_ETAPA = {
   // roteirizar: os 3 ganchos (pauta aprovada) ou, com a escolha dela, o rascunho v1 (desde 15/11/2026)
   roteirizar: ['Escrevendo os ganchos ou o roteiro', 'Ganchos e roteiro'],
   editar: ['Editando', 'Edição'],
+  // storyboard: a decisão dela sobre o storyboard (storyboard novo, ou as prévias v1 depois de aprovado)
+  storyboard: ['Refazendo o storyboard ou renderizando as prévias', 'Storyboard'],
   revisar: ['Refazendo com os ajustes', 'Ajustes'],
   ajustar: ['Refazendo com os ajustes', 'Ajustes'],
   finalizar: ['Montando o pacote final', 'Pacote final'],

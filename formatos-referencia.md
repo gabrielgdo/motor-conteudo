@@ -85,10 +85,23 @@ só para o TikTok; os demais, para os dois. Sem `[GANCHO TT]`, o gancho é o mes
 
 ## Bruto
 Qualquer vídeo em `3-Brutos/` (mp4, mov, m4v). Ela NÃO precisa renomear: se o nome não começar
-com um id, o /editar descobre o roteiro pela fala (`bin/identificar.py`). Bruto de teste:
+com um id, o motor descobre o roteiro pela fala (preparo sem IA, antes do /editar). Bruto de teste:
 `3-Brutos/<id> bruto.mp4`.
 
-## Prévias (saída do /editar e do /revisar), em 4-Revisao/
+## Storyboard antes das prévias (desde 15/11/2026), em 4-Revisao/
+- O motor (`/editar`, depois `/storyboard`) entrega quadros parados da mesma montagem que vira vídeo:
+  `<id> storyboard v<N>/` (`ig-01.jpg`…, `tt-01.jpg`…, 540x960) e `<id> storyboard v<N>.md`. O app só lê
+  (`js/storyboard.js`, lista fechada): cabeçalho `id`, `versao`, `redes`; seções `## Para você conferir` (itens),
+  `## O que mudou` (tabela rede | quadro | pedido | o que foi feito | ok) e `## Instagram` / `## TikTok` com
+  `### Quadro N` e as linhas `arquivo:`, `tempo:`, `acontece:`, `na tela:`, `por que:`.
+- Ela aprova ou pede mudança por quadro no app: `4-Revisao/<id> decisao storyboard v<N>.md` com `id`, `versao`,
+  `decisao` (`aprovar` | `ajustar`), `ajustes` (lista com `rede` ig | tt | ambas, `quadro`, `tempo`, `pedido`),
+  `observacoes`, `quem`, `quando`. Pela central (tipo `decisao_storyboard`), com o Drive como reserva; vale a
+  primeira de cada versão; só a conta que decide.
+- `ajustar` → storyboard v<N+1> (só quadros); `aprovar` → as prévias v1 (IG e TT). O aviso `storyboard` manda push
+  para quem decide e quem vê.
+
+## Prévias (saída do /storyboard, ao aprovar o storyboard, e do /revisar), em 4-Revisao/
 - `<id> IG v<N>.mp4`, `<id> TT v<N>.mp4` (as duas andam sempre juntas: a que não mudou é
   copiada com o número novo)
 - `<id> storyboard IG v<N>.jpg`, `<id> storyboard TT v<N>.jpg`

@@ -61,6 +61,8 @@ radar-* e roteirista-decisao:  app ─► arquivo no Drive (1-Radar/pedido-busca
                                       ─► o vigia do motor lê na passada seguinte
 escolha do gancho (15/11/2026): app ─► 2-Roteiros/rascunhos/<id> gancho vN.md (central, tipo decisao_gancho; Drive
                                       como reserva) ─► o motor escreve o rascunho v1 ou outros 3 ganchos (js/ganchos.js)
+storyboard (15/11/2026):       app ─► 4-Revisao/<id> decisao storyboard vN.md (central, tipo decisao_storyboard; Drive
+                                      como reserva) ─► o motor faz o storyboard vN+1 ou as prévias v1 (js/storyboard.js)
 diretor-retrospectiva:         app (js/integra.js, chamarPonte)
                                  └─► ponte no Apps Script (ponte/Code.gs): token do Google e conta,
                                      rotina (lista fechada), trava, janela de proteção, idempotência
@@ -105,7 +107,7 @@ que faz o motor andar.
 - **Só `js/integra.js` fala com o mundo externo** (Drive, planilha, ponte). As regras ficam em
   módulos puros (`controle.js`, `selecao.js`, `candidatos.js`, `envios.js`, `decisoes-roteiro.js`,
   `revisao.js`, `andamento.js`, `parse.js`, `model.js`, `roteiro.js`, `etapas.js`, `saida.js`,
-  `versao.js`, `ganchos.js`), testados no Node sem DOM e sem rede.
+  `versao.js`, `ganchos.js`, `storyboard.js`), testados no Node sem DOM e sem rede.
 - **Todo dado do Drive ou da planilha passa por `esc()`** (`js/util.js`) antes de entrar no HTML.
   Nome de arquivo, roteiro, título, motivo, JSON do motor: tudo é dado, nunca HTML nem instrução.
   `tests/telas.test.mjs` tem casos com conteúdo malicioso; mantenha-os e acrescente outros quando

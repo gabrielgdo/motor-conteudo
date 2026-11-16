@@ -9,6 +9,7 @@ import { contarParaDecidir } from './pautas.js';
 import { resumirSaude, htmlSaude, htmlCentral } from '../saude.js';
 import { estado } from '../estado.js';
 import { ganchosParaEscolher } from '../ganchos.js';
+import { storyboardsParaDecidir } from '../storyboard.js';
 
 const enc = encodeURIComponent;
 
@@ -92,6 +93,12 @@ function pendencias() {
     detalhe: r.fontesConferidas ? `Rascunho v${r.versaoRoteiro}, com as fontes conferidas` : `Rascunho v${r.versaoRoteiro}, com as fontes ainda em checagem`,
     ir: 'Ler',
   }));
+  // Storyboard antes das prévias: só os que esperam a decisão dela (a decisão enviada sai da lista).
+  storyboardsParaDecidir(porEtapa('storyboard'), estado.storyboardsEnviados).forEach((r) => p.push({
+    href: `#/videos/${enc(r.id)}`, icone: 'videos', tipo: comTeste('Storyboard', r), titulo: `Ver o storyboard de “${r.curto}”`,
+    detalhe: `Quadros da v${r.storyboard?.versao || 1} para aprovar ou pedir mudança, antes do vídeo`,
+    ir: 'Ver',
+  }));
   porEtapa('previa').forEach((r) => {
     const v = ultima(r);
     p.push({
@@ -115,8 +122,8 @@ function ciclo(lista) {
   const conta = (etapas) => lista.filter((r) => etapas.includes(r.etapa)).length;
   const passos = [
     ['Pautas', total],
-    ['Roteiros', conta(['aprovado', 'recebido', 'previa', 'ajustes', 'video-aprovado', 'pronto'])],
-    ['Gravação', conta(['recebido', 'previa', 'ajustes', 'video-aprovado', 'pronto'])],
+    ['Roteiros', conta(['aprovado', 'recebido', 'storyboard', 'previa', 'ajustes', 'video-aprovado', 'pronto'])],
+    ['Gravação', conta(['recebido', 'storyboard', 'previa', 'ajustes', 'video-aprovado', 'pronto'])],
     ['Revisão', conta(['video-aprovado', 'pronto'])],
     ['Postagem', lidos ? lista.filter(postouTudo).length : null], // null: a planilha não respondeu
   ];
@@ -143,13 +150,14 @@ function ciclo(lista) {
 /* Os quatro nós de cada roteiro na esteira: feito, sua vez, com os bots ou ainda não */
 function nosDe(r) {
   const e = r.etapa;
-  const gravado = ['recebido', 'previa', 'ajustes', 'video-aprovado', 'pronto'].includes(e);
+  const gravado = ['recebido', 'storyboard', 'previa', 'ajustes', 'video-aprovado', 'pronto'].includes(e);
+  const sbVez = e === 'storyboard' && storyboardsParaDecidir([r], estado.storyboardsEnviados).length > 0;
   const postagem = postouTudo(r) ? 'feito' : e === 'pronto' ? (r.pacote?.postadoConhecido ? 'vez' : 'sem-dados') : '';
   const lista = [
     ['Texto', e === 'rascunho' || (e === 'ganchos' && ganchosParaEscolher([r], estado.ganchosEnviados).length) ? 'vez'
       : e === 'mudanca' || e === 'ganchos' ? 'espera' : 'feito'],
     ['Gravação', gravado ? 'feito' : e === 'aprovado' ? 'vez' : ''],
-    ['Vídeos', e === 'pronto' ? 'feito' : e === 'previa' ? 'vez' : ['recebido', 'ajustes', 'video-aprovado'].includes(e) ? 'espera' : ''],
+    ['Vídeos', e === 'pronto' ? 'feito' : e === 'previa' || sbVez ? 'vez' : ['recebido', 'storyboard', 'ajustes', 'video-aprovado'].includes(e) ? 'espera' : ''],
     ['Postagem', postagem],
   ];
   const fala = { feito: 'feito', vez: 'sua vez', espera: 'com o motor', '': 'ainda não', 'sem-dados': 'a planilha não respondeu' };

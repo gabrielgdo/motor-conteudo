@@ -32,6 +32,9 @@ import {
 } from './decisoes-roteiro.js';
 import { versaoVistaDe, janelaGancho } from './telas/roteiros.js';
 import { estadoDosGanchos, textoDaEscolhaAceita } from './ganchos.js';
+import { estadoDoStoryboard, textoDaDecisaoStoryboardAceita } from './storyboard.js';
+import { pedidosDoStoryboard, janelaStoryboard } from './telas/storyboard.js';
+import { Quadros } from './componentes/quadros.js';
 import { arquivoDeLegenda } from './telas/prontos.js';
 import { desenhar, rotear } from './roteador.js';
 import { abrirJanela, fecharJanela, avisar, avisarComAcao, removerAviso, copiarTexto, janelaSobre, janelaSair } from './componentes/janelas.js';
@@ -163,6 +166,7 @@ export function sairDaConta(mensagem = '') {
       () => fecharJanela(),
       () => Tele.fechar(),
       () => Players.liberar(),
+      () => Quadros.liberar(),
       () => Downloads.liberar(),
       () => limparDados(),
       () => reiniciarEstado(),
@@ -236,6 +240,11 @@ function pintarJanela() {
       id: j.id, versao: j.versao, decisao: j.decisao, ajustes: j.ajustes, teste: j.teste,
       execucoes: execucoesLidas().execucoes || [], enviando: j.enviando, erro: j.erro,
     });
+  } else if (j.tipo === 'storyboard') {
+    html = janelaStoryboard({
+      id: j.id, versao: j.versao, decisao: j.decisao, ajustes: j.ajustes, observacoes: j.observacoes, teste: j.teste,
+      enviando: j.enviando, erro: j.erro,
+    });
   } else if (j.tipo === 'gancho') {
     html = janelaGancho({
       id: j.id, versao: j.versao, escolha: j.escolha, opcao: j.opcao, observacoes: j.observacoes, teste: j.teste,
@@ -263,6 +272,23 @@ function abrirRodar(janela) {
 }
 
 const limparCampos = (...modelos) => { for (const m of modelos) delete rascunho[m]; };
+
+/** "Aprovar o storyboard" / "Enviar os pedidos": confere de novo (o botão pode estar velho) e abre a confirmação. */
+function abrirDecisaoStoryboard(el, decisao) {
+  const r = rot(el.dataset.id);
+  if (!r || r.etapa !== 'storyboard' || !podeDecidir(Integra.email())) return;
+  const st = estadoDoStoryboard(r, { local: estado.storyboardsEnviados[r.id] || null, agora: new Date() });
+  if (st.bloqueia) { avisar(st.explicacao || st.texto); desenhar(); return; }
+  const ajustes = decisao === 'ajustar' ? pedidosDoStoryboard(r).map((a) => ({ ...a })) : [];
+  const observacoes = decisao === 'ajustar' ? (rascunho[`sb-obs-${r.id}`] || '').trim() : '';
+  if (decisao === 'aprovar' && pedidosDoStoryboard(r).length) { avisar('Envie ou tire os pedidos da lista antes de aprovar.'); return; }
+  if (decisao === 'ajustar' && !ajustes.length && !observacoes) {
+    avisar('Toque em “Pedir mudança neste quadro” no quadro que quer mudar, ou escreva um pedido geral.');
+    return;
+  }
+  estado.janela = { tipo: 'storyboard', id: r.id, versao: r.storyboard.versao, decisao, ajustes, observacoes, teste: r.teste, enviando: false, erro: '' };
+  pintarJanela();
+}
 
 /**
  * Candidato que a tela pode mudar agora (o botão pode estar velho): lido, não de teste, no formato,
@@ -928,6 +954,84 @@ export const ACOES = {
       if (estado.janela !== j || !estado.logada) return;
       j.enviando = false;
       j.erro = e?.message || 'Não consegui mandar a escolha agora. Tente de novo.';
+      pintarJanela();
+    }
+  },
+
+  /* -- vídeos: o storyboard antes das prévias (arquivo pela central ou pelo Drive; o motor atende) -- */
+  'sb-quadro'(el) {
+    const r = rot(el.dataset.id);
+    if (!r || r.etapa !== 'storyboard') return;
+    estado.sbQuadro[r.id] = el.dataset.valor;
+    desenhar();
+    const alvo = $(`#c-sb-pedido-${CSS.escape(r.id)}`);
+    if (alvo) { alvo.scrollIntoView({ block: 'center' }); alvo.focus({ preventScroll: true }); }
+  },
+  'sb-cancelar'(el) {
+    delete estado.sbQuadro[el.dataset.id];
+    limparCampos(`sb-pedido-${el.dataset.id}`);
+    desenhar();
+  },
+  'sb-adicionar'(el) {
+    const r = rot(el.dataset.id);
+    if (!r || r.etapa !== 'storyboard') return;
+    const [rede, n] = String(el.dataset.valor || '').split(':');
+    const q = (r.storyboard?.quadros?.[rede] || []).find((x) => x.n === Number(n));
+    const pedido = (rascunho[`sb-pedido-${r.id}`] || '').trim();
+    if (!q) return;
+    if (!pedido) { estado.erros[`sb-pedido-${r.id}`] = 'Diga o que mudar neste quadro.'; desenhar(); return; }
+    const escolha = rascunho[`sb-rede-${r.id}`];
+    pedidosDoStoryboard(r).push({ rede: escolha === 'ambas' ? 'ambas' : rede, quadro: q.n, tempo: q.tempo, pedido });
+    delete estado.sbQuadro[r.id];
+    delete estado.erros[`sb-pedido-${r.id}`];
+    limparCampos(`sb-pedido-${r.id}`, `sb-rede-${r.id}`);
+    avisar('Pedido na lista. Peça em outros quadros ou envie a lista ao motor.');
+    desenhar();
+  },
+  'sb-remover'(el) {
+    const r = rot(el.dataset.id);
+    if (r) pedidosDoStoryboard(r).splice(+el.dataset.valor, 1);
+    desenhar();
+  },
+  'sb-ampliar'(el) {
+    const id = el.dataset.id;
+    estado.sbAmpliado[id] = estado.sbAmpliado[id] === el.dataset.valor ? '' : el.dataset.valor;
+    desenhar();
+  },
+  'sb-tentar'() {
+    Quadros.tentar();
+    tentarAnexosDeNovo();
+    carregar({ forcar: true });
+  },
+  'sb-aprovar'(el) { abrirDecisaoStoryboard(el, 'aprovar'); },
+  'sb-enviar'(el) { abrirDecisaoStoryboard(el, 'ajustar'); },
+  async 'sb-gravar'(el) {
+    const j = estado.janela;
+    if (j?.tipo !== 'storyboard' || j.enviando || el.disabled) return;
+    el.disabled = true; // o toque duplo não grava duas vezes
+    j.enviando = true;
+    j.erro = '';
+    pintarJanela();
+    try {
+      const res = await Integra.drive.gravarDecisaoStoryboard({
+        id: j.id, versao: j.versao, decisao: j.decisao, ajustes: j.ajustes, observacoes: j.observacoes,
+      });
+      if (estado.janela !== j) return;
+      if (!res.ok) { j.enviando = false; j.erro = res.mensagem; pintarJanela(); return; }
+      // Registro otimista até a releitura do Drive mostrar a decisão (js/storyboard.js).
+      estado.storyboardsEnviados[j.id] = { versao: j.versao, decisao: j.decisao, desde: Date.now() };
+      const r = rot(j.id);
+      if (r) pedidosDoStoryboard(r).length = 0;
+      delete estado.sbQuadro[j.id];
+      limparCampos(`sb-obs-${j.id}`);
+      fecharJanela();
+      avisar(textoDaDecisaoStoryboardAceita(j.id, j, !!res.viaCentral));
+      carregar({ forcar: true });
+      desenhar();
+    } catch (e) {
+      if (estado.janela !== j || !estado.logada) return;
+      j.enviando = false;
+      j.erro = e?.message || 'Não consegui mandar a decisão agora. Tente de novo.';
       pintarJanela();
     }
   },

@@ -5,6 +5,7 @@ import { estado, rascunho } from '../estado.js';
 import { Integra } from '../integra.js';
 import { ultima, postouTudo, estadoDados } from '../dados.js';
 import { estadoDosGanchos } from '../ganchos.js';
+import { estadoDoStoryboard } from '../storyboard.js';
 
 /* nomeVT liga o título de uma lista ao título do detalhe: na troca de tela, um vira o outro. */
 export const vt = (id) => `style="view-transition-name:t-${esc(String(id).replace(/[^\w-]/g, '_'))}"`;
@@ -26,6 +27,12 @@ export function passoDe(r) {
     case 'mudanca': return ['Com o Roteirista', 'espera'];
     case 'aprovado': return ['Falta gravar', 'acao'];
     case 'recebido': return ['Em edição', 'espera'];
+    case 'storyboard': {
+      const s = estadoDoStoryboard(r, { local: estado.storyboardsEnviados?.[r.id] || null });
+      if (s.estado === 'decidir') return [s.texto, 'acao'];
+      if (s.estado === 'sem-texto') return ['Ver o storyboard', 'acao'];
+      return [s.estado === 'ajustar' ? 'Storyboard em ajuste' : 'Renderizando as prévias', s.tom];
+    }
     case 'previa': return [`Revisar a prévia v${ultima(r).n}`, 'acao'];
     case 'ajustes': return ['Ajustes na edição', 'espera'];
     case 'video-aprovado': return ['Montando o pacote', 'espera'];

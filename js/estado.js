@@ -28,6 +28,13 @@ const inicial = () => ({
   // Escolha de gancho enviada e ainda não vista no Drive (registro otimista, só em memória):
   // id -> {versao, escolha: '1'|'2'|'3'|'outros', desde: ms} (js/ganchos.js).
   ganchosEnviados: {},
+  // Storyboard antes das prévias (desde 15/11/2026, só em memória): os pedidos que ela junta por quadro
+  // ("<id> sb<N>" -> [{rede, quadro, tempo, pedido}]), o quadro com o campo aberto (id -> "ig:3"), o quadro ampliado
+  // (id -> "tt:2") e a decisão enviada ainda não vista no Drive (id -> {versao, decisao, desde}; js/storyboard.js).
+  sbPendentes: {},
+  sbQuadro: {},
+  sbAmpliado: {},
+  storyboardsEnviados: {},
   candidatosVisiveis: 30, // chip Candidatos: quantos cartões aparecem antes do "Mostrar mais"
   janela: null, // janela de confirmação aberta: {tipo, ...} (js/acoes.js)
   // Envio ao Roteirista aceito pela ponte e ainda não visto em Execuções (registro otimista, só em

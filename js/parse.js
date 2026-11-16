@@ -51,6 +51,10 @@ const RE_ESCOLHA_GANCHO = padrao(' gancho v(\\d+)\\.md');
 const RE_APROVADO_ROTEIRO = padrao(' - (.+)\\.md');
 const RE_PREVIA = padrao(' (IG|TT) v(\\d+)\\.mp4');
 const RE_STORYBOARD = padrao(' storyboard (IG|TT) v(\\d+)\\.jpe?g');
+// storyboard antes das prévias (desde 15/11/2026): "<id> storyboard vN.md", a pasta "<id> storyboard vN/" e a decisão dela
+const RE_STORYBOARD_MD = padrao(' storyboard v(\\d+)\\.md');
+const RE_PASTA_STORYBOARD = padrao(' storyboard v(\\d+)');
+const RE_DECISAO_STORYBOARD = padrao(' decisao storyboard v(\\d+)\\.md');
 const RE_NOTAS_AJUSTES = padrao(' (notas|ajustes) v(\\d+)\\.md');
 const RE_APROVADO_LIMPAR = padrao(' (aprovado|limpar)\\.md');
 const RE_PACOTE = padrao('(?: - (.+))?');
@@ -92,7 +96,8 @@ export function parseRoteiroAprovado(nome) {
 }
 
 /**
- * Arquivos de 4-Revisao → {id, tipo, v}. Tipos: ig, tt, sbIg, sbTt, notas, ajustes, aprovado, limpar.
+ * Arquivos de 4-Revisao → {id, tipo, v}. Tipos: ig, tt, sbIg, sbTt, notas, ajustes, aprovado, limpar, storyboard (o .md
+ * do storyboard antes das prévias) e decisaoStoryboard (a decisão dela sobre ele).
  * `v` é null para aprovado/limpar.
  */
 export function parseRevisao(nome) {
@@ -101,11 +106,21 @@ export function parseRevisao(nome) {
   if (m) return { id: m[1], tipo: m[2].toLowerCase(), v: Number(m[3]) };
   m = comId(n.match(RE_STORYBOARD));
   if (m) return { id: m[1], tipo: m[2].toUpperCase() === 'IG' ? 'sbIg' : 'sbTt', v: Number(m[3]) };
+  m = comId(n.match(RE_STORYBOARD_MD));
+  if (m) return { id: m[1], tipo: 'storyboard', v: Number(m[2]) };
+  m = comId(n.match(RE_DECISAO_STORYBOARD));
+  if (m) return { id: m[1], tipo: 'decisaoStoryboard', v: Number(m[2]) };
   m = comId(n.match(RE_NOTAS_AJUSTES));
   if (m) return { id: m[1], tipo: m[2].toLowerCase(), v: Number(m[3]) };
   m = comId(n.match(RE_APROVADO_LIMPAR));
   if (m) return { id: m[1], tipo: m[2].toLowerCase(), v: null };
   return null;
+}
+
+/** Pasta de quadros do storyboard em 4-Revisao: `<id> storyboard vN` → {id, v}. */
+export function parsePastaStoryboard(nome) {
+  const m = comId(String(nome).trim().match(RE_PASTA_STORYBOARD));
+  return m ? { id: m[1], v: Number(m[2]) } : null;
 }
 
 export function ehVideo(nome) {

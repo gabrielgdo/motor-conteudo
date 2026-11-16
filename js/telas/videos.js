@@ -1,4 +1,5 @@
-// VÍDEOS (#/videos e #/videos/<id>): as prévias do Instagram e do TikTok lado a lado, tocando os
+// VÍDEOS (#/videos e #/videos/<id>): antes das prévias, o storyboard (quadros parados, desde 15/11/2026; ver
+// telas/storyboard.js); depois, as prévias do Instagram e do TikTok lado a lado, tocando os
 // arquivos reais de 4-Revisao (componentes/players.js), a linha do tempo dos ajustes com a duração
 // real e o painel de revisão. Com FLAGS.revisaoPeloApp, "Aprovar" grava `<id> aprovado.md` e
 // "Enviar ajustes" grava `<id> ajustes vN.md` em 4-Revisao (js/revisao.js confere os nomes logo
@@ -19,6 +20,8 @@ import { moldura } from '../componentes/janelas.js';
 import { faixaExecucao, historicoComExecucoes, blocoHistorico, linhasDe } from '../componentes/execucao.js';
 import { resumirAndamento, htmlAndamento } from '../andamento.js';
 import { cab, selo, vt, passoDe, naoAchei, comDados, vazio, campo, segmento, rodapeAtualizado, voltar } from './pecas.js';
+import { painelQuadros, painelDecisaoStoryboard } from './storyboard.js';
+import { estadoDoStoryboard } from '../storyboard.js';
 
 const enc = encodeURIComponent;
 const SEM_VIDEO = ['ganchos', 'rascunho', 'mudanca', 'recusado', 'aprovado', ''];
@@ -26,14 +29,17 @@ const SEM_VIDEO = ['ganchos', 'rascunho', 'mudanca', 'recusado', 'aprovado', '']
 export function vVideos() {
   return `${cab('Vídeos', 'As prévias do Instagram e do TikTok, para aprovar ou pedir ajuste.')}
   ${comDados(() => {
-    const revisar = porEtapa('previa'); const andando = porEtapa('recebido', 'ajustes', 'video-aprovado');
+    // o storyboard que espera por ela entra em "Para revisar"; o já decidido fica com o motor
+    const sbVez = (r) => estadoDoStoryboard(r, { local: estado.storyboardsEnviados?.[r.id] || null }).estado === 'decidir';
+    const revisar = [...porEtapa('storyboard').filter(sbVez), ...porEtapa('previa')];
+    const andando = [...porEtapa('recebido'), ...porEtapa('storyboard').filter((r) => !sbVez(r)), ...porEtapa('ajustes', 'video-aprovado')];
     const item = (r) => { const [texto, tom] = passoDe(r); const v = ultima(r); return `<li><a class="painel dupla luz" href="#/videos/${enc(r.id)}">
     <span class="mini" aria-hidden="true"><i></i><i></i></span>
     <span><span class="id">${esc(r.id)}</span><h3 ${vt(r.id)}>${esc(r.titulo)}</h3><span class="meta">${selo(texto, tom)}${r.teste ? selo('Teste') : ''}${v?.quando ? `<span class="apagado pequeno">chegou ${esc(v.quando)}</span>` : ''}</span></span></a></li>`; };
     return `
   <div class="pilha" style="gap:1.875rem">
     <section aria-labelledby="t-revisar"><h2 id="t-revisar" style="margin-bottom:.875rem">Para revisar</h2>
-      ${revisar.length ? `<ul class="duplas">${revisar.map(item).join('')}</ul>` : `<div class="painel">${vazio('Nenhuma prévia esperando', 'Quando o motor terminar uma edição, as duas versões aparecem aqui.')}</div>`}</section>
+      ${revisar.length ? `<ul class="duplas">${revisar.map(item).join('')}</ul>` : `<div class="painel">${vazio('Nada esperando por você', 'Quando o motor terminar o storyboard ou uma prévia, ele aparece aqui.')}</div>`}</section>
     ${andando.length ? `<section aria-labelledby="t-andando"><h2 id="t-andando" style="margin-bottom:.875rem">Com o motor de edição</h2><ul class="duplas">${andando.map(item).join('')}</ul></section>` : ''}
   </div>
   ${rodapeAtualizado()}`;
@@ -230,7 +236,7 @@ function painelRevisao(r, v, ehAtual) {
     </section>`;
   }
   const textos = {
-    recebido: ['Gravação recebida', 'O motor está editando a primeira prévia. O Diretor avisa pelo Grok quando ela chegar.'],
+    recebido: ['Gravação recebida', 'O motor está preparando a gravação e montando o storyboard: quadros parados para você aprovar antes de qualquer vídeo.'],
     previa: ['Prévia a caminho', 'O motor ainda não entregou os vídeos desta prévia.'],
     ajustes: ['Ajustes enviados', `O motor está refazendo. A v${v ? v.n + 1 : 2} chega pelo aviso do Diretor.`],
     'video-aprovado': ['Vídeos aprovados', 'O motor está montando o pacote final: vídeos, capas, legendas, carrossel, Stories e Threads.'],
@@ -266,10 +272,29 @@ export function linhaDoTempoAtual(id) {
   return v ? linhaDoTempo(v, pinosDe(r, v, ehAtual)) : '';
 }
 
+/** Detalhe na etapa 'storyboard': os quadros à esquerda, "Está bom assim?" à direita e o histórico. */
+function vStoryboard(r) {
+  const opts = { email: Integra.email(), local: estado.storyboardsEnviados?.[r.id] || null, agora: new Date() };
+  const [texto, tom] = passoDe(r);
+  return `
+  ${voltar('videos', 'Vídeos')}
+  ${cab(r.titulo, '', r.id)}
+  <div class="meta" style="margin:-.875rem 0 1.625rem">${selo(texto, tom)}${r.teste ? selo('Teste') : ''}</div>
+  <div class="revisao">
+    <div class="revisao-a">
+      <section class="painel pilha ordem-1" aria-labelledby="t-storyboard">${painelQuadros(r, opts)}</section>
+      ${blocoHistorico(historicoComExecucoes(r.eventos, execucoesLidas().execucoes, r.id), 'ordem-3')}
+    </div>
+    <div class="revisao-b">${painelDecisaoStoryboard(r, { ...opts, faixa: faixaMotor(r, execucoesLidas()) })}</div>
+  </div>
+  ${rodapeAtualizado()}`;
+}
+
 export function vVideo(id) {
   return comDados(() => {
     const r = rot(id);
     if (!r || SEM_VIDEO.includes(r.etapa)) return `${voltar('videos', 'Vídeos')}${naoAchei('videos')}`;
+    if (r.etapa === 'storyboard') return vStoryboard(r);
     const versoes = r.video.versoes; const [texto, tom] = passoDe(r);
     const { v, atual, ehAtual } = versaoVista(r);
     const marcar = r.etapa === 'previa' && ehAtual;

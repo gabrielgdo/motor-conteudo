@@ -14,7 +14,7 @@
 
 import {
   parseRascunho, parseFontes, parseRoteiroAprovado, parseRevisao, parseBruto, parsePacote,
-  parseVencedor, parseGanchos, parseEscolhaGancho, ehTeste, dataCurta, formatarData,
+  parseVencedor, parseGanchos, parseEscolhaGancho, parsePastaStoryboard, ehTeste, dataCurta, formatarData,
 } from './parse.js';
 
 export const MIME_PASTA = 'application/vnd.google-apps.folder';
@@ -52,6 +52,11 @@ function novoProjeto(id) {
     frontmatter: null,
     brutos: [],
     previas: { versoes: [], atual: null },
+    // Storyboard antes das prévias (desde 15/11/2026): "<id> storyboard vN.md" + a pasta de quadros, e a decisão dela
+    // ("<id> decisao storyboard vN.md"). [{v, md, pasta}] / [{v, file}] em ordem de versão.
+    storyboards: [],
+    ultimoStoryboard: null,
+    decisoesStoryboard: [],
     ajustes: [],
     aprovado: null,
     limpar: null,
@@ -132,10 +137,24 @@ export function montarProjetos({
 
   // 4-Revisao.
   const versoesPorId = new Map();
+  const sbPorId = new Map();
+  const decSbPorId = new Map();
+  const sbDe = (id, v) => {
+    if (!sbPorId.has(id)) sbPorId.set(id, new Map());
+    const porV = sbPorId.get(id);
+    if (!porV.has(v)) porV.set(v, { v, md: null, pasta: null });
+    return porV.get(v);
+  };
   for (const f of revisao) {
-    if (ehPasta(f)) continue;
+    if (ehPasta(f)) {
+      const sp = parsePastaStoryboard(f.name);
+      if (sp) { const x = sbDe(sp.id, sp.v); x.pasta = maisRecente(x.pasta, f); }
+      continue;
+    }
     const r = parseRevisao(f.name);
     if (!r) continue;
+    if (r.tipo === 'storyboard') { const x = sbDe(r.id, r.v); x.md = maisRecente(x.md, f); continue; }
+    if (r.tipo === 'decisaoStoryboard') { porVersao(decSbPorId, r, f); continue; }
     const p = proj(r.id);
     if (r.tipo === 'aprovado') { p.aprovado = maisRecente(p.aprovado, f); continue; }
     if (r.tipo === 'limpar') { p.limpar = maisRecente(p.limpar, f); continue; }
@@ -157,6 +176,15 @@ export function montarProjetos({
     p.previas = { versoes, atual: versoes.length ? versoes[versoes.length - 1].v : null };
   }
   for (const p of projetos.values()) p.ajustes.sort((a, b) => a.v - b.v);
+  // Storyboards: só conta a versão com o .md (o motor grava os quadros antes dele).
+  for (const [id, porV] of sbPorId) {
+    const versoes = [...porV.values()].filter((x) => x.md).sort((a, b) => a.v - b.v);
+    if (!versoes.length) continue;
+    const p = proj(id);
+    p.storyboards = versoes;
+    p.ultimoStoryboard = versoes[versoes.length - 1];
+  }
+  for (const [id, porV] of decSbPorId) if (projetos.has(id)) proj(id).decisoesStoryboard = emOrdem(porV);
 
   // 5-Prontos: pastas de pacote (exceto "vencedores").
   for (const f of prontos) {
@@ -221,6 +249,18 @@ export function checagemConcluida(p) {
   return tempo(f.modifiedTime || f.createdTime) >= tempo(p.ultimoRascunho.file.createdTime);
 }
 
+/** Storyboard entregue e ainda sem prévia em vídeo: a etapa em que ela aprova ou pede mudança por quadro (15/11/2026). */
+export function ehStoryboardSemPrevia(p) {
+  return !!p.ultimoStoryboard && p.previas.versoes.length === 0 && !p.pacote && !p.aprovado;
+}
+
+/** A decisão gravada para a versão MAIS NOVA do storyboard ({v, file}), ou null (a vez é dela). */
+export function decisaoDoUltimoStoryboard(p) {
+  const n = p?.ultimoStoryboard?.v;
+  if (!n) return null;
+  return (p.decisoesStoryboard || []).find((d) => d.v === n) || null;
+}
+
 /** Maior versão N tem IG/TT, sem aprovado.md e sem `ajustes vM` com M ≥ N. */
 export function ehPreviaNova(p) {
   const n = p.previas.atual;
@@ -261,6 +301,10 @@ export function calcularEtapa(p) {
     const aj = ajusteEmAndamento(p);
     if (aj) return `ajustes v${aj.v} pedidos, motor trabalhando`;
     return `prévia v${p.previas.atual} para ver`;
+  }
+  if (p.ultimoStoryboard) {
+    return decisaoDoUltimoStoryboard(p) ? `storyboard v${p.ultimoStoryboard.v} decidido, motor trabalhando`
+      : `storyboard v${p.ultimoStoryboard.v} para aprovar`;
   }
   if (p.brutos.length) return 'gravação enviada';
   if (p.roteiro) return 'aprovado, falta gravar';
@@ -351,6 +395,8 @@ export function historico(p) {
   add(p.fontes, 'Relatório de fontes');
   add(p.roteiro, 'Roteiro aprovado');
   for (const b of p.brutos) add(b, `Gravação enviada (${b.name})`);
+  for (const s of p.storyboards || []) add(s.md, `Storyboard v${s.v}`);
+  for (const d of p.decisoesStoryboard || []) add(d.file, `Decisão do storyboard v${d.v}`);
   for (const v of p.previas.versoes) {
     if (v.created) ev.push({ quando: v.created, texto: `Prévia v${v.v}`, file: v.ig || v.tt });
   }

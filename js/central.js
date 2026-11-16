@@ -23,11 +23,12 @@ export const FORMATOS = {
   decisao_roteiro: /^2-Roteiros\/rascunhos\/[A-Za-z0-9-]+ decisao v[0-9]+\.md$/,
   decisao_gancho: /^2-Roteiros\/rascunhos\/[A-Za-z0-9-]+ gancho v[0-9]+\.md$/,
   decisao_previa: /^4-Revisao\/[A-Za-z0-9-]+ (aprovado|ajustes v[0-9]+)\.md$/,
+  decisao_storyboard: /^4-Revisao\/[A-Za-z0-9-]+ decisao storyboard v[0-9]+\.md$/,
   retrospectiva: /^5-Prontos\/retrospectivas\/[0-9]{4}-[0-9]{2}-[0-9]{2} pedido\.md$/,
 };
 const PASTAS = {
   busca: '1-Radar', decisoes_semana: '1-Radar', decisao_roteiro: '2-Roteiros/rascunhos', decisao_previa: '4-Revisao',
-  retrospectiva: '5-Prontos/retrospectivas', decisao_gancho: '2-Roteiros/rascunhos',
+  retrospectiva: '5-Prontos/retrospectivas', decisao_gancho: '2-Roteiros/rascunhos', decisao_storyboard: '4-Revisao',
 };
 
 export class ErroCentral extends Error {

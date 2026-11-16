@@ -12,11 +12,12 @@
 
 import { CONFIG, CACHE_MS } from './config.js';
 import { Integra } from './integra.js';
-import { montarProjetos, historico, checagemConcluida, escolhaDosUltimosGanchos } from './model.js';
+import { montarProjetos, historico, checagemConcluida, escolhaDosUltimosGanchos, decisaoDoUltimoStoryboard } from './model.js';
 import { etapaDe } from './etapas.js';
 import { lerRoteiro } from './roteiro.js';
 import { lerGanchos } from './ganchos.js';
 import { lerEscolhaGancho } from './pedidos-motor.js';
+import { lerStoryboard, lerDecisaoStoryboard } from './storyboard.js';
 import { prefixoSemana, semanaIso, classificarArquivoPacote } from './parse.js';
 import { quando, periodoDaSemana, tamanho } from './util.js';
 
@@ -112,6 +113,10 @@ function textoHistorico(t) {
   if (m) return `3 ganchos propostos (v${m[1]})`;
   m = t.match(/^Gancho escolhido \(v(\d+)\)$/);
   if (m) return `Você escolheu nos ganchos v${m[1]}`;
+  m = t.match(/^Storyboard v(\d+)$/);
+  if (m) return `Storyboard v${m[1]} pronto`;
+  m = t.match(/^Decisão do storyboard v(\d+)$/);
+  if (m) return `Você decidiu o storyboard v${m[1]}`;
   return { 'Relatório de fontes': 'Fontes conferidas', 'Pacote pronto': 'Pacote final pronto', Vencedor: 'Marcado como vencedor' }[t] || t;
 }
 
@@ -164,13 +169,45 @@ export function propostaDeGanchos(p, lidoG = null) {
 }
 
 /**
+ * O storyboard na etapa 'storyboard' (js/storyboard.js decide o estado): a versão mais nova, os quadros lidos do .md
+ * (cada um com o arquivo da imagem achado na pasta) e a decisão gravada para essa versão (só o nome na listagem; o
+ * conteúdo, se foi baixado). `lidoS`: {md: lerStoryboard(...)|null, arquivos: [arquivos da pasta], decisao:
+ * lerDecisaoStoryboard(...)|null, erro} ou null (não baixado).
+ */
+export function storyboardDe(p, lidoS = null) {
+  if (!p?.ultimoStoryboard) return null;
+  const dec = decisaoDoUltimoStoryboard(p);
+  const md = lidoS?.md || null;
+  const porNome = new Map((lidoS?.arquivos || []).map((f) => [String(f.name || '').trim().toLowerCase(), f]));
+  const quadros = { ig: [], tt: [] };
+  for (const rede of ['ig', 'tt']) {
+    for (const q of md?.quadros?.[rede] || []) quadros[rede].push({ ...q, file: porNome.get(q.arquivo.toLowerCase()) || null });
+  }
+  return {
+    versao: p.ultimoStoryboard.v,
+    arquivo: p.ultimoStoryboard.md,
+    pasta: p.ultimoStoryboard.pasta,
+    redes: md?.redes || [],
+    notas: md ? [...md.notas] : [],
+    mudancas: md ? md.mudancas.map((x) => ({ ...x })) : [],
+    quadros,
+    lido: !!md && quadros.ig.length + quadros.tt.length > 0,
+    erro: !!lidoS?.erro,
+    temDecisao: !!dec,
+    decisaoEm: dec?.file?.createdTime || dec?.file?.modifiedTime || null,
+    decisao: dec && lidoS?.decisao ? { ...lidoS.decisao } : (dec ? { decisao: '' } : null),
+  };
+}
+
+/**
  * Projeto (montarProjetos) + roteiro lido (lerRoteiro, ou null se não foi baixado) → objeto de
  * roteiro do desenho aprovado. `opcoes.postadosLidos`: a planilha Radar foi lida (senão, nada de "postado").
  * `opcoes.ganchosLido`: os ganchos (e a escolha) baixados para a etapa 'ganchos' (propostaDeGanchos).
  */
-export function montarRoteiro(p, lido, agora = new Date(), { postadosLidos = true, ganchosLido = null } = {}) {
+export function montarRoteiro(p, lido, agora = new Date(), { postadosLidos = true, ganchosLido = null, storyboardLido = null } = {}) {
   const etapa = etapaDe(p);
   const propostaGanchos = etapa === 'ganchos' ? propostaDeGanchos(p, ganchosLido) : null;
+  const storyboard = etapa === 'storyboard' ? storyboardDe(p, storyboardLido) : null;
   const titulo = String(lido?.cabecalho?.titulo || '').trim() || tituloDoNome(p) || propostaGanchos?.titulo || p.id;
   const sem = semanaDe(agora);
   const ajustesPorV = new Map(p.ajustes.map((a) => [a.v, a.file]));
@@ -190,6 +227,8 @@ export function montarRoteiro(p, lido, agora = new Date(), { postadosLidos = tru
     fontesConferidas: checagemConcluida(p),
     // Etapa 'ganchos' (desde 15/11/2026): as 3 opções para ela escolher; null nas outras etapas.
     propostaGanchos,
+    // Etapa 'storyboard' (desde 15/11/2026): os quadros para ela aprovar ou pedir mudança; null nas outras etapas.
+    storyboard,
     arquivoRoteiro: arquivoDoRoteiro(p),
     ...camposDoLido(lido),
     video: {
@@ -346,9 +385,41 @@ async function buscar(forcar, ger = geracao) {
     }
   });
 
+  // Etapa 'storyboard': o .md mais novo, a lista de quadros da pasta e a decisão dela para essa versão, se houver.
+  const storyboardsLidos = new Map();
+  const comStoryboard = lista.filter((p) => etapaDe(p) === 'storyboard' && p.ultimoStoryboard);
+  await emParalelo(comStoryboard, CONFIG.concorrencia, async (p) => {
+    const sb = p.ultimoStoryboard;
+    try {
+      const chave = `s:${sb.md.id}:${sb.md.modifiedTime || ''}`;
+      if (!cacheLido.has(chave)) {
+        const md = lerStoryboard(await Integra.baixarTexto(sb.md));
+        const arquivos = sb.pasta ? await Integra.drive.listarStoryboard(sb.pasta) : [];
+        if (ger !== geracao) return;
+        cacheLido.set(chave, { md, arquivos });
+      }
+      const dec = decisaoDoUltimoStoryboard(p);
+      let decisao = null;
+      if (dec) {
+        const chaveD = `d:${dec.file.id}:${dec.file.modifiedTime || ''}`;
+        if (!cacheLido.has(chaveD)) {
+          const t = await Integra.baixarTexto(dec.file).catch(() => null);
+          if (ger !== geracao) return;
+          if (t !== null) cacheLido.set(chaveD, lerDecisaoStoryboard(t));
+        }
+        decisao = cacheLido.get(chaveD) || null;
+      }
+      storyboardsLidos.set(p.id, { ...cacheLido.get(chave), decisao, erro: false });
+    } catch {
+      storyboardsLidos.set(p.id, { md: null, arquivos: [], decisao: null, erro: true });
+    }
+  });
+
   const postadosLidos = !post.erro;
   const roteiros = lista.map((p) => {
-    const r = montarRoteiro(p, lidos.get(p.id) || null, agora, { postadosLidos, ganchosLido: ganchosLidos.get(p.id) || null });
+    const r = montarRoteiro(p, lidos.get(p.id) || null, agora, {
+      postadosLidos, ganchosLido: ganchosLidos.get(p.id) || null, storyboardLido: storyboardsLidos.get(p.id) || null,
+    });
     r.erroTexto = lidos.has(p.id) && !lidos.get(p.id);
     return r;
   }).sort(compararIds);

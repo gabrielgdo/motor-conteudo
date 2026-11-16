@@ -22,9 +22,12 @@ test('arquivoDoPedido: os quatro formatos e nada fora deles', () => {
   assert.equal(arquivoDoPedido('busca', 'pedido-busca.md'), '1-Radar/pedido-busca.md');
   assert.equal(arquivoDoPedido('decisoes_semana', 'decisoes S47.md'), '1-Radar/decisoes S47.md');
   assert.equal(arquivoDoPedido('decisao_gancho', 'S47-01 gancho v2.md'), '2-Roteiros/rascunhos/S47-01 gancho v2.md');
+  assert.equal(arquivoDoPedido('decisao_storyboard', 'S47-01 decisao storyboard v2.md'), '4-Revisao/S47-01 decisao storyboard v2.md');
   for (const [t, n] of [['decisao_previa', '../x aprovado.md'], ['decisao_previa', 'S47-01 rascunho.md'],
     ['busca', 'outro.md'], ['qualquer', 'x.md'], ['decisao_roteiro', 'S47 01 decisao v1.md'],
-    ['decisao_gancho', 'S47-01 ganchos v1.md'], ['decisao_gancho', 'S47-01 gancho.md'], ['decisao_roteiro', 'S47-01 gancho v1.md']]) {
+    ['decisao_gancho', 'S47-01 ganchos v1.md'], ['decisao_gancho', 'S47-01 gancho.md'], ['decisao_roteiro', 'S47-01 gancho v1.md'],
+    ['decisao_storyboard', 'S47-01 storyboard v1.md'], ['decisao_storyboard', 'S47-01 aprovado.md'],
+    ['decisao_previa', 'S47-01 decisao storyboard v1.md'], ['decisao_storyboard', 'S47-01 decisao storyboard v1/ig-01.jpg']]) {
     assert.throws(() => arquivoDoPedido(t, n), undefined, `${t} ${n}`);
   }
 });
@@ -32,7 +35,8 @@ test('arquivoDoPedido: os quatro formatos e nada fora deles', () => {
 test('formatos iguais aos do banco e do motor', () => {
   const sql = readFileSync(new URL('../js/central.js', import.meta.url), 'utf8');
   assert.ok(sql.includes('arquivo_do_tipo'));
-  assert.deepEqual(Object.keys(FORMATOS).sort(), ['busca', 'decisao_gancho', 'decisao_previa', 'decisao_roteiro', 'decisoes_semana', 'retrospectiva']);
+  assert.deepEqual(Object.keys(FORMATOS).sort(), ['busca', 'decisao_gancho', 'decisao_previa', 'decisao_roteiro', 'decisao_storyboard',
+    'decisoes_semana', 'retrospectiva']);
 });
 
 // O combinado da escolha do gancho (GC3), escrito igual nos três lugares: aqui, no bin/central.py do motor e na
@@ -43,6 +47,12 @@ const fonteJs = (re) => re.source.replace(/\\\//g, '/');
 
 test('decisao_gancho: o regex combinado, igual ao do motor e do banco', () => {
   assert.equal(fonteJs(FORMATOS.decisao_gancho), GANCHO);
+});
+
+// O mesmo para a decisão do storyboard (Task 6): 4-Revisao, nunca o .md nem os quadros do motor.
+const STORYBOARD = '^4-Revisao/[A-Za-z0-9-]+ decisao storyboard v[0-9]+\\.md$';
+test('decisao_storyboard: o regex combinado, igual ao do motor e do banco', () => {
+  assert.equal(fonteJs(FORMATOS.decisao_storyboard), STORYBOARD);
 });
 
 const MOTOR = process.env.MOTOR_REELS_DIR || '';
@@ -57,6 +67,7 @@ test('formatos: os três lugares batem (com o motor ao lado, MOTOR_REELS_DIR)', 
   const doBanco = Object.fromEntries([...sql.matchAll(/tipo = '(\w+)'\s+and arquivo ~ '([^']+)'/g)].map((m) => [m[1], m[2]]));
   for (const [tipo, re] of Object.entries(doBanco)) assert.equal(fonteJs(FORMATOS[tipo]), re, tipo);
   assert.equal(doBanco.decisao_gancho, GANCHO);
+  assert.equal(doBanco.decisao_storyboard, STORYBOARD);
   const tipos = sql.match(/add constraint pedidos_tipo_check\s+check \(tipo in \(([^)]*)\)\)/)[1].match(/\w+/g);
   assert.deepEqual([...tipos].sort(), Object.keys(FORMATOS).sort());
 });
