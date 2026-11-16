@@ -392,11 +392,17 @@ async function buscar(forcar, ger = geracao) {
     const sb = p.ultimoStoryboard;
     try {
       const chave = `s:${sb.md.id}:${sb.md.modifiedTime || ''}`;
-      if (!cacheLido.has(chave)) {
+      let lidoSb = cacheLido.get(chave);
+      if (!lidoSb) {
         const md = lerStoryboard(await Integra.baixarTexto(sb.md));
         const arquivos = sb.pasta ? await Integra.drive.listarStoryboard(sb.pasta) : [];
         if (ger !== geracao) return;
-        cacheLido.set(chave, { md, arquivos });
+        lidoSb = { md, arquivos };
+        // o motor sobe os arquivos fora de ordem (o .md pode chegar antes das imagens): com quadro faltando, não guarda
+        // (a próxima leitura, o "Atualizar" ou o "Tentar de novo" listam a pasta de novo)
+        const nomes = new Set(arquivos.map((f) => String(f.name || '').trim().toLowerCase()));
+        const completo = ['ig', 'tt'].every((r) => (md.quadros[r] || []).every((q) => nomes.has(q.arquivo.toLowerCase())));
+        if (completo) cacheLido.set(chave, lidoSb);
       }
       const dec = decisaoDoUltimoStoryboard(p);
       let decisao = null;
@@ -409,7 +415,7 @@ async function buscar(forcar, ger = geracao) {
         }
         decisao = cacheLido.get(chaveD) || null;
       }
-      storyboardsLidos.set(p.id, { ...cacheLido.get(chave), decisao, erro: false });
+      storyboardsLidos.set(p.id, { ...lidoSb, decisao, erro: false });
     } catch {
       storyboardsLidos.set(p.id, { md: null, arquivos: [], decisao: null, erro: true });
     }

@@ -95,7 +95,7 @@ export function lerStoryboard(texto) {
       if (/^\|.*\|$/.test(linha)) {
         const cel = linha.slice(1, -1).split('|').map((c) => limpo(c, 300));
         if (cel.length >= 5 && !cel.every((c) => /^:?-+:?$/.test(c)) && cel[0].toLowerCase() !== 'rede' && out.mudancas.length < 30) {
-          out.mudancas.push({ rede: cel[0], quadro: cel[1], pedido: cel[2], feito: cel[3], ok: cel[4] !== '⚠️' });
+          out.mudancas.push({ rede: cel[0], quadro: cel[1], pedido: cel[2], feito: cel[3], ok: !cel[4].startsWith('⚠') });
         }
       }
       continue;
@@ -111,6 +111,42 @@ export function lerStoryboard(texto) {
       .sort((a, b) => a.n - b.n);
   }
   if (!out.redes.length) out.redes = ['ig', 'tt'].filter((r) => out.quadros[r].length);
+  return out;
+}
+
+/** "m:ss.s" (o tempo de um quadro) → segundos; NaN se não der. */
+export function segundosDoQuadro(tempo) {
+  const m = String(tempo ?? '').trim().match(/^(\d+):(\d{1,2}(?:[.,]\d+)?)$/);
+  return m ? Number(m[1]) * 60 + Number(m[2].replace(',', '.')) : NaN;
+}
+
+/** O quadro de uma lista mais perto do tempo t (segundos), ou null. */
+export function quadroMaisPerto(lista = [], t = NaN) {
+  if (!Number.isFinite(t)) return null;
+  let melhor = null;
+  for (const q of lista || []) {
+    const d = Math.abs(segundosDoQuadro(q.tempo) - t);
+    if (Number.isFinite(d) && (!melhor || d < melhor.d)) melhor = { q, d };
+  }
+  return melhor ? melhor.q : null;
+}
+
+/**
+ * Os pedidos em que vira um pedido feito num quadro. "Só nesta rede": um, para o quadro tocado. "Nos dois vídeos": esse
+ * e outro para o quadro da outra rede mais perto no tempo (os números dos quadros não batem entre as redes: no T01, o
+ * quadro 5 do Instagram é o fechamento e o 5 do TikTok é um corte). Assim o motor sempre recebe rede e quadro exatos,
+ * e a confirmação mostra os dois.
+ */
+export function pedidosDoQuadro(quadros = {}, rede, n, pedido, ambas = false) {
+  const q = (quadros?.[rede] || []).find((x) => x.n === Number(n));
+  const texto = limpo(pedido, MAX_PEDIDO);
+  if (!q || !texto || !['ig', 'tt'].includes(rede)) return [];
+  const out = [{ rede, quadro: q.n, tempo: q.tempo, pedido: texto }];
+  if (ambas) {
+    const outra = rede === 'ig' ? 'tt' : 'ig';
+    const par = quadroMaisPerto(quadros?.[outra], segundosDoQuadro(q.tempo));
+    if (par) out.push({ rede: outra, quadro: par.n, tempo: par.tempo, pedido: texto });
+  }
   return out;
 }
 

@@ -32,7 +32,7 @@ import {
 } from './decisoes-roteiro.js';
 import { versaoVistaDe, janelaGancho } from './telas/roteiros.js';
 import { estadoDosGanchos, textoDaEscolhaAceita } from './ganchos.js';
-import { estadoDoStoryboard, textoDaDecisaoStoryboardAceita } from './storyboard.js';
+import { estadoDoStoryboard, textoDaDecisaoStoryboardAceita, pedidosDoQuadro } from './storyboard.js';
 import { pedidosDoStoryboard, janelaStoryboard } from './telas/storyboard.js';
 import { Quadros } from './componentes/quadros.js';
 import { arquivoDeLegenda } from './telas/prontos.js';
@@ -273,12 +273,37 @@ function abrirRodar(janela) {
 
 const limparCampos = (...modelos) => { for (const m of modelos) delete rascunho[m]; };
 
+/** O pedido digitado no quadro aberto ("rede:N") vai para a lista: um item, ou dois em "Nos dois vídeos" (o quadro
+    da outra rede mais perto no tempo; js/storyboard.js). → true se entrou; sem texto, marca o erro do campo. */
+function adicionarPedidoDoQuadro(r, valor) {
+  const [rede, n] = String(valor || '').split(':');
+  const pedido = (rascunho[`sb-pedido-${r.id}`] || '').trim();
+  if (!pedido) { estado.erros[`sb-pedido-${r.id}`] = 'Diga o que mudar neste quadro.'; return false; }
+  const novos = pedidosDoQuadro(r.storyboard?.quadros, rede, n, pedido, rascunho[`sb-rede-${r.id}`] === 'ambas');
+  if (!novos.length) return false;
+  pedidosDoStoryboard(r).push(...novos);
+  delete estado.sbQuadro[r.id];
+  delete estado.erros[`sb-pedido-${r.id}`];
+  limparCampos(`sb-pedido-${r.id}`, `sb-rede-${r.id}`);
+  return true;
+}
+
 /** "Aprovar o storyboard" / "Enviar os pedidos": confere de novo (o botão pode estar velho) e abre a confirmação. */
 function abrirDecisaoStoryboard(el, decisao) {
   const r = rot(el.dataset.id);
   if (!r || r.etapa !== 'storyboard' || !podeDecidir(Integra.email())) return;
   const st = estadoDoStoryboard(r, { local: estado.storyboardsEnviados[r.id] || null, agora: new Date() });
   if (st.bloqueia) { avisar(st.explicacao || st.texto); desenhar(); return; }
+  // pedido digitado num quadro e ainda não adicionado: entra na lista ao enviar; aprovar espera ela decidir
+  const aberto = estado.sbQuadro[r.id];
+  if (aberto && (rascunho[`sb-pedido-${r.id}`] || '').trim()) {
+    if (decisao === 'aprovar') {
+      avisar('Há um pedido escrito num quadro: toque em “Adicionar à lista” ou em “Cancelar” antes de aprovar.');
+      return;
+    }
+    adicionarPedidoDoQuadro(r, aberto);
+    desenhar();
+  }
   const ajustes = decisao === 'ajustar' ? pedidosDoStoryboard(r).map((a) => ({ ...a })) : [];
   const observacoes = decisao === 'ajustar' ? (rascunho[`sb-obs-${r.id}`] || '').trim() : '';
   if (decisao === 'aprovar' && pedidosDoStoryboard(r).length) { avisar('Envie ou tire os pedidos da lista antes de aprovar.'); return; }
@@ -962,6 +987,11 @@ export const ACOES = {
   'sb-quadro'(el) {
     const r = rot(el.dataset.id);
     if (!r || r.etapa !== 'storyboard') return;
+    // outro quadro: o campo começa vazio e na rede dele (o texto de um quadro não vai para outro)
+    if (estado.sbQuadro[r.id] !== el.dataset.valor) {
+      limparCampos(`sb-pedido-${r.id}`, `sb-rede-${r.id}`);
+      delete estado.erros[`sb-pedido-${r.id}`];
+    }
     estado.sbQuadro[r.id] = el.dataset.valor;
     desenhar();
     const alvo = $(`#c-sb-pedido-${CSS.escape(r.id)}`);
@@ -969,23 +999,14 @@ export const ACOES = {
   },
   'sb-cancelar'(el) {
     delete estado.sbQuadro[el.dataset.id];
-    limparCampos(`sb-pedido-${el.dataset.id}`);
+    delete estado.erros[`sb-pedido-${el.dataset.id}`];
+    limparCampos(`sb-pedido-${el.dataset.id}`, `sb-rede-${el.dataset.id}`);
     desenhar();
   },
   'sb-adicionar'(el) {
     const r = rot(el.dataset.id);
     if (!r || r.etapa !== 'storyboard') return;
-    const [rede, n] = String(el.dataset.valor || '').split(':');
-    const q = (r.storyboard?.quadros?.[rede] || []).find((x) => x.n === Number(n));
-    const pedido = (rascunho[`sb-pedido-${r.id}`] || '').trim();
-    if (!q) return;
-    if (!pedido) { estado.erros[`sb-pedido-${r.id}`] = 'Diga o que mudar neste quadro.'; desenhar(); return; }
-    const escolha = rascunho[`sb-rede-${r.id}`];
-    pedidosDoStoryboard(r).push({ rede: escolha === 'ambas' ? 'ambas' : rede, quadro: q.n, tempo: q.tempo, pedido });
-    delete estado.sbQuadro[r.id];
-    delete estado.erros[`sb-pedido-${r.id}`];
-    limparCampos(`sb-pedido-${r.id}`, `sb-rede-${r.id}`);
-    avisar('Pedido na lista. Peça em outros quadros ou envie a lista ao motor.');
+    if (adicionarPedidoDoQuadro(r, el.dataset.valor)) avisar('Pedido na lista. Peça em outros quadros ou envie a lista ao motor.');
     desenhar();
   },
   'sb-remover'(el) {

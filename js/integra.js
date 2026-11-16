@@ -474,7 +474,8 @@ export const Integra = {
       if (!pasta?.id || !parsePastaStoryboard(pasta.name) || !(pasta.parents || []).includes(REVISAO_FOLDER)) {
         throw new ErroIntegra('Pasta de storyboard fora de 4-Revisao.', 'pasta-invalida');
       }
-      return (await drive.listar(pasta.id)).filter((f) => f.mimeType !== 'application/vnd.google-apps.folder');
+      // só JPEG: um arquivo de outro tipo com nome de quadro nunca vira imagem na tela
+      return (await drive.listar(pasta.id)).filter((f) => f.mimeType === 'image/jpeg');
     },
 
     /** 4-Revisao/<id> decisao storyboard vN.md: aprovar o storyboard ou pedir mudanças por quadro (desde 15/11/2026).

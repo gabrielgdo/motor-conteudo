@@ -289,3 +289,115 @@ test('gravar a decisão: central primeiro, Drive como reserva; só a conta que d
     globalThis.localStorage = antes;
   }
 });
+
+/* ---- rodada de correções (revisão da Task 6) ---- */
+
+test('Quadros: cada imagem baixa uma vez só, mesmo com a tela se redesenhando; nada vaza; o blob é image/jpeg', async () => {
+  const { Quadros } = await import('../js/componentes/quadros.js');
+  const { Integra } = await import('../js/integra.js');
+  const orig = { baixar: Integra.baixarBlob, criar: URL.createObjectURL, revogar: URL.revokeObjectURL };
+  let downloads = 0;
+  const criados = [];
+  const revogados = [];
+  Integra.baixarBlob = (f) => { downloads++; return new Promise((ok) => setTimeout(() => ok(new Blob([`<html>${f.id}`], { type: 'text/html' })), 5)); };
+  URL.createObjectURL = (b) => { criados.push(b); return `blob:teste/${criados.length}`; };
+  URL.revokeObjectURL = (u) => { revogados.push(u); };
+  try {
+    Quadros.liberar();
+    const fs = Array.from({ length: 13 }, (_, i) => ({ id: `q${i}`, modifiedTime: 't' }));
+    for (let volta = 0; volta < 6; volta++) {   // cada 'motor:anexo' redesenha a tela e chama url() de novo
+      for (const f of fs) Quadros.url(f);
+      await new Promise((ok) => setTimeout(ok, 3));
+    }
+    await new Promise((ok) => setTimeout(ok, 120));
+    for (const f of fs) Quadros.url(f);
+    assert.equal(downloads, 13, 'um download por imagem');
+    assert.equal(Quadros.urls.size, 13);
+    assert.equal(revogados.length, 0, 'nenhum endereço perdido sem revogar');
+    assert.ok(criados.every((b) => b.type === 'image/jpeg'), 'o blob é sempre image/jpeg, nunca o tipo que veio');
+    assert.equal(Quadros.estado(fs[0]), 'pronto');
+    Quadros.liberar();
+    assert.equal(revogados.length, 13, 'o Sair revoga todos');
+    Integra.baixarBlob = () => Promise.reject(new Error('rede'));
+    Quadros.url({ id: 'x', modifiedTime: 't' });
+    await new Promise((ok) => setTimeout(ok, 10));
+    assert.equal(Quadros.estado({ id: 'x', modifiedTime: 't' }), 'erro');
+    Quadros.tentar();
+    assert.equal(Quadros.estado({ id: 'x', modifiedTime: 't' }), 'carregando', '"Tentar de novo" baixa outra vez');
+  } finally {
+    Integra.baixarBlob = orig.baixar;
+    URL.createObjectURL = orig.criar;
+    URL.revokeObjectURL = orig.revogar;
+    const { Quadros: Q } = await import('../js/componentes/quadros.js');
+    Q.liberar();
+  }
+});
+
+test('"Nos dois vídeos": um pedido por rede, no quadro tocado e no da outra rede mais perto no tempo', async () => {
+  const { pedidosDoQuadro, segundosDoQuadro } = await import('../js/storyboard.js');
+  // T01: o 5 do Instagram é o fechamento (0:18.7); o 5 do TikTok é um corte (0:17.8) e o fechamento é o 6 (0:18.5)
+  const quadros = {
+    ig: [{ n: 4, tempo: '0:15.2' }, { n: 5, tempo: '0:18.7' }, { n: 6, tempo: '0:21.0' }],
+    tt: [{ n: 4, tempo: '0:14.9' }, { n: 5, tempo: '0:17.8' }, { n: 6, tempo: '0:18.5' }, { n: 7, tempo: '0:20.8' }],
+  };
+  assert.equal(segundosDoQuadro('1:02.5'), 62.5);
+  assert.ok(Number.isNaN(segundosDoQuadro('lixo')));
+  assert.deepEqual(pedidosDoQuadro(quadros, 'ig', 5, 'frase mais curta', true), [
+    { rede: 'ig', quadro: 5, tempo: '0:18.7', pedido: 'frase mais curta' },
+    { rede: 'tt', quadro: 6, tempo: '0:18.5', pedido: 'frase mais curta' },
+  ]);
+  assert.deepEqual(pedidosDoQuadro(quadros, 'tt', 5, 'x', false), [{ rede: 'tt', quadro: 5, tempo: '0:17.8', pedido: 'x' }]);
+  assert.deepEqual(pedidosDoQuadro(quadros, 'ig', 9, 'x', true), [], 'quadro que não existe');
+  assert.deepEqual(pedidosDoQuadro(quadros, 'ig', 5, '   ', true), [], 'sem texto');
+  const p = planejarDecisaoStoryboard({ id: 'S47-01', versao: 1, decisao: 'ajustar', ajustes: pedidosDoQuadro(quadros, 'ig', 5, 'x', true) });
+  assert.deepEqual(lerDecisaoStoryboard(p.conteudo).ajustes.map((a) => `${a.rede}${a.quadro}`), ['ig5', 'tt6'], 'o arquivo leva rede e quadro exatos');
+});
+
+test('formulário do quadro: o par da outra rede aparece; imagem que falhou ou não chegou tem "Tentar de novo"', () => {
+  estado.sbPendentes = {};
+  estado.sbQuadro = { 'S47-01': 'ig:1' };
+  const r = rotSb();
+  r.storyboard.quadros.tt[0].tempo = '0:00.7';
+  const h = painelQuadros(r, { email: ROBERTTA, agora: AGORA });
+  assert.match(h, /Nos dois vídeos: vale também para o quadro 1 do TikTok \(0:00\.7\)/);
+  assert.match(h, /data-acao="sb-tentar"/, 'imagem que não está na pasta tem "Tentar de novo"');
+  assert.match(h, /ainda não chegou ao Drive/);
+  estado.sbQuadro = {};
+  const mudou = lerStoryboard('---\nid: S47-01\nversao: 2\n---\n## O que mudou\n| rede | quadro | pedido | o que foi feito | ok |\n|---|---|---|---|---|\n| ig | 1 | a | b | ⚠ |\n| tt | 1 | c | d | ✅ |\n');
+  assert.deepEqual(mudou.mudancas.map((x) => x.ok), [false, true], '⚠ com ou sem o seletor de variação');
+});
+
+test('dados: a pasta do storyboard é listada de novo enquanto falta imagem; completa, fica guardada', async () => {
+  const { Integra } = await import('../js/integra.js');
+  const { carregar, roteiros, limparDados } = await import('../js/dados.js');
+  const orig = {
+    listagens: Integra.listagens, postados: Integra.postados, texto: Integra.baixarTexto,
+    listar: Integra.drive.listarStoryboard, invalidar: Integra.invalidar,
+  };
+  const md = arq('T09-01 storyboard v1.md');
+  const listagem = { roteiros: [], rascunhos: [], brutos: [], revisao: [pasta('T09-01 storyboard v1'), md], prontos: [], pacotes: {}, vencedores: [] };
+  let listadas = 0;
+  let arquivos = [arq('ig-01.jpg')];
+  Integra.listagens = async () => listagem;
+  Integra.postados = async () => new Map();
+  Integra.baixarTexto = async () => '---\nid: T09-01\nversao: 1\n---\n## Instagram\n### Quadro 1\narquivo: ig-01.jpg\ntempo: 0:00.5\n## TikTok\n### Quadro 1\narquivo: tt-01.jpg\ntempo: 0:00.5\n';
+  Integra.drive.listarStoryboard = async () => { listadas++; return arquivos; };
+  Integra.invalidar = () => {};
+  try {
+    await carregar({ forcar: true });
+    let r = roteiros().find((x) => x.id === 'T09-01');
+    assert.equal(r.etapa, 'storyboard');
+    assert.equal(r.storyboard.quadros.tt[0].file, null, 'a imagem do TikTok ainda não subiu');
+    arquivos = [arq('ig-01.jpg'), arq('tt-01.jpg')];
+    await carregar({ forcar: true });
+    r = roteiros().find((x) => x.id === 'T09-01');
+    assert.equal(listadas, 2, 'faltava imagem: listou de novo');
+    assert.equal(r.storyboard.quadros.tt[0].file.name, 'tt-01.jpg');
+    await carregar({ forcar: true });
+    assert.equal(listadas, 2, 'completa: fica guardada');
+  } finally {
+    Object.assign(Integra, { listagens: orig.listagens, postados: orig.postados, baixarTexto: orig.texto, invalidar: orig.invalidar });
+    Integra.drive.listarStoryboard = orig.listar;
+    limparDados();
+  }
+});

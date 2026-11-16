@@ -11,7 +11,7 @@
 import { esc, ic, NOME_REDE } from '../util.js';
 import { estado } from '../estado.js';
 import { podeDecidir } from '../controle.js';
-import { estadoDoStoryboard, nomeDecisaoStoryboard } from '../storyboard.js';
+import { estadoDoStoryboard, nomeDecisaoStoryboard, quadroMaisPerto, segundosDoQuadro } from '../storyboard.js';
 import { Quadros } from '../componentes/quadros.js';
 import { moldura } from '../componentes/janelas.js';
 import { campo, segmento, selo, vazio, linkDoDrive } from './pecas.js';
@@ -33,18 +33,29 @@ function imagem(r, rede, q) {
   const st = Quadros.estado(q.file);
   const alt = `Quadro ${q.n} do ${rede === 'ig' ? 'Instagram' : 'TikTok'}, ${q.tempo}${q.naTela ? `: ${q.naTela}` : ''}`;
   const ampliado = estado.sbAmpliado?.[r.id] === `${rede}:${q.n}`;
-  if (st === 'sem-arquivo') return `<div class="quadro-img vazio-img" role="img" aria-label="${esc(alt)}">${esc('A imagem deste quadro não está na pasta.')}</div>`;
+  if (st === 'sem-arquivo' || st === 'erro') {
+    // a imagem ainda não subiu (o motor sobe os arquivos fora de ordem) ou o download falhou: "Tentar de novo" relê
+    // a pasta no Drive e baixa outra vez
+    const msg = st === 'erro' ? 'Não consegui baixar a imagem.' : 'A imagem deste quadro ainda não chegou ao Drive.';
+    return `<div class="quadro-img vazio-img" role="img" aria-label="${esc(alt)}"><span class="pequeno">${esc(msg)}</span>
+      <button type="button" class="botao calmo" data-acao="sb-tentar">${ic('atualizar', 16)} Tentar de novo</button></div>`;
+  }
   const url = Quadros.url(q.file);
   const dentro = url ? `<img src="${esc(url)}" alt="${esc(alt)}" width="540" height="960" decoding="async">`
-    : st === 'erro' ? `<span class="pequeno">Não consegui baixar a imagem.</span>` : '<span class="pequeno apagado">Baixando…</span>';
+    : '<span class="pequeno apagado">Baixando…</span>';
   return `<button type="button" class="quadro-img" data-acao="sb-ampliar" data-id="${esc(r.id)}" data-valor="${rede}:${q.n}" aria-pressed="${ampliado}" aria-label="${esc(ampliado ? 'Voltar ao tamanho da grade' : 'Ver maior')}">${dentro}<span class="quadro-tempo">${q.n} · ${esc(q.tempo)}</span></button>`;
 }
 
 function formQuadro(r, rede, q) {
   const id = esc(r.id);
   const m = `sb-pedido-${r.id}`;
+  const outra = rede === 'ig' ? 'tt' : 'ig';
+  const par = quadroMaisPerto(r.storyboard?.quadros?.[outra], segundosDoQuadro(q.tempo));
+  const opcoes = [[rede, `Só no ${rede === 'ig' ? 'Instagram' : 'TikTok'}`]];
+  if (par) opcoes.push(['ambas', 'Nos dois vídeos']);
   return `<div class="quadro-pedido pilha" style="gap:.625rem">
-    ${segmento(`sb-rede-${r.id}`, 'Mudar em', [[rede, `Só no ${rede === 'ig' ? 'Instagram' : 'TikTok'}`], ['ambas', 'Nos dois vídeos']], rede)}
+    ${segmento(`sb-rede-${r.id}`, 'Mudar em', opcoes, rede)}
+    ${par ? `<p class="pequeno apagado">Nos dois vídeos: vale também para o quadro ${par.n} do ${outra === 'ig' ? 'Instagram' : 'TikTok'} (${esc(par.tempo)}), o mais perto no tempo.</p>` : ''}
     ${campo({ modelo: m, rotulo: `O que mudar no quadro ${q.n}`, tipo: 'textarea', linhas: 2, exemplo: 'Ex.: o texto está grande demais, tirar o zoom' })}
     <div class="decisao">
       <button type="button" class="botao contorno" data-acao="sb-adicionar" data-id="${id}" data-valor="${rede}:${q.n}">${ic('check', 18)} Adicionar à lista</button>

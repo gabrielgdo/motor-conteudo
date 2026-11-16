@@ -69,6 +69,9 @@ function trabalhoEmAndamento() {
     if (estado.envio || estado.arquivo) return true;
     if (Object.values(estado.pendentes || {}).some((l) => l?.length)) return true;
     if (['aj-pedido', 'aj-tempo', 'aj-como'].some((k) => String(rascunho[k] || '').trim())) return true;
+    // storyboard: a lista de pedidos por quadro e o que ela digitou (pedido de um quadro, pedido geral)
+    if (Object.values(estado.sbPendentes || {}).some((l) => l?.length)) return true;
+    if (Object.keys(rascunho).some((k) => /^sb-(pedido|obs)-/.test(k) && String(rascunho[k] || '').trim())) return true;
     if (document.getElementById('tele')?.open || document.getElementById('telacheia')?.open || document.getElementById('dialogo')?.hasAttribute('open')) return true;
     if ([...document.querySelectorAll('video')].some((v) => !v.paused && !v.ended)) return true;
     const ativo = document.activeElement;
