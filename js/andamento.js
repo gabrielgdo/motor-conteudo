@@ -18,6 +18,8 @@ const MAX_TEXTO = 300;
 
 /* Nome da etapa: [no gerúndio (andando), substantivo (lista)]. Etapa desconhecida aparece pelo nome. */
 const NOMES_ETAPA = {
+  // roteirizar: os 3 ganchos (pauta aprovada) ou, com a escolha dela, o rascunho v1 (desde 15/11/2026)
+  roteirizar: ['Escrevendo os ganchos ou o roteiro', 'Ganchos e roteiro'],
   editar: ['Editando', 'Edição'],
   revisar: ['Refazendo com os ajustes', 'Ajustes'],
   ajustar: ['Refazendo com os ajustes', 'Ajustes'],

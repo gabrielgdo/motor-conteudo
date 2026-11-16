@@ -361,6 +361,17 @@ html[data-tema="dia"] .nav-conta{background:var(--vinho)}
 .fala.da-rede .fala-texto{padding:.75rem 1rem;border-radius:var(--r-meio);background:var(--acao-fundo)}
 .fala.da-rede .fala-parte{color:var(--acento-texto)}
 @media (min-width:720px){.fala{grid-template-columns:8rem minmax(0,1fr);gap:1.125rem;align-items:baseline}.fala-parte{text-align:right;line-height:1.4}}
+/* Ganchos antes do roteiro: as 3 opções, uma embaixo da outra, no tom das falas */
+.ganchos{list-style:none;margin:0;padding:0;display:grid;gap:.875rem}
+.gancho{display:grid;gap:.5rem;padding:1.125rem;border:1px solid var(--fio);border-radius:var(--r-meio);background:var(--sup-2)}
+.gancho.escolhido{border-color:var(--ok);background:var(--ok-fundo)}
+.gancho .fala-texto{font-size:clamp(1.125rem,2vw,1.375rem)}
+.gancho-dados{display:grid;gap:.25rem;margin:0;font-size:.90625rem;color:var(--tinta-2)}
+.gancho-dados div{display:flex;flex-wrap:wrap;gap:.375rem}
+.gancho-dados dt{font-weight:600;color:var(--tinta-3)}
+.gancho-dados dd{margin:0;overflow-wrap:anywhere}
+.gancho .botao{margin-top:.375rem}
+.gancho-citado{margin:0 0 1rem;padding-left:.875rem;border-left:2px solid var(--acento);font:italic 400 1.0625rem/1.45 var(--titulo)}
 .bloco{padding-top:1.375rem;margin-top:1.375rem;border-top:1px solid var(--fio)}
 .bloco h3{margin-bottom:.625rem}
 .bloco-cab{display:flex;align-items:center;justify-content:space-between;gap:.625rem;margin-bottom:.625rem}

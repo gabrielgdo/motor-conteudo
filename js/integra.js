@@ -14,8 +14,8 @@
 //   ponte.disparar / ponte.decidirRoteiro    atrás de FLAGS.ponte e PONTE_URL (config.js);
 //                                            desligada, erro com codigo 'ponte-desligada'
 //   central.enviarSePuder                    pedido ao motor pela central (Supabase, js/central.js); os
-//                                            gravadores de pedido (prévia, roteiro, busca, decisões da
-//                                            semana) tentam a central primeiro e caem no Drive
+//                                            gravadores de pedido (prévia, roteiro, escolha do gancho, busca,
+//                                            decisões da semana) tentam a central primeiro e caem no Drive
 //   drive.enviarVideo                        vídeo bruto → 3-Brutos (`<id>.<ext>`), retomável com
 //                                            upload.js e conferido nos metadados (envio-video.js)
 //
@@ -33,6 +33,7 @@ import * as S from './selecao.js';
 import { lerCandidatos, criarArquivosDoApp } from './candidatos.js';
 import { planejarArquivoRevisao } from './revisao.js';
 import * as PM from './pedidos-motor.js';
+import * as G from './ganchos.js';
 import * as DS from './desempenho.js';
 // Envio do vídeo bruto (ponto 7): upload.js só é importado aqui; as regras ficam em envio-video.js.
 import { criarUpload } from './upload.js';
@@ -442,6 +443,28 @@ export const Integra = {
         else await drive.criarArquivoTexto(nome, texto, pasta.id);
       } finally { drive.invalidarCache(); }
       return { ok: true, nome };
+    },
+
+    /** 2-Roteiros/rascunhos/<id> gancho vN.md: a escolha de um dos 3 ganchos (1, 2 ou 3) ou "outros" (desde
+        15/11/2026). Só a conta que decide. Vale a primeira escolha de cada versão: confere as pastas rascunhos* logo
+        antes (a central também não regrava). Central primeiro (tipo decisao_gancho), Drive como reserva.
+        → {ok:true, nome, viaCentral?} | {ok:false, motivo, mensagem}. */
+    async gravarEscolhaGancho({ id, versao, escolha, observacoes = '' } = {}) {
+      const email = auth.emailAtual();
+      if (!C.podeDecidir(email)) throw new ErroIntegra('Só a conta da Robertta escolhe o gancho.', 'sem-permissao');
+      const raiz = (await drive.pastas()).roteiros;
+      const pastas = (await drive.listar(raiz)).filter((f) => f.mimeType === 'application/vnd.google-apps.folder' && f.name.trim().toLowerCase().startsWith('rascunhos'));
+      const pasta = pastas.find((f) => f.name.trim().toLowerCase() === 'rascunhos') || pastas[0];
+      if (!pasta) throw new ErroIntegra('Não encontrei 2-Roteiros/rascunhos.', 'pasta-desconhecida');
+      const existentes = (await Promise.all(pastas.map((p) => drive.listar(p.id)))).flat();
+      const plano = G.planejarEscolhaGancho({ id, versao, escolha, observacoes, email, existentes, agora: new Date() });
+      if (!plano.ok) return plano;
+      const c = await Integra.central.enviarSePuder({ tipo: 'decisao_gancho', nome: plano.nome, conteudo_id: id, conteudo: plano.conteudo });
+      if (c) return { ok: true, nome: plano.nome, viaCentral: true };
+      try {
+        await drive.criarArquivoTexto(plano.nome, plano.conteudo, pasta.id);
+      } finally { drive.invalidarCache(); }
+      return { ok: true, nome: plano.nome };
     },
 
     /* INTEGRAÇÃO: envio retomável do vídeo, em pedaços (js/upload.js faz isto, ainda sem ser importado).

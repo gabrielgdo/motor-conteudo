@@ -21,7 +21,7 @@ import { resumirAndamento, htmlAndamento } from '../andamento.js';
 import { cab, selo, vt, passoDe, naoAchei, comDados, vazio, campo, segmento, rodapeAtualizado, voltar } from './pecas.js';
 
 const enc = encodeURIComponent;
-const SEM_VIDEO = ['rascunho', 'mudanca', 'recusado', 'aprovado', ''];
+const SEM_VIDEO = ['ganchos', 'rascunho', 'mudanca', 'recusado', 'aprovado', ''];
 
 export function vVideos() {
   return `${cab('Vídeos', 'As prévias do Instagram e do TikTok, para aprovar ou pedir ajuste.')}

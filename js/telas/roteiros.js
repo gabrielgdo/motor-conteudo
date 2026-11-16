@@ -3,6 +3,9 @@
 // leva ao Roteirista (pela ponte, Integra.ponte.decidirRoteiro) aprovar, pedir mudança ou recusar
 // com motivo; acima, a faixa da rotina roteirista-decisao do id. O bloco Histórico junta o Drive e
 // as linhas de Execuções do id.
+// Antes do rascunho (etapa 'ganchos', desde 15/11/2026): o detalhe mostra os 3 ganchos que o motor propôs, cada um
+// com a fala, o texto de tela e o porquê, e "Escolher o gancho N"; o aside "Sua escolha" tem "Quero outros 3" (com
+// observação). Tocar abre a confirmação (janelaGancho); confirmado, o app grava "<id> gancho vN.md" (js/ganchos.js).
 
 import { esc, ic, NOME_REDE, validade } from '../util.js';
 import { estado } from '../estado.js';
@@ -11,6 +14,9 @@ import { ativos, rot, falasDe, execucoesLidas, pautasLidas, roteiros, anexo, cam
 import { lerRoteiro } from '../roteiro.js';
 import { enviosAoRoteirista, textoDoEnvio } from '../envios.js';
 import { estadoDaDecisaoRoteiro, bloqueioDaDecisao, versoesDo, TOM_DECISAO } from '../decisoes-roteiro.js';
+import { estadoDosGanchos } from '../ganchos.js';
+import { nomeEscolhaGancho } from '../pedidos-motor.js';
+import { moldura } from '../componentes/janelas.js';
 import { podeDecidir, DECISOES_ROTEIRO, MOTIVOS_ROTEIRO } from '../controle.js';
 import { faixaExecucao, historicoComExecucoes, blocoHistorico } from '../componentes/execucao.js';
 import { cab, selo, vt, chipFiltro, passoDe, destinoDe, naoAchei, comDados, linkDoDrive, vazio, rodapeAtualizado, voltar, campo, segmento } from './pecas.js';
@@ -122,8 +128,9 @@ export function vRoteiros() {
   ${htmlComRoteirista(envios, { decide: podeDecidir(Integra.email()) })}
   ${comDados(() => {
     const f = estado.filtroRoteiros; const todos = ativos();
-    const lista = f === 'aprovar' ? todos.filter((r) => r.etapa === 'rascunho') : f === 'gravar' ? todos.filter((r) => r.etapa === 'aprovado') : todos;
-    const nAprovar = todos.filter((r) => r.etapa === 'rascunho').length; const nGravar = todos.filter((r) => r.etapa === 'aprovado').length;
+    const aDecidir = (r) => r.etapa === 'rascunho' || r.etapa === 'ganchos';
+    const lista = f === 'aprovar' ? todos.filter(aDecidir) : f === 'gravar' ? todos.filter((r) => r.etapa === 'aprovado') : todos;
+    const nAprovar = todos.filter(aDecidir).length; const nGravar = todos.filter((r) => r.etapa === 'aprovado').length;
     return `
   <div class="filtros" role="group" aria-label="Filtrar roteiros">
     ${chipFiltro('filtroRoteiros', 'aprovar', `Para aprovar (${nAprovar})`, f)}${chipFiltro('filtroRoteiros', 'gravar', `Para gravar (${nGravar})`, f)}${chipFiltro('filtroRoteiros', 'todos', 'Todos', f)}
@@ -133,7 +140,8 @@ export function vRoteiros() {
     <li><a class="painel folha luz" href="#/roteiros/${enc(r.id)}">
       <span class="meta"><span class="id">${esc(r.id)}</span>${selo(texto, tom)}${dec}${r.teste ? selo('Teste') : ''}</span>
       <h3 ${vt(r.id)}>${esc(r.titulo)}</h3>
-      ${abertura ? `<blockquote>${esc(abertura)}</blockquote>` : r.erroTexto ? '<p class="apagado pequeno">Não consegui ler o texto deste roteiro agora.</p>' : ''}
+      ${r.etapa === 'ganchos' ? `<p class="apagado pequeno">${esc(resumoDosGanchos(r))}</p>`
+    : abertura ? `<blockquote>${esc(abertura)}</blockquote>` : r.erroTexto ? '<p class="apagado pequeno">Não consegui ler o texto deste roteiro agora.</p>' : ''}
       <span class="meta">${v.perto && r.lido ? selo(v.texto, 'alerta') : ''}${fontes ? `<span class="apagado pequeno">${esc(fontes)}</span>` : ''}</span>
     </a></li>`; }).join('')}</ul>`
     : `<div class="painel">${f === 'todos'
@@ -254,6 +262,104 @@ export function decisaoDoRascunho(r, { email = '', escolha = '', exec = {}, erro
     ${esc_ ? `<button type="button" class="botao primario cheio" data-acao="roteiro-confirmar" data-id="${id}">${esc(esc_ === 'aprovar' ? `Aprovar a v${v}` : esc_ === 'mudar' ? `Pedir a mudança na v${v}` : `Recusar o rascunho v${v}`)}</button>` : ''}`;
 }
 
+/* ---- Ganchos antes do roteiro (etapa 'ganchos') ---- */
+
+/** Uma linha para o cartão da lista. */
+export function resumoDosGanchos(r, { local = estado.ganchosEnviados?.[r.id] || null, agora = new Date() } = {}) {
+  const st = estadoDosGanchos(r, { local, agora });
+  const v = r.propostaGanchos?.versao || 1;
+  if (st.estado === 'escolher') return `3 ganchos (v${v}) para você escolher; o roteiro nasce do escolhido.`;
+  if (st.estado === 'sem-texto') return 'Não consegui ler os ganchos agora.';
+  return st.explicacao;
+}
+
+/**
+ * As 3 opções (puro): fala, texto de tela e porquê de cada uma, com "Escolher o gancho N" (<button> de verdade).
+ * A conta que não decide, a escolha já enviada e o arquivo ilegível deixam os botões desligados.
+ */
+export function painelGanchos(r, { email = '', local = null, agora = new Date() } = {}) {
+  const g = r.propostaGanchos || { opcoes: [] };
+  const st = estadoDosGanchos(r, { local, agora });
+  const id = esc(r.id);
+  if (st.estado === 'sem-texto') {
+    const link = linkDoDrive(g.arquivo, 'abrir os ganchos no Drive');
+    return vazio('Não consegui ler os ganchos', `${esc(st.explicacao)}${link ? ` Você pode ${link}.` : ''}`,
+      `<button type="button" class="botao contorno" data-acao="atualizar">${ic('atualizar', 18)} Tentar de novo</button>`);
+  }
+  const pode = podeDecidir(email) && !st.bloqueia;
+  return `
+    <h2 id="t-ganchos">Escolha o gancho</h2>
+    <p class="apagado pequeno" style="margin-bottom:1.125rem">Ganchos v${Number(g.versao) || 1}. A fala abre o vídeo nos 3 primeiros segundos e o texto aparece na tela; o roteiro nasce do que você escolher.</p>
+    <ol class="ganchos">${g.opcoes.map((o) => {
+      const escolhido = st.escolha === String(o.n);
+      return `
+      <li class="gancho${escolhido ? ' escolhido' : ''}">
+        <p class="fala-parte">Gancho ${Number(o.n)}${escolhido ? ' · escolhido' : ''}</p>
+        <p class="fala-texto">${esc(o.fala)}</p>
+        <dl class="gancho-dados">
+          ${o.tela ? `<div><dt>Na tela</dt><dd>${esc(o.tela)}</dd></div>` : ''}
+          ${o.porque ? `<div><dt>Por quê</dt><dd>${esc(o.porque)}</dd></div>` : ''}
+        </dl>
+        <button type="button" class="botao contorno sim cheio" data-acao="gancho-escolher" data-id="${id}" data-valor="${Number(o.n)}" aria-pressed="${escolhido}"${pode ? '' : ' disabled'}>${ic('check', 18)} Escolher o gancho ${Number(o.n)}</button>
+      </li>`;
+    }).join('')}</ol>`;
+}
+
+/** O aside "Sua escolha" (puro): o estado, "Quero outros 3" com a observação e como funciona. */
+export function escolhaDosGanchos(r, { email = '', local = null, agora = new Date() } = {}) {
+  const st = estadoDosGanchos(r, { local, agora });
+  const decide = podeDecidir(email);
+  const pode = decide && !st.bloqueia;
+  const id = esc(r.id);
+  return `
+    <h2>Sua escolha</h2>
+    ${st.estado === 'escolher' ? '<p class="apagado pequeno">Toque em “Escolher” no gancho que abre melhor o vídeo. Antes de mandar, o app pede confirmação.</p>'
+    : `<p class="meta">${selo(st.texto, st.tom)}</p><p class="pequeno apagado" role="status">${esc(st.explicacao)}</p>`}
+    <div class="pilha" style="gap:.625rem">
+      <h3 style="margin:0">Nenhum serve?</h3>
+      ${campo({ modelo: `go-${r.id}`, rotulo: 'O que você quer nos novos ganchos', tipo: 'textarea', linhas: 2, opcional: true, exemplo: 'Ex.: mais leve, sem pergunta', attrs: pode ? '' : 'disabled' })}
+      <button type="button" class="botao calmo cheio" data-acao="gancho-escolher" data-id="${id}" data-valor="outros"${pode ? '' : ' disabled'}>${ic('atualizar', 18)} Quero outros 3</button>
+    </div>
+    ${decide ? '' : `<p class="pequeno apagado">${esc('Só a conta da Robertta escolhe o gancho.')}</p>`}
+    <p class="pequeno apagado">Depois da escolha, o motor escreve o rascunho v1; ele passa pela checagem de fontes e volta aqui para você aprovar, pedir mudança ou recusar.</p>`;
+}
+
+/** Janela de confirmação da escolha (puro). `opcao`: o gancho escolhido ({n, fala, tela}); null em "outros". */
+export function janelaGancho({ id, versao, escolha, opcao = null, observacoes = '', teste = false, enviando = false, erro = '' } = {}) {
+  const outros = escolha === 'outros';
+  const v = Number(versao) || 1;
+  const nome = nomeEscolhaGancho(id, v);
+  const itens = outros
+    ? [['O que vai acontecer', `O app manda o pedido ao motor (“${nome}”). Ele escreve 3 ganchos novos (v${v + 1}), diferentes destes, levando em conta a sua observação.`],
+      ['Sua observação', observacoes || 'nenhuma']]
+    : [['O que vai acontecer', `O app manda a sua escolha ao motor (“${nome}”). Ele escreve o rascunho v1 com esta abertura; o rascunho passa pela checagem de fontes e volta para você aprovar.`]];
+  itens.push(['Depois', `Vale a primeira escolha dos ganchos v${v}. Se o roteiro não ficar bom, você pede mudança no rascunho.`]);
+  const corpo = `${teste ? `<p class="meta">${selo('Teste')}<span class="pequeno apagado">Id de teste: o motor trata como teste.</span></p>` : ''}
+    ${opcao ? `<blockquote class="gancho-citado"><p>${esc(opcao.fala)}</p>${opcao.tela ? `<p class="pequeno apagado">Na tela: ${esc(opcao.tela)}</p>` : ''}</blockquote>` : ''}
+    <dl class="confirmacao">${itens.map(([a, b]) => `<div><dt>${esc(a)}</dt><dd>${esc(b)}</dd></div>`).join('')}</dl>
+    ${erro ? `<p class="nota atencao" role="alert">${ic('alerta')}<span>${esc(erro)}</span></p>` : ''}`;
+  const rotulo = outros ? 'Pedir outros 3' : `Usar o gancho ${Number(escolha)}`;
+  const rodape = `<button type="button" class="botao calmo" data-acao="fechar-janela">${erro ? 'Fechar' : 'Cancelar'}</button>${erro ? ''
+    : `<button type="button" class="botao primario" data-acao="gancho-confirmar" data-id="${esc(id)}"${enviando ? ' disabled aria-busy="true"' : ''}>${enviando ? 'Enviando…' : esc(rotulo)}</button>`}`;
+  return moldura(esc(outros ? 'Pedir outros 3 ganchos?' : `Usar o gancho ${Number(escolha)}?`), corpo, rodape);
+}
+
+/** Detalhe na etapa 'ganchos': as opções à esquerda, "Sua escolha" à direita e o histórico. */
+function vGanchos(r) {
+  const opts = { email: Integra.email(), local: estado.ganchosEnviados?.[r.id] || null, agora: new Date() };
+  const [texto, tom] = passoDe(r);
+  return `
+  ${voltar('roteiros', 'Roteiros')}
+  ${cab(r.titulo, '', r.id)}
+  <div class="meta" style="margin:-.875rem 0 1.625rem">${selo(texto, tom)}${r.teste ? selo('Teste') : ''}</div>
+  <div class="roteiro-grade">
+    <section class="painel" aria-labelledby="t-ganchos">${painelGanchos(r, opts)}</section>
+    <aside class="painel pilha fixo" aria-label="Sua escolha">${escolhaDosGanchos(r, opts)}</aside>
+    ${blocoHistorico(historicoComExecucoes(r.eventos, execucoesLidas().execucoes, r.id), 'roteiro-historia')}
+  </div>
+  ${rodapeAtualizado()}`;
+}
+
 function acoesDe(r) {
   if (r.etapa === 'rascunho') {
     return decisaoDoRascunho(r, {
@@ -278,6 +384,7 @@ export function vRoteiro(id) {
   return comDados(() => {
     const r = rot(id);
     if (!r || r.arquivado) return `${voltar('roteiros', 'Roteiros')}${naoAchei('roteiros')}`;
+    if (r.etapa === 'ganchos') return vGanchos(r);
     const abas = [['ig', 'Instagram'], ['tt', 'TikTok'], ['extras', 'Extras'], ['fontes', 'Fontes']];
     const aba = abas.some(([valor]) => valor === estado.abaRoteiro) ? estado.abaRoteiro : 'ig';
     const v = validade(r); const [texto, tom] = passoDe(r);

@@ -31,3 +31,4 @@ import('./pedidos-motor.test.mjs');
 import('./central.test.mjs');
 import('./janelas-css.test.mjs');
 import('./desempenho.test.mjs');
+import('./ganchos.test.mjs');

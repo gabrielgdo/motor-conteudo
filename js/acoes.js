@@ -30,7 +30,8 @@ import { chaveIdemEnvio, mapaDeEnvios } from './envios.js';
 import {
   estadoDaDecisaoRoteiro, bloqueioDaDecisao, chaveIdemDecisao, versoesDo, extrasDaDecisao, textoDaDecisaoAceita,
 } from './decisoes-roteiro.js';
-import { versaoVistaDe } from './telas/roteiros.js';
+import { versaoVistaDe, janelaGancho } from './telas/roteiros.js';
+import { estadoDosGanchos, textoDaEscolhaAceita } from './ganchos.js';
 import { arquivoDeLegenda } from './telas/prontos.js';
 import { desenhar, rotear } from './roteador.js';
 import { abrirJanela, fecharJanela, avisar, avisarComAcao, removerAviso, copiarTexto, janelaSobre, janelaSair } from './componentes/janelas.js';
@@ -234,6 +235,11 @@ function pintarJanela() {
     html = janelaPrevia({
       id: j.id, versao: j.versao, decisao: j.decisao, ajustes: j.ajustes, teste: j.teste,
       execucoes: execucoesLidas().execucoes || [], enviando: j.enviando, erro: j.erro,
+    });
+  } else if (j.tipo === 'gancho') {
+    html = janelaGancho({
+      id: j.id, versao: j.versao, escolha: j.escolha, opcao: j.opcao, observacoes: j.observacoes, teste: j.teste,
+      enviando: j.enviando, erro: j.erro,
     });
   } else if (j.tipo === 'cand-excluir') {
     html = janelaExcluirCandidato({ c: j.c, situacao: j.situacao, enviando: j.enviando, erro: j.erro });
@@ -607,8 +613,8 @@ export const ACOES = {
         for (const id of String(j.dados?.ids || '').split(',').map((s) => s.trim()).filter(Boolean)) {
           estado.enviosLocais[id] = { desde, chave: j.chaveIdem };
         }
-        avisar(res?.viaCentral ? 'Pedido enviado ao motor pela central: ele começa os rascunhos em instantes.'
-          : 'Pedido gravado no Drive. O motor escreve os rascunhos na próxima passada do vigia (até 5 min).');
+        avisar(res?.viaCentral ? 'Pedido enviado ao motor pela central: em instantes ele propõe 3 ganchos de cada pauta para você escolher.'
+          : 'Pedido gravado no Drive. Na próxima passada do vigia (até 5 min), o motor propõe 3 ganchos de cada pauta para você escolher.');
       } else {
         const q = j.rotina === 'radar-diario' && j.dados?.quantidade ? ` (${j.dados.quantidade} ${j.dados.quantidade === 1 ? 'candidato' : 'candidatos'})` : '';
         const destino = viaArquivo ? 'Pedido gravado no Drive. O motor atende na próxima passada do vigia (até 5 min).' : 'pedido enviado. O andamento aparece na faixa.';
@@ -881,6 +887,49 @@ export const ACOES = {
       chaveIdem: chaveIdemDecisao(plano.payload, execucoes),
       extras: extrasDaDecisao(plano, versoesDo(r)),
     });
+  },
+
+  /* -- roteiros: escolha do gancho, antes do rascunho (arquivo pela central ou pelo Drive; o motor atende) -- */
+  'gancho-escolher'(el) {
+    const r = rot(el.dataset.id);
+    if (!r || r.etapa !== 'ganchos' || !podeDecidir(Integra.email())) return;
+    // Confere de novo (o botão pode estar velho, ou foi o segundo toque).
+    const st = estadoDosGanchos(r, { local: estado.ganchosEnviados[r.id] || null, agora: new Date() });
+    if (st.bloqueia) { avisar(st.explicacao || st.texto); desenhar(); return; }
+    const g = r.propostaGanchos;
+    const escolha = el.dataset.valor;
+    const opcao = escolha === 'outros' ? null : g.opcoes.find((o) => String(o.n) === escolha);
+    if (escolha !== 'outros' && !opcao) return;
+    estado.janela = {
+      tipo: 'gancho', id: r.id, versao: g.versao, escolha, opcao,
+      observacoes: escolha === 'outros' ? (rascunho[`go-${r.id}`] || '').trim() : '', teste: r.teste, enviando: false, erro: '',
+    };
+    pintarJanela();
+  },
+  async 'gancho-confirmar'(el) {
+    const j = estado.janela;
+    if (j?.tipo !== 'gancho' || j.enviando || el.disabled) return;
+    el.disabled = true; // o toque duplo não grava duas vezes
+    j.enviando = true;
+    j.erro = '';
+    pintarJanela();
+    try {
+      const res = await Integra.drive.gravarEscolhaGancho({ id: j.id, versao: j.versao, escolha: j.escolha, observacoes: j.observacoes });
+      if (estado.janela !== j) return;
+      if (!res.ok) { j.enviando = false; j.erro = res.mensagem; pintarJanela(); return; }
+      // Registro otimista até a releitura do Drive mostrar a escolha (js/ganchos.js).
+      estado.ganchosEnviados[j.id] = { versao: j.versao, escolha: j.escolha, desde: Date.now() };
+      limparCampos(`go-${j.id}`);
+      fecharJanela();
+      avisar(textoDaEscolhaAceita(j.id, j, !!res.viaCentral));
+      carregar({ forcar: true });
+      desenhar();
+    } catch (e) {
+      if (estado.janela !== j || !estado.logada) return;
+      j.enviando = false;
+      j.erro = e?.message || 'Não consegui mandar a escolha agora. Tente de novo.';
+      pintarJanela();
+    }
   },
 
   /* -- enviar gravação -- */

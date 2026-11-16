@@ -70,6 +70,16 @@ Slide 1: ...
 Rótulos `[GANCHO IG]`/`[FECHAMENTO IG]` valem só para o Instagram; `[GANCHO TT]`/`[FECHAMENTO TT]`
 só para o TikTok; os demais, para os dois. Sem `[GANCHO TT]`, o gancho é o mesmo nas duas redes.
 
+## Ganchos antes do roteiro (desde 15/11/2026)
+- O motor (`/roteirizar`) propõe 3 ganchos para cada pauta aprovada: `2-Roteiros/rascunhos/<id> ganchos v<N>.md`,
+  com `id`, `versao`, `titulo` no cabeçalho e as seções `## Gancho 1..3`, cada uma só com `fala:` (o que ela diz nos
+  3 primeiros segundos), `tela:` (texto curto na tela) e `por que:` (uma linha). O app só lê (`js/ganchos.js`).
+- Ela escolhe no app: `2-Roteiros/rascunhos/<id> gancho v<N>.md` (N = a versão dos ganchos), com `id`, `versao`,
+  `escolha` (`1` | `2` | `3` | `outros`), `observacoes`, `quem`, `quando`. Pela central (tipo `decisao_gancho`), com o
+  Drive como reserva; vale a primeira escolha de cada versão. Só a conta que decide escolhe.
+- Com `1`, `2` ou `3`, o motor escreve o `rascunho v1` com a fala do gancho abrindo o roteiro; com `outros`, os
+  ganchos v<N+1>. O aviso `ganchos` manda push para quem decide e quem vê.
+
 ## Relatório de fontes (saída do /checar-fontes)
 `2-Roteiros/rascunhos/<id> fontes.md` — substitui o anterior a cada versão nova do rascunho.
 

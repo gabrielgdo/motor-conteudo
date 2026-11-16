@@ -8,6 +8,7 @@ import { selo, vt, passoDe, destinoDe, painelErro, vazio, rodapeAtualizado } fro
 import { contarParaDecidir } from './pautas.js';
 import { resumirSaude, htmlSaude, htmlCentral } from '../saude.js';
 import { estado } from '../estado.js';
+import { ganchosParaEscolher } from '../ganchos.js';
 
 const enc = encodeURIComponent;
 
@@ -80,6 +81,12 @@ function pendencias() {
       ir: 'Escolher',
     });
   }
+  // Ganchos antes do roteiro: só os que esperam a escolha dela (a escolha enviada sai da lista).
+  ganchosParaEscolher(porEtapa('ganchos'), estado.ganchosEnviados).forEach((r) => p.push({
+    href: `#/roteiros/${enc(r.id)}`, icone: 'roteiros', tipo: comTeste('Gancho', r), titulo: `Escolher o gancho de “${r.curto}”`,
+    detalhe: `3 ganchos (v${r.propostaGanchos?.versao || 1}): o roteiro nasce do que você escolher`,
+    ir: 'Escolher',
+  }));
   porEtapa('rascunho').forEach((r) => p.push({
     href: `#/roteiros/${enc(r.id)}`, icone: 'roteiros', tipo: comTeste('Roteiro', r), titulo: `Aprovar “${r.curto}”`,
     detalhe: r.fontesConferidas ? `Rascunho v${r.versaoRoteiro}, com as fontes conferidas` : `Rascunho v${r.versaoRoteiro}, com as fontes ainda em checagem`,
@@ -139,7 +146,8 @@ function nosDe(r) {
   const gravado = ['recebido', 'previa', 'ajustes', 'video-aprovado', 'pronto'].includes(e);
   const postagem = postouTudo(r) ? 'feito' : e === 'pronto' ? (r.pacote?.postadoConhecido ? 'vez' : 'sem-dados') : '';
   const lista = [
-    ['Texto', e === 'rascunho' ? 'vez' : e === 'mudanca' ? 'espera' : 'feito'],
+    ['Texto', e === 'rascunho' || (e === 'ganchos' && ganchosParaEscolher([r], estado.ganchosEnviados).length) ? 'vez'
+      : e === 'mudanca' || e === 'ganchos' ? 'espera' : 'feito'],
     ['Gravação', gravado ? 'feito' : e === 'aprovado' ? 'vez' : ''],
     ['Vídeos', e === 'pronto' ? 'feito' : e === 'previa' ? 'vez' : ['recebido', 'ajustes', 'video-aprovado'].includes(e) ? 'espera' : ''],
     ['Postagem', postagem],

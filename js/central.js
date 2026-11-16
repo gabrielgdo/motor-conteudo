@@ -15,17 +15,19 @@ export const MOTOR_OUVINDO_MS = 3 * 60 * 1000; // no Grok, o motor grava o sinal
 export const MOTOR_OUVINDO_MODAL_MS = 15 * 60 * 1000; // na Modal, a cada passada (a central acorda; relógio de 5 min)
 const FOLGA_TOKEN_MS = 2 * 60 * 1000;
 
-/** Os mesmos formatos da regra arquivo_do_tipo no banco e do bin/central.py. */
+/** Os mesmos formatos da regra arquivo_do_tipo no banco e do bin/central.py (os três precisam bater: o teste do
+    motor, tests/teste_central.py, compara este bloco com o dele e com a migração). */
 export const FORMATOS = {
   busca: /^1-Radar\/pedido-busca\.md$/,
   decisoes_semana: /^1-Radar\/decisoes [A-Za-z0-9-]+\.md$/,
   decisao_roteiro: /^2-Roteiros\/rascunhos\/[A-Za-z0-9-]+ decisao v[0-9]+\.md$/,
+  decisao_gancho: /^2-Roteiros\/rascunhos\/[A-Za-z0-9-]+ gancho v[0-9]+\.md$/,
   decisao_previa: /^4-Revisao\/[A-Za-z0-9-]+ (aprovado|ajustes v[0-9]+)\.md$/,
   retrospectiva: /^5-Prontos\/retrospectivas\/[0-9]{4}-[0-9]{2}-[0-9]{2} pedido\.md$/,
 };
 const PASTAS = {
   busca: '1-Radar', decisoes_semana: '1-Radar', decisao_roteiro: '2-Roteiros/rascunhos', decisao_previa: '4-Revisao',
-  retrospectiva: '5-Prontos/retrospectivas',
+  retrospectiva: '5-Prontos/retrospectivas', decisao_gancho: '2-Roteiros/rascunhos',
 };
 
 export class ErroCentral extends Error {

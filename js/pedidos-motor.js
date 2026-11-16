@@ -194,6 +194,56 @@ export function lerDecisaoRoteiro(textoMd = '') {
   return out;
 }
 
+/* Escolha do gancho (desde 15/11/2026): 2-Roteiros/rascunhos/<id> gancho vN.md, N = a versão dos ganchos escolhida.
+   Lista fechada: id, versao, escolha (1 | 2 | 3 | outros), observacoes, quem, quando. */
+
+export const ESCOLHAS_GANCHO = Object.freeze(['1', '2', '3', 'outros']);
+
+export function nomeEscolhaGancho(id, versao) {
+  return `${texto(id)} gancho v${Number(versao) || 0}.md`;
+}
+
+/** `<id> gancho v<N>.md` → {id, versao} ou null. Não confunde com os ganchos do motor ("ganchos vN"). */
+export function parseNomeEscolhaGancho(nome) {
+  const m = String(nome || '').trim().match(/^(\S+) gancho v(\d+)\.md$/i);
+  return m ? { id: m[1], versao: Number(m[2]) } : null;
+}
+
+export function textoEscolhaGancho({ id, versao, escolha, observacoes = '', quem = '', quando = null } = {}) {
+  const e = minusc(escolha);
+  return [
+    '---',
+    `id: ${texto(id)}`,
+    `versao: ${Number(versao) || 0}`,
+    `escolha: ${ESCOLHAS_GANCHO.includes(e) ? e : texto(escolha)}`,
+    `observacoes: ${yamlEsc(observacoes)}`,
+    `quem: ${minusc(quem)}`,
+    `quando: ${isoBrasilia(quando || new Date())}`,
+    '---',
+    '',
+  ].join('\n');
+}
+
+export function lerEscolhaGancho(textoMd = '') {
+  const out = { id: '', versao: 0, escolha: '', observacoes: '', quem: '', quando: '' };
+  const m = String(textoMd || '').match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!m) return out;
+  for (const linha of m[1].split(/\r?\n/)) {
+    if (/^\s/.test(linha)) continue; // só campos de topo
+    const l = linha.trim();
+    if (!l.includes(':')) continue;
+    const chave = minusc(l.split(':')[0]);
+    const v = yamlVal(l);
+    if (chave === 'id') out.id = texto(v);
+    else if (chave === 'versao') out.versao = Number(String(v).replace(/^v/i, '')) || 0;
+    else if (chave === 'escolha') out.escolha = ESCOLHAS_GANCHO.includes(minusc(v)) ? minusc(v) : '';
+    else if (chave === 'observacoes') out.observacoes = v.slice(0, 2000);
+    else if (chave === 'quem') out.quem = minusc(v);
+    else if (chave === 'quando') out.quando = texto(v);
+  }
+  return out;
+}
+
 /**
  * Decisões da semana (1-Radar/decisoes <semana>.md). Uma pauta por item.
  * itens: [{id_pauta|id, decisao: 'aprovada'|'recusada', motivo, id_candidato}]

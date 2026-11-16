@@ -12,9 +12,11 @@
 
 import { CONFIG, CACHE_MS } from './config.js';
 import { Integra } from './integra.js';
-import { montarProjetos, historico, checagemConcluida } from './model.js';
+import { montarProjetos, historico, checagemConcluida, escolhaDosUltimosGanchos } from './model.js';
 import { etapaDe } from './etapas.js';
 import { lerRoteiro } from './roteiro.js';
+import { lerGanchos } from './ganchos.js';
+import { lerEscolhaGancho } from './pedidos-motor.js';
 import { prefixoSemana, semanaIso, classificarArquivoPacote } from './parse.js';
 import { quando, periodoDaSemana, tamanho } from './util.js';
 
@@ -106,6 +108,10 @@ function textoHistorico(t) {
   if (m) return `Rascunho v${m[1]} do Roteirista`;
   m = t.match(/^Ajustes v(\d+) pedidos$/);
   if (m) return `Ajustes pedidos na v${m[1]}`;
+  m = t.match(/^Ganchos v(\d+)$/);
+  if (m) return `3 ganchos propostos (v${m[1]})`;
+  m = t.match(/^Gancho escolhido \(v(\d+)\)$/);
+  if (m) return `Você escolheu nos ganchos v${m[1]}`;
   return { 'Relatório de fontes': 'Fontes conferidas', 'Pacote pronto': 'Pacote final pronto', Vencedor: 'Marcado como vencedor' }[t] || t;
 }
 
@@ -136,12 +142,36 @@ function arquivosDoPacote(files) {
 }
 
 /**
+ * A proposta de ganchos na etapa 'ganchos' (js/ganchos.js lê e decide o estado): a versão mais nova, as 3 opções
+ * lidas do arquivo e a escolha gravada para essa versão (só o nome na listagem; o conteúdo, se foi baixado).
+ * `lidoG`: {ganchos: lerGanchos(...)|null, escolha: lerEscolhaGancho(...)|null, erro} ou null (não baixado).
+ */
+export function propostaDeGanchos(p, lidoG = null) {
+  if (!p?.ultimosGanchos) return null;
+  const esc = escolhaDosUltimosGanchos(p);
+  const g = lidoG?.ganchos || null;
+  return {
+    versao: p.ultimosGanchos.v,
+    arquivo: p.ultimosGanchos.file,
+    titulo: g?.titulo || '',
+    opcoes: g ? g.opcoes.map((o) => ({ ...o })) : [],
+    lido: !!g && g.opcoes.length > 0,
+    erro: !!lidoG?.erro,
+    temEscolha: !!esc,
+    escolhaEm: esc?.file?.createdTime || esc?.file?.modifiedTime || null,
+    escolha: esc && lidoG?.escolha ? { escolha: lidoG.escolha.escolha, observacoes: lidoG.escolha.observacoes } : null,
+  };
+}
+
+/**
  * Projeto (montarProjetos) + roteiro lido (lerRoteiro, ou null se não foi baixado) → objeto de
  * roteiro do desenho aprovado. `opcoes.postadosLidos`: a planilha Radar foi lida (senão, nada de "postado").
+ * `opcoes.ganchosLido`: os ganchos (e a escolha) baixados para a etapa 'ganchos' (propostaDeGanchos).
  */
-export function montarRoteiro(p, lido, agora = new Date(), { postadosLidos = true } = {}) {
+export function montarRoteiro(p, lido, agora = new Date(), { postadosLidos = true, ganchosLido = null } = {}) {
   const etapa = etapaDe(p);
-  const titulo = String(lido?.cabecalho?.titulo || '').trim() || tituloDoNome(p) || p.id;
+  const propostaGanchos = etapa === 'ganchos' ? propostaDeGanchos(p, ganchosLido) : null;
+  const titulo = String(lido?.cabecalho?.titulo || '').trim() || tituloDoNome(p) || propostaGanchos?.titulo || p.id;
   const sem = semanaDe(agora);
   const ajustesPorV = new Map(p.ajustes.map((a) => [a.v, a.file]));
 
@@ -158,6 +188,8 @@ export function montarRoteiro(p, lido, agora = new Date(), { postadosLidos = tru
     arquivosRascunho: (p.rascunhos || []).map((x) => ({ v: x.v, file: x.file })),
     temFinal: !!p.roteiro,
     fontesConferidas: checagemConcluida(p),
+    // Etapa 'ganchos' (desde 15/11/2026): as 3 opções para ela escolher; null nas outras etapas.
+    propostaGanchos,
     arquivoRoteiro: arquivoDoRoteiro(p),
     ...camposDoLido(lido),
     video: {
@@ -291,9 +323,32 @@ async function buscar(forcar, ger = geracao) {
     }
   });
 
+  // Etapa 'ganchos': o arquivo dos 3 ganchos (a versão mais nova) e a escolha dela para essa versão, se houver.
+  const ganchosLidos = new Map();
+  const comGanchos = lista.filter((p) => etapaDe(p) === 'ganchos' && p.ultimosGanchos);
+  await emParalelo(comGanchos, CONFIG.concorrencia, async (p) => {
+    const ler = async (f, interpretar) => {
+      const chave = `g:${f.id}:${f.modifiedTime || ''}`;
+      if (!cacheLido.has(chave)) {
+        const v = interpretar(await Integra.baixarTexto(f));
+        if (ger !== geracao) return null;
+        cacheLido.set(chave, v);
+      }
+      return cacheLido.get(chave);
+    };
+    try {
+      const ganchos = await ler(p.ultimosGanchos.file, lerGanchos);
+      const esc = escolhaDosUltimosGanchos(p);
+      const escolha = esc ? await ler(esc.file, lerEscolhaGancho).catch(() => null) : null;
+      ganchosLidos.set(p.id, { ganchos, escolha, erro: false });
+    } catch {
+      ganchosLidos.set(p.id, { ganchos: null, escolha: null, erro: true });
+    }
+  });
+
   const postadosLidos = !post.erro;
   const roteiros = lista.map((p) => {
-    const r = montarRoteiro(p, lidos.get(p.id) || null, agora, { postadosLidos });
+    const r = montarRoteiro(p, lidos.get(p.id) || null, agora, { postadosLidos, ganchosLido: ganchosLidos.get(p.id) || null });
     r.erroTexto = lidos.has(p.id) && !lidos.get(p.id);
     return r;
   }).sort(compararIds);

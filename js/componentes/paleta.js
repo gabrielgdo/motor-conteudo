@@ -17,7 +17,7 @@ export const Paleta = {
       { grupo: 'Telas', rotulo: 'Enviar gravação', icone: 'enviar', ir: '#/enviar' },
       ...ativos().map((r) => ({
         grupo: 'Roteiros e vídeos', rotulo: r.titulo, extra: r.id,
-        icone: ['rascunho', 'mudanca', 'aprovado'].includes(r.etapa) ? 'roteiros' : r.etapa === 'pronto' ? 'prontos' : 'videos',
+        icone: ['ganchos', 'rascunho', 'mudanca', 'aprovado'].includes(r.etapa) ? 'roteiros' : r.etapa === 'pronto' ? 'prontos' : 'videos',
         ir: destinoDe(r),
       })),
       { grupo: 'Ações', rotulo: 'Atualizar com o Drive', icone: 'atualizar', acao: 'atualizar' },

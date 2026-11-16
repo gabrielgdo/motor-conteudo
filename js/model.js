@@ -14,7 +14,7 @@
 
 import {
   parseRascunho, parseFontes, parseRoteiroAprovado, parseRevisao, parseBruto, parsePacote,
-  parseVencedor, ehTeste, dataCurta, formatarData,
+  parseVencedor, parseGanchos, parseEscolhaGancho, ehTeste, dataCurta, formatarData,
 } from './parse.js';
 
 export const MIME_PASTA = 'application/vnd.google-apps.folder';
@@ -42,6 +42,11 @@ function novoProjeto(id) {
     teste: ehTeste(id),
     rascunhos: [],
     ultimoRascunho: null,
+    // Ganchos antes do roteiro (desde 15/11/2026): "<id> ganchos vN.md" (o motor propõe 3) e "<id> gancho vN.md"
+    // (a escolha dela), em rascunhos*. [{v, file}] em ordem de versão.
+    ganchos: [],
+    ultimosGanchos: null,
+    escolhasGancho: [],
     fontes: null,
     roteiro: null,
     frontmatter: null,
@@ -80,29 +85,43 @@ export function montarProjetos({
     }
   }
 
-  // Rascunhos e relatórios de fontes (todas as pastas rascunhos*). Mesma versão em duas pastas
-  // duplicadas: fica a mais recente.
+  // Rascunhos, ganchos, escolhas de gancho e relatórios de fontes (todas as pastas rascunhos*). Mesma versão em duas
+  // pastas duplicadas: fica a mais recente.
   const rascPorId = new Map();
+  const ganchosPorId = new Map();
+  const escolhasPorId = new Map();
+  const porVersao = (mapa, x, f) => {
+    if (!mapa.has(x.id)) mapa.set(x.id, new Map());
+    const porV = mapa.get(x.id);
+    porV.set(x.v, maisRecente(porV.get(x.v), f));
+  };
   for (const f of rascunhos) {
     if (ehPasta(f)) continue;
     const r = parseRascunho(f.name);
-    if (r) {
-      if (!rascPorId.has(r.id)) rascPorId.set(r.id, new Map());
-      const porV = rascPorId.get(r.id);
-      porV.set(r.v, maisRecente(porV.get(r.v), f));
-      continue;
-    }
+    if (r) { porVersao(rascPorId, r, f); continue; }
+    const g = parseGanchos(f.name);
+    if (g) { porVersao(ganchosPorId, g, f); continue; }
+    const e = parseEscolhaGancho(f.name);
+    if (e) { porVersao(escolhasPorId, e, f); continue; }
     const fo = parseFontes(f.name);
     if (fo) {
       const p = proj(fo.id);
       p.fontes = maisRecente(p.fontes, f);
     }
   }
+  const emOrdem = (porV) => [...porV].map(([v, file]) => ({ v, file })).sort((a, b) => a.v - b.v);
   for (const [id, porV] of rascPorId) {
     const p = proj(id);
-    p.rascunhos = [...porV].map(([v, file]) => ({ v, file })).sort((a, b) => a.v - b.v);
+    p.rascunhos = emOrdem(porV);
     p.ultimoRascunho = p.rascunhos[p.rascunhos.length - 1];
   }
+  for (const [id, porV] of ganchosPorId) {
+    const p = proj(id);
+    p.ganchos = emOrdem(porV);
+    p.ultimosGanchos = p.ganchos[p.ganchos.length - 1];
+  }
+  // Escolha sem os ganchos (arquivados ou apagados) não cria projeto: não há o que mostrar.
+  for (const [id, porV] of escolhasPorId) if (projetos.has(id)) proj(id).escolhasGancho = emOrdem(porV);
 
   // 3-Brutos: só os que começam com o id.
   for (const f of brutos) {
@@ -183,6 +202,18 @@ export function ehRoteiroParaAprovar(p) {
   return p.rascunhos.length > 0 && !p.roteiro;
 }
 
+/** Ganchos propostos e ainda sem rascunho nem roteiro: a etapa em que ela escolhe o gancho (desde 15/11/2026). */
+export function ehGanchosParaEscolher(p) {
+  return (p.ganchos || []).length > 0 && !p.rascunhos.length && !p.roteiro;
+}
+
+/** A escolha gravada para a versão MAIS NOVA dos ganchos ({v, file}), ou null (a vez é dela). */
+export function escolhaDosUltimosGanchos(p) {
+  const n = p?.ultimosGanchos?.v;
+  if (!n) return null;
+  return (p.escolhasGancho || []).find((e) => e.v === n) || null;
+}
+
 /** O relatório de fontes da última versão do rascunho já chegou? */
 export function checagemConcluida(p) {
   if (!p.ultimoRascunho || !p.fontes) return false;
@@ -236,6 +267,9 @@ export function calcularEtapa(p) {
   if (p.ultimoRascunho) {
     return checagemConcluida(p) ? 'roteiro para aprovar' : `rascunho v${p.ultimoRascunho.v} em checagem`;
   }
+  if (p.ultimosGanchos) {
+    return escolhaDosUltimosGanchos(p) ? 'gancho escolhido, motor escrevendo' : 'ganchos para escolher';
+  }
   return '';
 }
 
@@ -275,7 +309,7 @@ export function testesAtivos(projetos) {
 }
 
 export const ETAPAS_SEMANA = [
-  { chave: 'pautas', rotulo: 'Pautas', feito: (p) => p.rascunhos.length > 0 || !!p.roteiro },
+  { chave: 'pautas', rotulo: 'Pautas', feito: (p) => p.rascunhos.length > 0 || (p.ganchos || []).length > 0 || !!p.roteiro },
   { chave: 'roteiros', rotulo: 'Roteiros', feito: (p) => !!p.roteiro },
   { chave: 'gravacao', rotulo: 'Gravação', feito: (p) => p.brutos.length > 0 || p.previas.versoes.length > 0 || !!p.pacote },
   { chave: 'revisao', rotulo: 'Revisão', feito: (p) => !!p.aprovado || !!p.pacote },
@@ -311,6 +345,8 @@ export function projetosComPacote(projetos) {
 export function historico(p) {
   const ev = [];
   const add = (file, texto) => { if (file?.createdTime) ev.push({ quando: file.createdTime, texto, file }); };
+  for (const g of p.ganchos || []) add(g.file, `Ganchos v${g.v}`);
+  for (const e of p.escolhasGancho || []) add(e.file, `Gancho escolhido (v${e.v})`);
   for (const r of p.rascunhos) add(r.file, `Rascunho v${r.v}`);
   add(p.fontes, 'Relatório de fontes');
   add(p.roteiro, 'Roteiro aprovado');

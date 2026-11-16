@@ -1,7 +1,10 @@
 // Etapa de um projeto (de montarProjetos, js/model.js) no vocabulário do desenho aprovado:
-// 'rascunho' | 'aprovado' | 'recebido' | 'previa' | 'ajustes' | 'video-aprovado' | 'pronto' | 'arquivado' | ''.
+// 'ganchos' | 'rascunho' | 'aprovado' | 'recebido' | 'previa' | 'ajustes' | 'video-aprovado' | 'pronto' | 'arquivado' | ''.
 // Puro: sem rede, sem DOM. Ordem de precedência: pronto > video-aprovado > ajustes > previa >
-// recebido > aprovado > rascunho > ''.
+// recebido > aprovado > rascunho > ganchos > ''.
+//
+// 'ganchos' (desde 15/11/2026): o motor propôs 3 ganchos ("<id> ganchos vN.md") e ainda não há rascunho nem roteiro;
+// ela escolhe um no app ("<id> gancho vN.md") e o rascunho v1 nasce dele. Com o rascunho, a etapa vira 'rascunho'.
 //
 // Divergências entre as regras pedidas (implementadas aqui) e formatos.md / model.js:
 // 1. 'arquivado' nunca é devolvido: model.js ignora 2-Roteiros/arquivo/ (não registra esses
@@ -26,9 +29,9 @@
 // 8. o desenho aprovado também lista 'mudanca' e 'recusado', que não se deduzem das listagens do Drive;
 //    não são devolvidos. Projeto só com "<id> fontes.md" → ''.
 
-import { ehPreviaNova, ehAprovadoSemBruto, ehRoteiroParaAprovar } from './model.js';
+import { ehPreviaNova, ehAprovadoSemBruto, ehRoteiroParaAprovar, ehGanchosParaEscolher } from './model.js';
 
-export const ETAPAS = ['rascunho', 'aprovado', 'recebido', 'previa', 'ajustes', 'video-aprovado', 'pronto', 'arquivado'];
+export const ETAPAS = ['ganchos', 'rascunho', 'aprovado', 'recebido', 'previa', 'ajustes', 'video-aprovado', 'pronto', 'arquivado'];
 
 /** Maior versão de rascunho ("<id> rascunho vN.md" em qualquer rascunhos*), ou null. */
 export function versaoRascunho(p) {
@@ -58,5 +61,6 @@ export function etapaDe(p) {
   if (p.brutos.length && versaoPreviaAtual(p) === null) return 'recebido';
   if (ehAprovadoSemBruto(p)) return 'aprovado';
   if (ehRoteiroParaAprovar(p)) return 'rascunho';
+  if (ehGanchosParaEscolher(p)) return 'ganchos';
   return '';
 }

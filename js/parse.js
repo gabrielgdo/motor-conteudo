@@ -46,6 +46,8 @@ function padrao(resto) {
 
 const RE_RASCUNHO = padrao(' (?:.+ )?rascunho v(\\d+)\\.md');
 const RE_FONTES = padrao(' fontes\\.md');
+const RE_GANCHOS = padrao(' ganchos v(\\d+)\\.md');
+const RE_ESCOLHA_GANCHO = padrao(' gancho v(\\d+)\\.md');
 const RE_APROVADO_ROTEIRO = padrao(' - (.+)\\.md');
 const RE_PREVIA = padrao(' (IG|TT) v(\\d+)\\.mp4');
 const RE_STORYBOARD = padrao(' storyboard (IG|TT) v(\\d+)\\.jpe?g');
@@ -69,6 +71,18 @@ export function parseRascunho(nome) {
 export function parseFontes(nome) {
   const m = comId(String(nome).match(RE_FONTES));
   return m ? { id: m[1] } : null;
+}
+
+/** `<id> ganchos v<N>.md` (os 3 ganchos que o motor propõe antes do roteiro, em rascunhos*) → {id, v}. */
+export function parseGanchos(nome) {
+  const m = comId(String(nome).match(RE_GANCHOS));
+  return m ? { id: m[1], v: Number(m[2]) } : null;
+}
+
+/** `<id> gancho v<N>.md` (a escolha dela, que o app grava em rascunhos*) → {id, v}. */
+export function parseEscolhaGancho(nome) {
+  const m = comId(String(nome).match(RE_ESCOLHA_GANCHO));
+  return m ? { id: m[1], v: Number(m[2]) } : null;
 }
 
 /** `<id> - <título>.md` (roteiro aprovado, na raiz de 2-Roteiros) → {id, titulo}. */

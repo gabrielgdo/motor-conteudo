@@ -2,7 +2,8 @@
 // contra uma central falsa (fetch injetado). Mais a linha "Central" do Início (js/saude.js).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import path from 'node:path';
 import {
   arquivoDoPedido, motorOuvindo, sessaoDe, criarCentral, CHAVE_SESSAO, FORMATOS, MOTOR_OUVINDO_MS,
 } from '../js/central.js';
@@ -20,8 +21,10 @@ test('arquivoDoPedido: os quatro formatos e nada fora deles', () => {
   assert.equal(arquivoDoPedido('decisao_roteiro', 'S47-01 decisao v1.md'), '2-Roteiros/rascunhos/S47-01 decisao v1.md');
   assert.equal(arquivoDoPedido('busca', 'pedido-busca.md'), '1-Radar/pedido-busca.md');
   assert.equal(arquivoDoPedido('decisoes_semana', 'decisoes S47.md'), '1-Radar/decisoes S47.md');
+  assert.equal(arquivoDoPedido('decisao_gancho', 'S47-01 gancho v2.md'), '2-Roteiros/rascunhos/S47-01 gancho v2.md');
   for (const [t, n] of [['decisao_previa', '../x aprovado.md'], ['decisao_previa', 'S47-01 rascunho.md'],
-    ['busca', 'outro.md'], ['qualquer', 'x.md'], ['decisao_roteiro', 'S47 01 decisao v1.md']]) {
+    ['busca', 'outro.md'], ['qualquer', 'x.md'], ['decisao_roteiro', 'S47 01 decisao v1.md'],
+    ['decisao_gancho', 'S47-01 ganchos v1.md'], ['decisao_gancho', 'S47-01 gancho.md'], ['decisao_roteiro', 'S47-01 gancho v1.md']]) {
     assert.throws(() => arquivoDoPedido(t, n), undefined, `${t} ${n}`);
   }
 });
@@ -29,7 +32,33 @@ test('arquivoDoPedido: os quatro formatos e nada fora deles', () => {
 test('formatos iguais aos do banco e do motor', () => {
   const sql = readFileSync(new URL('../js/central.js', import.meta.url), 'utf8');
   assert.ok(sql.includes('arquivo_do_tipo'));
-  assert.deepEqual(Object.keys(FORMATOS).sort(), ['busca', 'decisao_previa', 'decisao_roteiro', 'decisoes_semana', 'retrospectiva']);
+  assert.deepEqual(Object.keys(FORMATOS).sort(), ['busca', 'decisao_gancho', 'decisao_previa', 'decisao_roteiro', 'decisoes_semana', 'retrospectiva']);
+});
+
+// O combinado da escolha do gancho (GC3), escrito igual nos três lugares: aqui, no bin/central.py do motor e na
+// regra arquivo_do_tipo do banco (central/migracoes/ do motor). O motor é outro repositório: com MOTOR_REELS_DIR
+// apontando para ele, o teste abaixo compara os três de verdade (o tests/teste_central.py do motor faz o mesmo).
+const GANCHO = '^2-Roteiros/rascunhos/[A-Za-z0-9-]+ gancho v[0-9]+\\.md$';
+const fonteJs = (re) => re.source.replace(/\\\//g, '/');
+
+test('decisao_gancho: o regex combinado, igual ao do motor e do banco', () => {
+  assert.equal(fonteJs(FORMATOS.decisao_gancho), GANCHO);
+});
+
+const MOTOR = process.env.MOTOR_REELS_DIR || '';
+test('formatos: os três lugares batem (com o motor ao lado, MOTOR_REELS_DIR)', { skip: !(MOTOR && existsSync(path.join(MOTOR, 'bin', 'central.py'))) && 'sem MOTOR_REELS_DIR' }, () => {
+  const py = readFileSync(path.join(MOTOR, 'bin', 'central.py'), 'utf8');
+  const doMotor = Object.fromEntries([...py.matchAll(/^\s*"(\w+)": re\.compile\(r"([^"]+)"\),?\s*$/gm)].map((m) => [m[1], m[2]]));
+  assert.deepEqual(Object.keys(doMotor).sort(), Object.keys(FORMATOS).sort());
+  for (const [tipo, re] of Object.entries(FORMATOS)) assert.equal(fonteJs(re), doMotor[tipo], tipo);
+  const pasta = path.join(MOTOR, 'central', 'migracoes');
+  const sql = readdirSync(pasta).filter((n) => n.endsWith('.sql')).sort()
+    .map((n) => readFileSync(path.join(pasta, n), 'utf8')).filter((s) => s.includes('add constraint arquivo_do_tipo')).at(-1);
+  const doBanco = Object.fromEntries([...sql.matchAll(/tipo = '(\w+)'\s+and arquivo ~ '([^']+)'/g)].map((m) => [m[1], m[2]]));
+  for (const [tipo, re] of Object.entries(doBanco)) assert.equal(fonteJs(FORMATOS[tipo]), re, tipo);
+  assert.equal(doBanco.decisao_gancho, GANCHO);
+  const tipos = sql.match(/add constraint pedidos_tipo_check\s+check \(tipo in \(([^)]*)\)\)/)[1].match(/\w+/g);
+  assert.deepEqual([...tipos].sort(), Object.keys(FORMATOS).sort());
 });
 
 test('motorOuvindo: só com sinal de vida recente', () => {
@@ -96,6 +125,20 @@ test('cliente: entra com o token Google do app, guarda a sessão e envia o pedid
   assert.equal(post.cab.Prefer, 'return=representation');
   assert.equal(post.corpo.quem, 'ela@teste.br');
   assert.equal(post.corpo.arquivo, '4-Revisao/S47-01 aprovado.md');
+});
+
+test('cliente: a escolha do gancho vai como decisao_gancho para 2-Roteiros/rascunhos', async () => {
+  const f = centralFalsa();
+  const st = armazenamento();
+  st.setItem(CHAVE_SESSAO, JSON.stringify({ access_token: 'A1', refresh_token: 'R', email: 'ela@teste.br', expira: 9e15 }));
+  const c = criarCentral({ url: 'https://x', chave: 'k', fetch: f.fetch, storage: st, agora: () => 0 });
+  const arquivo = arquivoDoPedido('decisao_gancho', 'S47-01 gancho v1.md');
+  const r = await c.enviarPedido({ tipo: 'decisao_gancho', conteudo_id: 'S47-01', arquivo, conteudo: '---\nescolha: 2\n---\n' });
+  assert.equal(r.id, 'uuid-1');
+  assert.equal(f.chamadas.at(-1).corpo.tipo, 'decisao_gancho');
+  assert.equal(f.chamadas.at(-1).corpo.arquivo, '2-Roteiros/rascunhos/S47-01 gancho v1.md');
+  await assert.rejects(c.enviarPedido({ tipo: 'decisao_gancho', arquivo: '2-Roteiros/rascunhos/S47-01 ganchos v1.md', conteudo: 'x' }));
+  assert.equal(f.chamadas.length, 1);
 });
 
 test('cliente: recusa caminho fora do formato e pedido vazio sem chamar a central', async () => {

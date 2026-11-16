@@ -25,6 +25,9 @@ const inicial = () => ({
   // Decisão de roteiro aceita pela ponte e ainda não vista em Execuções (registro otimista, só em
   // memória): id -> {desde: ms, chave, decisao, versao} (js/decisoes-roteiro.js).
   decisoesEnviadas: {},
+  // Escolha de gancho enviada e ainda não vista no Drive (registro otimista, só em memória):
+  // id -> {versao, escolha: '1'|'2'|'3'|'outros', desde: ms} (js/ganchos.js).
+  ganchosEnviados: {},
   candidatosVisiveis: 30, // chip Candidatos: quantos cartões aparecem antes do "Mostrar mais"
   janela: null, // janela de confirmação aberta: {tipo, ...} (js/acoes.js)
   // Envio ao Roteirista aceito pela ponte e ainda não visto em Execuções (registro otimista, só em

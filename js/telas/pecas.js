@@ -4,6 +4,7 @@ import { esc, ic, quando, hrefSeguro } from '../util.js';
 import { estado, rascunho } from '../estado.js';
 import { Integra } from '../integra.js';
 import { ultima, postouTudo, estadoDados } from '../dados.js';
+import { estadoDosGanchos } from '../ganchos.js';
 
 /* nomeVT liga o título de uma lista ao título do detalhe: na troca de tela, um vira o outro. */
 export const vt = (id) => `style="view-transition-name:t-${esc(String(id).replace(/[^\w-]/g, '_'))}"`;
@@ -17,6 +18,10 @@ export const chipFiltro = (grupo, valor, rotulo, atual) => `<button type="button
 /* Em que pé está cada roteiro: o texto do selo e para onde o clique leva */
 export function passoDe(r) {
   switch (r.etapa) {
+    case 'ganchos': {
+      const g = estadoDosGanchos(r, { local: estado.ganchosEnviados?.[r.id] || null });
+      return [g.estado === 'sem-texto' ? 'Escolher o gancho' : g.texto, g.estado === 'escolher' || g.estado === 'sem-texto' ? 'acao' : g.tom];
+    }
     case 'rascunho': return [`Aprovar o rascunho v${r.versaoRoteiro}`, 'acao'];
     case 'mudanca': return ['Com o Roteirista', 'espera'];
     case 'aprovado': return ['Falta gravar', 'acao'];
@@ -30,7 +35,7 @@ export function passoDe(r) {
     default: return ['Recusado', 'neutro'];
   }
 }
-export const destinoDe = (r) => (['rascunho', 'mudanca', 'aprovado', 'recusado'].includes(r.etapa) ? `#/roteiros/${encodeURIComponent(r.id)}` : r.etapa === 'pronto' ? '#/prontos' : `#/videos/${encodeURIComponent(r.id)}`);
+export const destinoDe = (r) => (['ganchos', 'rascunho', 'mudanca', 'aprovado', 'recusado'].includes(r.etapa) ? `#/roteiros/${encodeURIComponent(r.id)}` : r.etapa === 'pronto' ? '#/prontos' : `#/videos/${encodeURIComponent(r.id)}`);
 
 /* Campo de formulário com rótulo, dica e erro ligados por id (acessível a leitores de tela) */
 export function campo(o) {
