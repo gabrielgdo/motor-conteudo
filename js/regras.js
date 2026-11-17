@@ -47,7 +47,8 @@ const RID = /^(S\d{2}-\d{2}|T\d{2}(?:-\d{2})?|R\d{3})-R(\d+)$/;
 const PERGUNTA = /\s*mudar a regra, fazer s[óo] neste v[íi]deo ou manter\?\s*$/i;
 // o porquê da pergunta que voltou porque a resposta ("Mudar a regra") veio pela reserva do Drive (bin/regras.py,
 // DE_NOVO["reserva"]): ela valeu só para este vídeo e o pedido já foi feito naquela decisão
-const RESERVA = 'sua resposta nao veio pelo app';
+// (fallback quando o bloco não traz a linha `motivo: reserva`; `includes`, para aguentar uma frase reescrita)
+const RESERVA = 'nao veio pelo app';
 const MAX = { pedido: 1000, onde: 120, arquivo: 120, texto: 800, feito: 400, pergunta: 400 };
 const MAX_PEDIDO = 1000;   // observacoes (storyboard e prévia) e pedido (roteiro)
 
@@ -103,7 +104,7 @@ export function lerPerguntasRegra(texto, id = '') {
     }
     if (/^#/.test(l)) { atual = null; continue; }
     if (!atual) continue;
-    const c = l.match(/^(pedido|regra|feito agora|texto novo|pergunta)\s*:\s*(.*)$/i);
+    const c = l.match(/^(pedido|regra|feito agora|texto novo|pergunta|motivo)\s*:\s*(.*)$/i);
     if (!c) continue;
     const k = c[1].toLowerCase();
     const v = c[2].trim();
@@ -112,10 +113,14 @@ export function lerPerguntasRegra(texto, id = '') {
     else if (k === 'feito agora' && !atual.feito) atual.feito = linha1(v, MAX.feito);
     else if (k === 'texto novo' && !atual.novo) atual.novo = linha1(v.replace(/^"(.*)"$/, '$1'), MAX.texto);
     else if (k === 'pergunta' && !atual.pergunta) atual.pergunta = linha1(v, MAX.pergunta);
+    else if (k === 'motivo' && !atual.tipo) atual.tipo = linha1(v, 40).toLowerCase();
   }
   for (const q of out) {
     q.motivo = q.pergunta.replace(PERGUNTA, '').trim();
-    q.reserva = semAcento(q.motivo).toLowerCase().startsWith(RESERVA);
+    // a linha `motivo:` vale mais que a frase; sem ela (ou com um valor desconhecido), a frase decide
+    q.reserva = q.tipo === 'reserva' || (q.tipo !== 'sumiu' && q.tipo !== 'reescrita'
+      && semAcento(q.motivo).toLowerCase().includes(RESERVA));
+    delete q.tipo;
   }
   return out.filter((q) => q.pedido && q.regra && q.novo);
 }

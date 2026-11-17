@@ -409,3 +409,20 @@ test('gravar pela central: o conteúdo leva `regras` (prévia com quem e quando;
     globalThis.localStorage = antes;
   }
 });
+
+// a linha `motivo:` (bin/regras.py) vale mais que a frase; sem ela a frase decide (includes, não startsWith)
+const comMotivo = (motivo, frase) => SECAO.replace('pergunta: mudar a regra, fazer só neste vídeo ou manter?',
+  `${motivo ? `motivo: ${motivo}\n` : ''}pergunta: ${frase}`);
+const FRASE_RESERVA = 'sua resposta não veio pelo app e valeu só para este vídeo. Mudar a regra, fazer só neste vídeo ou manter?';
+
+test('motivo: reserva pela linha, pela frase (fallback) e pela frase reescrita; sumiu continua como antes', () => {
+  const r = (t) => lerPerguntasRegra(t, 'S47-01')[0];
+  assert.equal(r(comMotivo('reserva', 'a resposta ficou na reserva. Mudar a regra, fazer só neste vídeo ou manter?')).reserva, true, 'linha');
+  assert.equal(r(comMotivo('', FRASE_RESERVA)).reserva, true, 'só a frase');
+  assert.equal(r(comMotivo('', 'Atenção: a sua resposta não veio pelo app. Mudar a regra, fazer só neste vídeo ou manter?')).reserva, true, 'frase reescrita');
+  assert.equal(r(comMotivo('sumiu', 'a regra mudou antes da sua resposta e nada foi trocado. Mudar a regra, fazer só neste vídeo ou manter?')).reserva, false);
+  assert.equal(r(comMotivo('sumiu', FRASE_RESERVA)).reserva, false, 'a linha vence a frase');
+  assert.equal(r(comMotivo('reescrita', 'a regra foi reescrita. Mudar a regra, fazer só neste vídeo ou manter?')).reserva, false);
+  assert.equal(r(comMotivo('reserva', 'x. Mudar a regra, fazer só neste vídeo ou manter?')).motivo, 'x.');
+  assert.ok(!('tipo' in r(comMotivo('reserva', FRASE_RESERVA))));
+});
