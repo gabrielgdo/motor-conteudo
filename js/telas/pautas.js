@@ -210,10 +210,10 @@ function cartao(p, ctx) {
       ${mudando ? `<button type="button" class="botao calmo" data-acao="pauta-mudar" data-id="${esc(id)}">Deixar como estava</button>` : ''}
       ${ctx.bloqueio && !ctx.notaNoTopo ? `<span class="pequeno apagado">${esc(ctx.bloqueio)}</span>` : ''}
     </div>
-    ${pendente === 'recusada' && !ctx.bloqueio ? `<div class="pilha" style="gap:.875rem">
-      ${segmento(`pm-${id}`, 'Por que recusar?', MOTIVOS_RECUSA.map((m) => [m, m.charAt(0).toUpperCase() + m.slice(1)]), '')}
-      ${ctx.erros[`pm-${id}`] ? `<p class="erro">${esc(ctx.erros[`pm-${id}`])}</p>` : ''}
-      ${campo({ modelo: `po-${id}`, rotulo: 'Observação', opcional: true, exemplo: 'Ex.: já falamos disso em outubro', dica: 'O Radar usa o motivo para acertar as próximas sugestões.' })}
+    ${(pendente === 'recusada' || pendente === 'aprovada') && !ctx.bloqueio ? `<div class="pilha" style="gap:.875rem">
+      ${pendente === 'recusada' ? `${segmento(`pm-${id}`, 'Que tipo de problema?', MOTIVOS_RECUSA.map((m) => [m, m.charAt(0).toUpperCase() + m.slice(1)]), '')}
+      ${ctx.erros[`pm-${id}`] ? `<p class="erro">${esc(ctx.erros[`pm-${id}`])}</p>` : ''}` : ''}
+      ${campo({ modelo: `po-${id}`, rotulo: 'Por quê, em uma linha', opcional: pendente === 'aprovada', exemplo: pendente === 'recusada' ? 'Ex.: já falamos disso em outubro' : 'Ex.: é a dúvida que mais chega', dica: 'O Radar usa o seu motivo para acertar as próximas sugestões.' })}
     </div>` : ''}`;
   }
 
@@ -863,7 +863,9 @@ export function pedidosDaTela(pendentes, valores, selecao) {
     if (!decisao || !ids.has(id) || ehIdTeste(id)) continue;
     const motivo = decisao === 'recusada' ? String(valores[`pm-${id}`] || '') : '';
     if (decisao === 'recusada' && !motivo) erros[`pm-${id}`] = 'Escolha o motivo da recusa.';
-    pedidos.push({ id_pauta: id, decisao, motivo, observacao: String(valores[`po-${id}`] || '').trim() });
+    const observacao = String(valores[`po-${id}`] || '').replace(/\s+/g, ' ').trim();
+    if (decisao === 'recusada' && !observacao) erros[`po-${id}`] = 'Diga por quê, em uma linha.';
+    pedidos.push({ id_pauta: id, decisao, motivo, observacao });
   }
   return { pedidos, erros };
 }

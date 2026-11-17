@@ -754,6 +754,7 @@ export const ACOES = {
     else estado.decisoesPauta[id] = valor;
     delete estado.resultadoPautas[id];
     delete estado.erros[`pm-${id}`];
+    delete estado.erros[`po-${id}`];
     desenhar();
   },
   'pauta-mudar'(el) {
@@ -776,8 +777,8 @@ export const ACOES = {
     if (Object.keys(erros).length) {
       estado.erros = { ...estado.erros, ...erros };
       desenhar();
-      avisar('Escolha o motivo de cada recusa antes de confirmar.');
-      document.querySelector(`[name="${CSS.escape(Object.keys(erros)[0])}"]`)?.closest('.pauta')?.scrollIntoView({ block: 'center' });
+      avisar('Em cada recusa, escolha o tipo de problema e diga por quê, em uma linha.');
+      document.querySelector(`[name="${CSS.escape(Object.keys(erros)[0])}"],[data-modelo="${CSS.escape(Object.keys(erros)[0])}"]`)?.closest('.pauta')?.scrollIntoView({ block: 'center' });
       return;
     }
     if (!pedidos.length) return;
@@ -1002,8 +1003,9 @@ export const ACOES = {
       estado.erros = {};
       if (plano.erros.pedido) estado.erros[`rp-${id}`] = plano.erros.pedido;
       if (plano.erros.motivo) estado.erros[`rm-${id}`] = plano.erros.motivo;
+      if (plano.erros.porque) estado.erros[`ro-${id}`] = plano.erros.porque;
       desenhar();
-      if (!plano.erros.pedido && !plano.erros.motivo) avisar(Object.values(plano.erros)[0]);
+      if (!plano.erros.pedido && !plano.erros.motivo && !plano.erros.porque) avisar(Object.values(plano.erros)[0]);
       return;
     }
     abrirRodar({

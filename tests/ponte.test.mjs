@@ -1345,7 +1345,7 @@ test('contrato: a ponte aceita os corpos de disparar (com e sem "marcar como tra
   assert.equal(dec.volta.ok, true);
   const ult = C.lerExecucoes(amb.aba.linhas).execucoes.at(-1);
   assert.equal(ult.resumo, 'recusar v2 (ética)');
-  const mudar = C.planejarDecisaoRoteiro({ id: 'T01-01', versao: 1, decisao: 'mudar', pedido: 'Trocar o fim.\n\nE o gancho.' });
+  const mudar = C.planejarDecisaoRoteiro({ id: 'T01-01', versao: 1, decisao: 'mudar', pedido: 'Trocar o fim.\n\nE o gancho.', observacao: 'o fim estava seco' });
   assert.equal(comoOAppLe(amb.post(corpoDoApp(corpoDecidir({ ...mudar.payload, chave_idem: C.novaChaveIdem() }), 'tok-falso-robertta'))).volta.teste, true);
 });
 
@@ -1469,7 +1469,7 @@ test('ponte: roteirista-decisao recusa "mudar vN" repetido (ok recente) e qualqu
 
 test('ponte: cliques repetidos com a chave estável do app = um pedido só; outra janela (chave nova) cai na trava por id', () => {
   const amb = criarAmbiente();
-  const plano = C.planejarDecisaoRoteiro({ id: 'S47-04', versao: 2, decisao: 'mudar', pedido: 'trocar o fim' });
+  const plano = C.planejarDecisaoRoteiro({ id: 'S47-04', versao: 2, decisao: 'mudar', pedido: 'trocar o fim', observacao: 'o fim estava seco' });
   const chaveApp = D.chaveIdemDecisao(plano.payload, C.lerExecucoes(amb.aba.linhas).execucoes);
   const corpo = corpoDoApp(corpoDecidir({ ...plano.payload, chave_idem: chaveApp }), 'tok-falso-robertta');
   amb.post(corpo);

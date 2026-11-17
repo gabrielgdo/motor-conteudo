@@ -322,6 +322,8 @@ export function camposDoLido(lido) {
     lido: !!lido,
     valido_ate: lido?.valido_ate || '',
     formato: lido?.formato || '',
+    cta: lido?.cta || '',
+    semCta: !!lido?.sem_cta,
     formatoRoteiro: lido?.formato_roteiro || '',
     ganchos: lido ? ganchosDoRoteiro(lido) : { ig: [], tt: [] },
     falas: lido ? falasDoRoteiro(lido) : [],

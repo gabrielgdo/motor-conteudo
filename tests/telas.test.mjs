@@ -293,10 +293,11 @@ test('Pautas: pedidos da tela (recusa sem motivo é erro; ids T e fora da Seleç
   );
   assert.deepEqual(pedidos.map((p) => p.id_pauta), ['S47-01', 'S47-02']);
   assert.equal(pedidos[0].observacao, 'ótima');
-  assert.deepEqual(Object.keys(erros), ['pm-S47-02']);
-  const ok = pedidosDaTela({ 'S47-02': 'recusada' }, { 'pm-S47-02': 'timing' }, d.selecao);
+  assert.deepEqual(Object.keys(erros), ['pm-S47-02', 'po-S47-02']);
+  const ok = pedidosDaTela({ 'S47-02': 'recusada' }, { 'pm-S47-02': 'timing', 'po-S47-02': ' já  falamos ' }, d.selecao);
   assert.deepEqual(ok.erros, {});
   assert.equal(ok.pedidos[0].motivo, 'timing');
+  assert.equal(ok.pedidos[0].observacao, 'já falamos');
 });
 
 test('Pautas: resultado por pauta (gravada / já estava assim / já decidida pelo chat / erro) e a janela', () => {
@@ -334,15 +335,17 @@ test('Pautas: resultado por pauta (gravada / já estava assim / já decidida pel
 test('decisão de roteiro: payload para a ponte (aprovar, pedir mudança, recusar com motivo)', () => {
   assert.deepEqual(planejarDecisaoRoteiro({ id: 'S47-04', versao: 2, decisao: 'aprovar', pedido: 'ignorado' }).payload,
     { id: 'S47-04', versao: 2, decisao: 'aprovar', pedido: '', motivo: '' });
-  const m = planejarDecisaoRoteiro({ id: 'S47-04', versao: '2', decisao: 'mudar', pedido: '  abrir com a pergunta\r\n\r\n\r\nsem o dado\u0007 ' });
+  const m = planejarDecisaoRoteiro({ id: 'S47-04', versao: '2', decisao: 'mudar', pedido: '  abrir com a pergunta\r\n\r\n\r\nsem o dado\u0007 ', observacao: ' o dado abre frio ' });
   assert.equal(m.ok, true);
+  assert.equal(m.payload.motivo, 'o dado abre frio');
   assert.equal(m.payload.pedido, 'abrir com a pergunta\n\nsem o dado');
   assert.equal(m.payload.versao, 2);
-  assert.deepEqual(planejarDecisaoRoteiro({ id: 'S47-04', versao: 2, decisao: 'mudar', pedido: '  ' }).erros, { pedido: 'Escreva o que mudar.' });
+  assert.deepEqual(planejarDecisaoRoteiro({ id: 'S47-04', versao: 2, decisao: 'mudar', pedido: '  ', observacao: 'x' }).erros, { pedido: 'Escreva o que mudar.' });
   const r = planejarDecisaoRoteiro({ id: 'T01-01', versao: 1, decisao: 'recusar', motivo: 'Etica', observacao: 'linha\n dois' });
   assert.equal(r.payload.motivo, 'ética: linha dois');
   assert.match(r.resumo, /Recusar o rascunho v1 \(ética: linha dois\)/);
-  assert.deepEqual(Object.keys(planejarDecisaoRoteiro({ id: 'S47-04', versao: 1, decisao: 'recusar', motivo: 'chato' }).erros), ['motivo']);
+  assert.deepEqual(Object.keys(planejarDecisaoRoteiro({ id: 'S47-04', versao: 1, decisao: 'recusar', motivo: 'chato', observacao: 'x' }).erros), ['motivo']);
+  assert.deepEqual(Object.keys(planejarDecisaoRoteiro({ id: 'S47-04', versao: 1, decisao: 'recusar', motivo: 'tom' }).erros), ['porque']);
   assert.deepEqual(Object.keys(planejarDecisaoRoteiro({ id: '../x', versao: 0, decisao: 'talvez' }).erros).sort(), ['decisao', 'id', 'versao']);
   assert.deepEqual([...MOTIVOS_ROTEIRO], ['tom', 'clareza', 'fundamentação', 'ética', 'desalinhamento']);
 });

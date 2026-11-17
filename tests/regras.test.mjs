@@ -66,7 +66,7 @@ test('a seção do bin/regras.py: várias perguntas, cada uma com pedido, regra,
     rid: 'S47-01-R1', pedido: 'pôr a pergunta num cartão', onde: 'IG, quadro 4', arquivo: 'estilo/limites.md', linha: 28,
     regra: 'Nunca caixa, tarja, cartão ou faixa com texto', feito: 'a pergunta em Lora solta com sombra, no mesmo lugar',
     novo: '[ambos] Cartão com texto só quando ela pedir no storyboard; o resto continua em letra solta.',
-    pergunta: 'mudar a regra, fazer só neste vídeo ou manter?', motivo: '', reserva: false,
+    pergunta: 'mudar a regra, fazer só neste vídeo ou manter?', motivo: '', reserva: false, proposta: false,
   });
   assert.equal(q[1].pedido, 'põe a pergunta num "cartão" de verdade', 'aspas dentro do pedido');
   assert.equal(q[1].onde, 'TT, quadro 2');

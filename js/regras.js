@@ -49,6 +49,11 @@ const PERGUNTA = /\s*mudar a regra, fazer s[óo] neste v[íi]deo ou manter\?\s*$
 // DE_NOVO["reserva"]): ela valeu só para este vídeo e o pedido já foi feito naquela decisão
 // (fallback quando o bloco não traz a linha `motivo: reserva`; `includes`, para aguentar uma frase reescrita)
 const RESERVA = 'nao veio pelo app';
+// O pedido de uma pergunta que é proposta do motor (hoje, a do ritmo do §8, feita pelo /consolidar) começa assim: não é
+// pedido dela, então responder "Mudar a regra" não muda o rascunho e a aprovação continua aprovação.
+const PROPOSTA = /^\(\s*proposta do motor\b/i;
+/** A pergunta é proposta do motor (e não um pedido dela)? */
+export const ehProposta = (q) => !!q && (q.proposta === true || PROPOSTA.test(String(q.pedido ?? '').trim()));
 const MAX = { pedido: 1000, onde: 120, arquivo: 120, texto: 800, feito: 400, pergunta: 400 };
 const MAX_PEDIDO = 1000;   // observacoes (storyboard e prévia) e pedido (roteiro)
 
@@ -122,6 +127,7 @@ export function lerPerguntasRegra(texto, id = '') {
       && semAcento(q.motivo).toLowerCase().includes(RESERVA));
     delete q.tipo;
   }
+  for (const q of out) q.proposta = PROPOSTA.test(q.pedido);
   return out.filter((q) => q.pedido && q.regra && q.novo);
 }
 
@@ -215,7 +221,7 @@ export const respostasNaoEnviadas = (respostasRegra) =>
 export const liberaPedido = (resposta) => resposta === 'mudar' || resposta === 'so_neste';
 
 /** A resposta libera um pedido que ainda está por fazer? Numa pergunta da reserva, não: o pedido já foi feito. */
-export const liberaNesta = (q, resposta) => liberaPedido(resposta) && !!q && !q.reserva;
+export const liberaNesta = (q, resposta) => liberaPedido(resposta) && !!q && !q.reserva && !ehProposta(q);
 
 /** A pergunta de id `rid` na lista, ou null. */
 export const perguntaDe = (perguntas, rid) => (perguntas || []).find((q) => q?.rid === rid) || null;
@@ -225,8 +231,13 @@ export const perguntaDe = (perguntas, rid) => (perguntas || []).find((q) => q?.r
  * feito neste vídeo; `decisao`: a decisão escolhida na tela ('recusar' no rascunho: o pedido não é feito). '' sem
  * resposta válida.
  */
-export function efeitoDaResposta(resposta, { reserva = false, decisao = '' } = {}) {
+export function efeitoDaResposta(resposta, { reserva = false, decisao = '', proposta = false } = {}) {
   if (!RESPOSTAS_REGRA.includes(resposta)) return '';
+  if (proposta) {
+    return resposta === 'manter' ? 'A regra continua como está.'
+      : resposta === 'mudar' ? 'A regra muda (para os próximos vídeos). A sua decisão sobre o rascunho não muda: aprovar continua sendo aprovar.'
+        : 'A regra continua como está. A sua decisão sobre o rascunho não muda.';
+  }
   const regra = resposta === 'mudar' ? 'A regra muda (para os próximos vídeos também).' : 'A regra continua como está.';
   if (decisao === 'recusar') return resposta === 'manter' ? regra : `${regra} Com o rascunho recusado, o seu pedido não é feito.`;
   if (reserva) return `${regra} O seu pedido já foi feito neste vídeo.`;

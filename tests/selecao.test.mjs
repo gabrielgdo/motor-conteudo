@@ -141,7 +141,7 @@ test('planejar: colunas novas ausentes → não grava nada, com a mensagem hones
 });
 
 test('planejar: id T nunca vai para Decisões', () => {
-  const p = planejar({ pedidos: [{ id_pauta: 'T01', decisao: 'aprovada' }, { id_pauta: 'T01-02', decisao: 'recusada', motivo: 'timing' }] });
+  const p = planejar({ pedidos: [{ id_pauta: 'T01', decisao: 'aprovada' }, { id_pauta: 'T01-02', decisao: 'recusada', motivo: 'timing', observacao: 'x' }] });
   assert.deepEqual(p.linhas, []);
   assert.deepEqual(p.atualizacoes, []);
   assert.deepEqual(p.resultados.map((r) => [r.acao, r.mensagem]), [['recusado', 'teste não vai para Decisões'], ['recusado', 'teste não vai para Decisões']]);
@@ -165,7 +165,7 @@ test('planejar: vale a primeira decisão — o chat gravou depois que a tela leu
   assert.equal(p.resultados[0].acao, 'recusado');
   assert.equal(p.resultados[0].mensagem, 'já decidido pelo chat às 10h12');
   // Se o chat decidiu a mesma coisa, só "já estava assim".
-  assert.equal(planejar({ decisoesVistas: vistas, decisoesAgora: agoraDec, pedidos: [{ id_pauta: 'S47-01', decisao: 'recusada', motivo: 'timing' }] }).resultados[0].mensagem, 'já estava assim');
+  assert.equal(planejar({ decisoesVistas: vistas, decisoesAgora: agoraDec, pedidos: [{ id_pauta: 'S47-01', decisao: 'recusada', motivo: 'timing', observacao: 'x' }] }).resultados[0].mensagem, 'já estava assim');
   // Decidido em outro dia: diz a data.
   const ontem = decisoes(dec({ id_pauta: 'S47-01', decisao: 'recusada', data: '2026-11-17 18:40', origem: 'app' }));
   assert.equal(planejar({ decisoesAgora: ontem, pedidos: [{ id_pauta: 'S47-01', decisao: 'aprovada' }] }).resultados[0].mensagem, 'já decidido pelo app em 17/11 às 18h40');
@@ -175,11 +175,11 @@ test('planejar: mudança de ideia consciente vira linha nova; bloqueada se já e
   const d = decisoes(dec({ id_pauta: 'S47-02', decisao: 'aprovada', origem: 'app' }), dec({ id_pauta: 'S47-03', decisao: 'aprovada', origem: 'chat' }));
   const p = planejar({
     decisoesVistas: d, decisoesAgora: d,
-    pedidos: [{ id_pauta: 'S47-02', decisao: 'recusada', motivo: 'Desalinhamento' }, { id_pauta: 'S47-03', decisao: 'recusada', motivo: 'timing' }],
+    pedidos: [{ id_pauta: 'S47-02', decisao: 'recusada', motivo: 'Desalinhamento', observacao: 'x' }, { id_pauta: 'S47-03', decisao: 'recusada', motivo: 'timing', observacao: 'x' }],
   });
   assert.equal(p.linhas.length, 1);
   assert.equal(p.registros[0].decisao, 'recusada');
-  assert.equal(p.registros[0].motivo, 'desalinhamento');
+  assert.equal(p.registros[0].motivo, 'desalinhamento: x');
   assert.equal(p.resultados[0].acao, 'gravar');
   assert.equal(p.resultados[0].mudanca, true);
   assert.equal(p.resultados[1].acao, 'recusado');
@@ -211,7 +211,15 @@ test('planejar: recusa sem motivo é erro; motivo fora da lista também; decisã
 });
 
 test('planejar: pedido repetido no mesmo lote só conta uma vez', () => {
-  const p = planejar({ pedidos: [{ id_pauta: 'S47-01', decisao: 'aprovada' }, { id_pauta: 'S47-01', decisao: 'recusada', motivo: 'timing' }] });
+  const p = planejar({ pedidos: [{ id_pauta: 'S47-01', decisao: 'aprovada' }, { id_pauta: 'S47-01', decisao: 'recusada', motivo: 'timing', observacao: 'x' }] });
   assert.equal(p.linhas.length, 1);
   assert.equal(p.resultados[1].motivo, 'repetido');
+});
+
+test('planejar: recusa sem o "por quê, em uma linha" não grava; aprovação com ele grava no `motivo`', () => {
+  const sem = planejar({ pedidos: [{ id_pauta: 'S47-02', decisao: 'recusada', motivo: 'timing' }] });
+  assert.equal(sem.resultados[0].motivo, 'falta-porque');
+  assert.equal(sem.linhas.length, 0);
+  const ok = planejar({ pedidos: [{ id_pauta: 'S47-02', decisao: 'aprovada', observacao: 'é a dúvida que mais chega' }] });
+  assert.equal(ok.registros[0].motivo, 'é a dúvida que mais chega');
 });

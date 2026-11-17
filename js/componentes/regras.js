@@ -7,7 +7,7 @@
 import { esc, ic } from '../util.js';
 import {
   RESPOSTAS_REGRA, ROTULO_RESPOSTA, efeitoDaResposta, regraLegivel, ondeLegivel, liberaPedido, liberaNesta, regrasRespondidas,
-  perguntaDe,
+  perguntaDe, ehProposta,
 } from '../regras.js';
 
 const CLASSE = { mudar: 'contorno mudar', so_neste: 'contorno sim', manter: 'calmo nao' };
@@ -22,14 +22,14 @@ function cartao(q, { respostas, chave, pode, decisao }) {
   const botoes = RESPOSTAS_REGRA.map((v) => `<button type="button" class="botao ${CLASSE[v]}" data-acao="regra-responder" data-chave="${esc(chave)}" data-valor="${esc(`${q.rid}|${v}`)}" aria-pressed="${atual === v}"${pode ? '' : ' disabled'}>${v === atual ? ic('check', 16) : ''}${esc(ROTULO_RESPOSTA[v])}</button>`).join('');
   return `<li class="gancho regra${atual ? ' escolhido' : ''}">
     <dl class="gancho-dados">
-      <div><dt>Você pediu</dt><dd>“${esc(q.pedido)}”${onde ? ` <span class="apagado">(${esc(onde)})</span>` : ''}</dd></div>
+      <div><dt>${ehProposta(q) ? 'Proposta do motor' : 'Você pediu'}</dt><dd>“${esc(q.pedido)}”${onde ? ` <span class="apagado">(${esc(onde)})</span>` : ''}</dd></div>
       <div><dt>A regra hoje</dt><dd>${aspas(r.texto, r.literal)}${r.onde ? ` <span class="apagado">${esc(r.onde)}</span>` : ''}</dd></div>
       ${q.feito ? `<div><dt>O que o motor fez agora</dt><dd>${esc(q.feito)}</dd></div>` : ''}
       <div><dt>Se você mudar, a regra fica</dt><dd>${aspas(r.novo, r.literal)}</dd></div>
     </dl>
     ${q.motivo ? `<p class="nota calma">${ic('info')}<span>${esc(q.motivo.charAt(0).toUpperCase() + q.motivo.slice(1))}</span></p>` : ''}
     <div class="decisao" role="group" aria-label="O que fazer com esta regra">${botoes}</div>
-    ${atual ? `<p class="pequeno apagado" role="status">${esc(efeitoDaResposta(atual, { reserva: q.reserva, decisao }))}</p>` : ''}
+    ${atual ? `<p class="pequeno apagado" role="status">${esc(efeitoDaResposta(atual, { reserva: q.reserva, decisao, proposta: ehProposta(q) }))}</p>` : ''}
   </li>`;
 }
 
@@ -41,9 +41,12 @@ function cartao(q, { respostas, chave, pode, decisao }) {
 export function blocoRegras({ perguntas = [], respostas = {}, chave = '', pode = false, depois = '', decisao = '' } = {}) {
   if (!perguntas?.length) return '';
   const n = perguntas.length;
+  const soProposta = perguntas.every(ehProposta);
+  const titulo = soProposta ? (n === 1 ? 'O motor propõe mudar uma regra' : `O motor propõe mudar ${n} regras`)
+    : n === 1 ? 'Uma regra esbarrou no seu pedido' : `${n} pedidos esbarraram numa regra`;
   return `<div class="pilha" style="gap:.75rem" role="group" aria-labelledby="t-regras-${esc(chave)}">
-    <h3 id="t-regras-${esc(chave)}" style="margin:0">${n === 1 ? 'Uma regra esbarrou no seu pedido' : `${n} pedidos esbarraram numa regra`}</h3>
-    <p class="apagado pequeno">O motor fez o que a regra deixa. Escolha o que fazer${n === 1 ? '' : ' com cada um'}: mudar a regra, fazer só neste vídeo ou manter como está. ${esc(depois)}</p>
+    <h3 id="t-regras-${esc(chave)}" style="margin:0">${esc(titulo)}</h3>
+    <p class="apagado pequeno">${soProposta ? 'Não é um pedido seu: é uma sugestão do motor. Responder não muda o rascunho, e “Aprovar” continua sendo aprovar. ' : 'O motor fez o que a regra deixa. '}Escolha o que fazer${n === 1 ? '' : ' com cada um'}: mudar a regra, fazer só neste vídeo ou manter como está. ${esc(depois)}</p>
     <ol class="ganchos">${perguntas.map((q) => cartao(q, { respostas, chave, pode, decisao })).join('')}</ol>
   </div>`;
 }

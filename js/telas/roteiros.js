@@ -14,7 +14,7 @@ import { esc, ic, NOME_REDE, validade } from '../util.js';
 import { estado } from '../estado.js';
 import { Integra } from '../integra.js';
 import { ativos, rot, falasDe, execucoesLidas, pautasLidas, roteiros, anexo, camposDoLido } from '../dados.js';
-import { lerRoteiro } from '../roteiro.js';
+import { lerRoteiro, formatoLegivel, fechosDoCta } from '../roteiro.js';
 import { enviosAoRoteirista, textoDoEnvio } from '../envios.js';
 import { estadoDaDecisaoRoteiro, bloqueioDaDecisao, versoesDo, TOM_DECISAO } from '../decisoes-roteiro.js';
 import { estadoDosGanchos } from '../ganchos.js';
@@ -168,6 +168,17 @@ function linhaPalavras(r, falas) {
   return `<p class="apagado pequeno" style="margin-bottom:1.375rem">${esc(tamanho)} ${destaque}</p>`;
 }
 
+/** O fecho que vai escrito na tela (campo `cta` do rascunho), por rede, para ela aprovar o que vai aparecer. */
+export function blocoFecho(r) {
+  if (!r.lido) return '';
+  const fechos = fechosDoCta(r.cta);
+  if (!fechos.length) {
+    return `<div class="bloco"><h3>Fecho na tela</h3><p class="texto-pronto">${esc(r.semCta ? 'Sem fecho escrito na tela e na legenda gerada pelo motor.' : 'Este rascunho não traz o fecho.')}</p></div>`;
+  }
+  const nome = { instagram: 'Fecho no Instagram', tiktok: 'Fecho no TikTok', '': 'Fecho na tela' };
+  return `<div class="bloco"><h3>Fecho na tela</h3><dl class="gancho-dados">${fechos.map((f) => `<div><dt>${nome[f.rede]}</dt><dd>${esc(f.texto || 'sim')}</dd></div>`).join('')}</dl><p class="dica">É o que o motor vai escrever solto na tela, nos últimos segundos. Se não quiser, peça a mudança.</p></div>`;
+}
+
 export function painelFalas(r, rede) {
   const falas = falasDe(r, rede);
   const outros = r.ganchos[rede].slice(1);
@@ -176,6 +187,7 @@ export function painelFalas(r, rede) {
   return `
   ${linhaPalavras(r, falas)}
   <div class="falas">${falas.map((f) => `<div class="fala ${f.rede ? 'da-rede' : ''}"><p class="fala-parte">${esc(f.parte)}${f.rede ? ` do ${NOME_REDE[f.rede]}` : ''}</p><p class="fala-texto">${esc(f.texto)}</p></div>`).join('')}</div>
+  ${blocoFecho(r)}
   ${outros.length ? `<div class="bloco"><h3>Outras aberturas possíveis</h3><ul class="mudancas">${outros.map((g) => `<li>${esc(g)}</li>`).join('')}</ul></div>` : ''}
   ${r.entrega ? `<div class="bloco"><h3>Entrega</h3><p class="texto-pronto">${esc(r.entrega)}</p></div>` : ''}
   ${legenda ? `<div class="bloco"><div class="bloco-cab"><h3>Legenda do ${NOME_REDE[rede]}</h3><button type="button" class="botao calmo menor" data-acao="copiar" data-id="${esc(r.id)}" data-valor="${rede}">${ic('copiar', 18)} Copiar</button></div>
@@ -247,12 +259,17 @@ export function decisaoDoRascunho(r, {
   const ROTULO = { aprovar: `Aprovar a v${v}`, mudar: DECISOES_ROTEIRO.mudar, recusar: DECISOES_ROTEIRO.recusar };
   const botao = (valor, extra = '') => `<button type="button" class="botao ${CLASSE[valor]} cheio" data-acao="roteiro-escolher" data-id="${id}" data-valor="${valor}" aria-pressed="${esc_ === valor}"${desligado(valor) ? ' disabled' : ''}>${extra}${esc(ROTULO[valor])}</button>`;
   let detalhe = '';
+  // "Por quê, em uma linha": obrigatório em mudar e recusar, opcional em aprovar (vai no campo `motivo` do arquivo).
+  const porQue = (opcional, exemplo) => campo({ modelo: `ro-${r.id}`, rotulo: 'Por quê, em uma linha', opcional, exemplo, dica: 'O motor aprende com o seu motivo para os próximos roteiros.' });
   if (esc_ === 'mudar') {
-    detalhe = campo({ modelo: `rp-${r.id}`, rotulo: `O que mudar na v${v}`, tipo: 'textarea', linhas: 3, exemplo: 'Ex.: abrir com a pergunta, sem o dado' });
+    detalhe = `${campo({ modelo: `rp-${r.id}`, rotulo: `O que mudar na v${v}`, tipo: 'textarea', linhas: 3, exemplo: 'Ex.: abrir com a pergunta, sem o dado' })}
+      ${porQue(false, 'Ex.: o dado abre frio demais')}`;
   } else if (esc_ === 'recusar') {
-    detalhe = `${segmento(`rm-${r.id}`, 'Por que recusar?', MOTIVOS_ROTEIRO.map((m) => [m, m.charAt(0).toUpperCase() + m.slice(1)]), '')}
+    detalhe = `${segmento(`rm-${r.id}`, 'Que tipo de problema?', MOTIVOS_ROTEIRO.map((m) => [m, m.charAt(0).toUpperCase() + m.slice(1)]), '')}
       ${erros[`rm-${r.id}`] ? `<p class="erro">${esc(erros[`rm-${r.id}`])}</p>` : ''}
-      ${campo({ modelo: `ro-${r.id}`, rotulo: 'Observação', opcional: true, exemplo: 'Ex.: a tese não se sustenta' })}`;
+      ${porQue(false, 'Ex.: a tese não se sustenta')}`;
+  } else if (esc_ === 'aprovar') {
+    detalhe = porQue(true, 'Ex.: o gancho ficou na minha voz');
   }
   // Explicação visível do estado (e do porquê de um botão estar desligado).
   const notas = [];
@@ -441,7 +458,7 @@ export function vRoteiro(id) {
     return `
   ${voltar('roteiros', 'Roteiros')}
   ${cab(r.titulo, '', r.id)}
-  <div class="meta" style="margin:-.875rem 0 1.625rem">${selo(texto, tom)}${dec}${r.lido ? selo(v.texto, v.tom) : ''}${r.formato ? selo(r.formato) : ''}${r.teste ? selo('Teste') : ''}</div>
+  <div class="meta" style="margin:-.875rem 0 1.625rem">${selo(texto, tom)}${dec}${r.lido ? selo(v.texto, v.tom) : ''}${formatoLegivel(r.formato) ? selo(formatoLegivel(r.formato)) : ''}${r.teste ? selo('Teste') : ''}</div>
   <div class="roteiro-grade">
     <section class="painel" aria-label="Conteúdo do roteiro">
       ${abasDeVersao(r, vista)}

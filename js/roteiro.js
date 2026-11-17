@@ -57,6 +57,27 @@ const SO_IG = new Set(['GANCHO IG', 'FECHAMENTO IG']);
 const SO_TT = new Set(['GANCHO TT', 'FECHAMENTO TT']);
 export const DURACAO_PADRAO = '45 a 60 s';
 const SEM_CTA = new Set(['nenhum', 'nenhuma', 'sem cta', 'nao', '-']);
+
+/** Nome da estrutura sem o código interno ("E3 distinção" → "distinção"); texto livre fica como está. */
+export function formatoLegivel(formato) {
+  return String(formato ?? '').replace(/\s+/g, ' ').trim().replace(/^E\d{1,2}(?:\s*[-–—:.]\s*|\s+)/i, '').trim();
+}
+
+/**
+ * O `cta` do cabeçalho ("instagram enviar; tiktok comentar") → [{rede: 'instagram'|'tiktok'|'', texto}], um por trecho
+ * separado por ";". Trecho sem rede conhecida vai com rede ''. Vazio ou "nenhum" → [].
+ */
+export function fechosDoCta(cta) {
+  const out = [];
+  for (const parte of String(cta ?? '').split(';')) {
+    const p = parte.replace(/\s+/g, ' ').trim();
+    if (!p || SEM_CTA.has(normalizar(p).trim())) continue;
+    const m = p.match(/^(instagram|ig|tiktok|tik tok|tt)\b\s*[:\-–—]?\s*(.*)$/i);
+    if (m) out.push({ rede: /^(ig|instagram)$/i.test(m[1]) ? 'instagram' : 'tiktok', texto: m[2].trim() });
+    else out.push({ rede: '', texto: p });
+  }
+  return out;
+}
 // "Duração estimada: 48 s", "**Duracao:** 50 s", "_Duração estimada_: ..." (linha ignorada)
 const DURACAO_RE = re('^[\\s*_>(\\[-]*dura[cç][aã]o(?:\\s+estimada)?\\s*[*_]*\\s*[:–—-]', 'i');
 

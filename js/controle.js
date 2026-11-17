@@ -536,8 +536,9 @@ export function motivoDeRoteiro(v) {
 
 /**
  * Decisão de roteiro da tela → o que vai para Integra.ponte.decidirRoteiro (sem a chave_idem, que
- * nasce quando a janela abre). Aprovar: sem texto. Pedir mudança: `pedido` obrigatório. Recusar:
- * motivo da lista curta + observação opcional ("clareza: <observação>").
+ * nasce quando a janela abre). Aprovar: sem pedido. Pedir mudança: `pedido` obrigatório. Recusar: motivo da lista
+ * curta ("clareza: <por quê>"). `observacao` é o "por quê, em uma linha" (campo `motivo:` do arquivo do motor):
+ * obrigatório em mudar e recusar, opcional em aprovar.
  * → {ok:true, payload:{id, versao, decisao, pedido, motivo}, resumo} | {ok:false, erros:{campo: mensagem}}.
  */
 export function planejarDecisaoRoteiro({ id, versao, decisao, pedido = '', motivo = '', observacao = '' } = {}) {
@@ -548,19 +549,26 @@ export function planejarDecisaoRoteiro({ id, versao, decisao, pedido = '', motiv
   if (!Object.prototype.hasOwnProperty.call(DECISOES_ROTEIRO, decisao)) erros.decisao = 'Escolha aprovar, pedir mudança ou recusar.';
   const p = textoLivre(pedido).slice(0, MAX_PEDIDO_ROTEIRO).trim();
   let m = '';
+  const o = umaLinha(observacao);
   if (decisao === 'mudar' && !p) erros.pedido = 'Escreva o que mudar.';
+  if (decisao === 'mudar') {
+    if (!o) erros.porque = 'Diga por quê, em uma linha.';
+    m = o.slice(0, MAX_MOTIVO_ROTEIRO).trimEnd();
+  }
   if (decisao === 'recusar') {
     const daLista = motivoDeRoteiro(motivo);
     if (!daLista) erros.motivo = 'Escolha o motivo da recusa.';
-    const o = umaLinha(observacao);
+    if (!o) erros.porque = 'Diga por quê, em uma linha.';
     m = (daLista && o ? `${daLista}: ${o}` : daLista).slice(0, MAX_MOTIVO_ROTEIRO).trimEnd();
   }
+  if (decisao === 'aprovar') m = o.slice(0, MAX_MOTIVO_ROTEIRO).trimEnd();
   if (Object.keys(erros).length) return { ok: false, erros };
   const payload = { id, versao: v, decisao, pedido: decisao === 'mudar' ? p : '', motivo: m };
   const resumo = decisao === 'aprovar' ? `Aprovar o rascunho v${v}`
     : decisao === 'mudar' ? `Pedir mudança no rascunho v${v}: ${p}`
       : `Recusar o rascunho v${v} (${m})`;
-  return { ok: true, payload, resumo };
+  const resumoFinal = decisao !== 'recusar' && m ? `${resumo} (por quê: ${m})` : resumo;
+  return { ok: true, payload, resumo: resumoFinal };
 }
 
 /* ------------------------------------------- Radar diário: quantos candidatos */

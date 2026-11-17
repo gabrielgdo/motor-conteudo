@@ -250,6 +250,7 @@ export function planejarDecisoes({ selecao, decisoesVistas = [], decisoesAgora, 
       if (!String(pedido.motivo || '').trim()) { r(id, 'erro', 'falta-motivo', 'Escolha o motivo da recusa.'); continue; }
       motivo = motivoDaLista(pedido.motivo);
       if (!motivo) { r(id, 'erro', 'motivo-invalido', `Motivo fora da lista: ${MOTIVOS_RECUSA.join(', ')}.`); continue; }
+      if (!umaLinha(pedido.observacao)) { r(id, 'erro', 'falta-porque', 'Diga por quê, em uma linha.'); continue; }
     }
 
     const pauta = pautas.get(id);
