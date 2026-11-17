@@ -12,6 +12,7 @@ import { lerDataHora, parseAjustes, textoDosAjustes, gerarAjustes } from '../js/
 import {
   lerPerguntasRegra, semSecaoRegras, regraLegivel, ondeLegivel, regrasRespondidas, decisaoComRegras, linhasRegras,
   lerRegrasYaml, problemaRegras, textoDoPedidoDasRegras, chaveRespostas, extrasDasRegras, ridValido,
+  respostasNaoEnviadas,
 } from '../js/regras.js';
 import { blocoRegras, listaRespostas } from '../js/componentes/regras.js';
 import { lerStoryboard, planejarDecisaoStoryboard, lerDecisaoStoryboard, decisaoValida } from '../js/storyboard.js';
@@ -425,4 +426,19 @@ test('motivo: reserva pela linha, pela frase (fallback) e pela frase reescrita; 
   assert.equal(r(comMotivo('reescrita', 'a regra foi reescrita. Mudar a regra, fazer só neste vídeo ou manter?')).reserva, false);
   assert.equal(r(comMotivo('reserva', 'x. Mudar a regra, fazer só neste vídeo ou manter?')).motivo, 'x.');
   assert.ok(!('tipo' in r(comMotivo('reserva', FRASE_RESERVA))));
+});
+
+// Revisão final C (M1): a resposta dela a uma pergunta de regra, antes de a decisão sair, é trabalho em andamento:
+// a versão nova do app (v40) não pode recarregar sozinha e apagar o "Mudar a regra" que virou "Refazer o storyboard".
+test('respostas de regra não enviadas contam como trabalho em andamento (a recarga automática espera)', () => {
+  assert.equal(respostasNaoEnviadas({}), false);
+  assert.equal(respostasNaoEnviadas(undefined), false);
+  assert.equal(respostasNaoEnviadas({ [chaveRespostas('storyboard', 'S47-01', 2)]: {} }), false, 'tocou e desfez');
+  assert.equal(respostasNaoEnviadas({ [chaveRespostas('storyboard', 'S47-01', 2)]: { 'S47-01-R1': 'mudar' } }), true);
+  assert.equal(respostasNaoEnviadas({ a: {}, b: { 'S47-02-R1': 'manter' } }), true, 'Manter também é resposta');
+  const main = readFileSync(new URL('../js/main.js', import.meta.url), 'utf8');
+  const corpo = main.slice(main.indexOf('function trabalhoEmAndamento()'), main.indexOf('let recarregando'));
+  assert.match(corpo, /if \(respostasNaoEnviadas\(estado\.respostasRegra\)\) return true;/,
+    'trabalhoEmAndamento (js/main.js) consulta as respostas de regra');
+  assert.ok(corpo.indexOf('respostasNaoEnviadas') < corpo.indexOf('return false;'), 'antes do "return false"');
 });

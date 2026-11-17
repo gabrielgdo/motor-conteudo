@@ -10,6 +10,7 @@ import { aoMudarDados, aoMudarDuracao } from './roteador.js';
 import { ligarAcoes, entrarNoApp, mostrarLogin, pintarBotaoSair, pintarEntrada, sairDaConta, aoMudarManual } from './acoes.js';
 import { Downloads } from './componentes/downloads.js';
 import { aplicarAtualizacao } from './versao.js';
+import { respostasNaoEnviadas } from './regras.js';
 import { tirarSaida, sessaoSegura } from './saida.js';
 import { avisoFixo, removerAviso, subirAvisos } from './componentes/janelas.js';
 import { Paleta } from './componentes/paleta.js';
@@ -54,14 +55,14 @@ window.addEventListener('unhandledrejection', (e) => {
    procura atualização ao abrir, ao voltar a ficar visível e no pageshow (bfcache), e pergunta a
    versão do SW que a controla. Versão diferente: recarrega sozinha uma vez se não houver trabalho em
    andamento; senão mostra "Nova versão" (tocar recarrega). Regras e anti-laço em js/versao.js. */
-const VERSAO_APP = 'motor-app-v39'; // igual a VERSAO em sw.js (tests/sw.test.mjs confere)
+const VERSAO_APP = 'motor-app-v40'; // igual a VERSAO em sw.js (tests/sw.test.mjs confere)
 
 function avisarNovaVersao() {
   avisoFixo('versao', 'Nova versão do app. Toque para atualizar.', { acao: 'nova-versao', icone: 'atualizar' });
 }
 
-/** Algo que uma recarga perderia: download, envio, ajustes juntados ou digitados, vídeo tocando,
-    teleprompter ou janela aberta, campo em edição. */
+/** Algo que uma recarga perderia: download, envio, ajustes juntados ou digitados, resposta a pergunta de regra,
+    vídeo tocando, teleprompter ou janela aberta, campo em edição. */
 function trabalhoEmAndamento() {
   try {
     if (Downloads.andando.size || Downloads.tudo) return true;
@@ -72,6 +73,8 @@ function trabalhoEmAndamento() {
     // storyboard: a lista de pedidos por quadro e o que ela digitou (pedido de um quadro, pedido geral)
     if (Object.values(estado.sbPendentes || {}).some((l) => l?.length)) return true;
     if (Object.keys(rascunho).some((k) => /^sb-(pedido|obs)-/.test(k) && String(rascunho[k] || '').trim())) return true;
+    // perguntas de regra: a resposta dela (Mudar, Só neste, Manter) que ainda não saiu numa decisão
+    if (respostasNaoEnviadas(estado.respostasRegra)) return true;
     if (document.getElementById('tele')?.open || document.getElementById('telacheia')?.open || document.getElementById('dialogo')?.hasAttribute('open')) return true;
     if ([...document.querySelectorAll('video')].some((v) => !v.paused && !v.ended)) return true;
     const ativo = document.activeElement;

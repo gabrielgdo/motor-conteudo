@@ -206,6 +206,11 @@ export function regraLegivel(q) {
 /** Chave das respostas dela na memória (estado.respostasRegra): uma por decisão (tipo, roteiro e versão). */
 export const chaveRespostas = (tipo, id, versao) => `${tipo}:${String(id ?? '').trim()}:v${Number(versao) || 0}`;
 
+/** Há resposta dela a uma pergunta de regra que ainda não saiu numa decisão? Uma recarga a perderia: o js/main.js
+    conta isso como trabalho em andamento (a versão nova do app espera, só avisa). */
+export const respostasNaoEnviadas = (respostasRegra) =>
+  Object.values(respostasRegra || {}).some((o) => !!o && typeof o === 'object' && Object.keys(o).length > 0);
+
 /** A resposta libera o pedido que esperava a regra? ("Mudar a regra" e "Só neste vídeo" sim; "Manter" não.) */
 export const liberaPedido = (resposta) => resposta === 'mudar' || resposta === 'so_neste';
 
